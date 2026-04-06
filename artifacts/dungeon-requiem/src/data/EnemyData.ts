@@ -1,8 +1,6 @@
 /**
  * EnemyData.ts
- * Data-driven enemy definitions.
- * Add new enemy archetypes here without touching entity logic.
- * STEAM NOTE: Can be loaded from an external JSON file for modding support.
+ * Data-driven enemy definitions — 3D units.
  */
 
 export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss";
@@ -12,14 +10,15 @@ export interface EnemyDef {
   displayName: string;
   health: number;
   damage: number;
-  moveSpeed: number;
+  moveSpeed: number;       // units/second
   xpReward: number;
-  attackRange: number;
-  attackInterval: number;  // ms
-  bodyColor: number;
-  eyeColor: number;
-  bodyRadius: number;
+  attackRange: number;     // units
+  attackInterval: number;  // seconds
+  collisionRadius: number; // units
   scoreValue: number;
+  color: string;           // hex CSS color for mesh material
+  emissive: string;        // glow color
+  scale: number;           // mesh scale factor
 }
 
 export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
@@ -28,92 +27,88 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     displayName: "Bone Scuttler",
     health: 30,
     damage: 8,
-    moveSpeed: 160,
+    moveSpeed: 6.0,
     xpReward: 12,
-    attackRange: 42,
-    attackInterval: 1200,
-    bodyColor: 0xb5a05a,
-    eyeColor: 0xff4400,
-    bodyRadius: 14,
+    attackRange: 1.8,
+    attackInterval: 1.2,
+    collisionRadius: 0.7,
     scoreValue: 10,
+    color: "#b5a05a",
+    emissive: "#331100",
+    scale: 0.8,
   },
   brute: {
     type: "brute",
     displayName: "Iron Brute",
     health: 140,
     damage: 22,
-    moveSpeed: 70,
+    moveSpeed: 2.5,
     xpReward: 35,
-    attackRange: 56,
-    attackInterval: 2000,
-    bodyColor: 0x5a6e7a,
-    eyeColor: 0xff6600,
-    bodyRadius: 26,
+    attackRange: 2.4,
+    attackInterval: 2.0,
+    collisionRadius: 1.2,
     scoreValue: 40,
+    color: "#5a6e7a",
+    emissive: "#0a1418",
+    scale: 1.5,
   },
   wraith: {
     type: "wraith",
     displayName: "Shadow Wraith",
     health: 55,
     damage: 14,
-    moveSpeed: 130,
+    moveSpeed: 4.5,
     xpReward: 22,
-    attackRange: 46,
-    attackInterval: 900,
-    bodyColor: 0x4a2a7a,
-    eyeColor: 0x00ccff,
-    bodyRadius: 16,
+    attackRange: 2.0,
+    attackInterval: 0.9,
+    collisionRadius: 0.8,
     scoreValue: 25,
+    color: "#4a2a7a",
+    emissive: "#1a0040",
+    scale: 1.0,
   },
   elite: {
     type: "elite",
     displayName: "Voidclaw Champion",
     health: 420,
     damage: 36,
-    moveSpeed: 95,
+    moveSpeed: 3.5,
     xpReward: 120,
-    attackRange: 60,
-    attackInterval: 1600,
-    bodyColor: 0x8b0000,
-    eyeColor: 0xffff00,
-    bodyRadius: 28,
+    attackRange: 2.6,
+    attackInterval: 1.6,
+    collisionRadius: 1.3,
     scoreValue: 150,
+    color: "#8b0000",
+    emissive: "#300000",
+    scale: 1.6,
   },
   boss: {
     type: "boss",
     displayName: "The Warden Reborn",
     health: 1800,
     damage: 55,
-    moveSpeed: 80,
+    moveSpeed: 3.0,
     xpReward: 600,
-    attackRange: 80,
-    attackInterval: 1400,
-    bodyColor: 0x1a001a,
-    eyeColor: 0xff00ff,
-    bodyRadius: 44,
+    attackRange: 3.5,
+    attackInterval: 1.4,
+    collisionRadius: 2.0,
     scoreValue: 500,
+    color: "#1a001a",
+    emissive: "#3d003d",
+    scale: 2.2,
   },
 };
 
-/**
- * Spawn table per wave tier — controls which enemy types appear.
- * Add new tiers here. Each entry is [EnemyType, weight].
- */
 export const SPAWN_TABLE: Array<[EnemyType, number][]> = [
-  // Wave 0-1
   [["scuttler", 10]],
-  // Wave 2-3
   [["scuttler", 7], ["wraith", 3]],
-  // Wave 4-5
   [["scuttler", 5], ["wraith", 4], ["brute", 1]],
-  // Wave 6-7
   [["scuttler", 4], ["wraith", 4], ["brute", 2]],
-  // Wave 8+
   [["scuttler", 3], ["wraith", 3], ["brute", 2], ["elite", 1]],
 ];
 
 export function pickEnemyType(wave: number): EnemyType {
-  const tableIdx = Math.min(wave, SPAWN_TABLE.length - 1);
+  const tableIdx = Math.min(Math.floor(wave / 2), SPAWN_TABLE.length - 1);
   const table = SPAWN_TABLE[tableIdx];
   const totalWeight = table.reduce((sum, [, w]) => sum + w, 0);
   let rand = Math.random() * totalWeight;

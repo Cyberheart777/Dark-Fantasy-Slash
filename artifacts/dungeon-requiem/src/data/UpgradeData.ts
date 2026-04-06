@@ -57,7 +57,7 @@ export function createDefaultStats(): PlayerStats {
     currentHealth: 120,
     damage: 18,
     attackSpeed: 1.0,
-    moveSpeed: 220,
+    moveSpeed: 8,          // units/second (3D scale)
     critChance: 0.05,
     armor: 5,
     lifesteal: 0,
@@ -65,9 +65,9 @@ export function createDefaultStats(): PlayerStats {
     dodgeChance: 0,
     doubleStrikeChance: 0,
     healthRegen: 0,
-    dashCooldown: 2200,
+    dashCooldown: 2.2,     // seconds (3D scale)
     xpMultiplier: 1.0,
-    attackRange: 100,
+    attackRange: 5,        // units (3D scale)
     attackArc: 120,
   };
 }
@@ -114,7 +114,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     description: "+12% movement speed",
     icon: "💨",
     maxStacks: 5,
-    apply: (s) => { s.moveSpeed = Math.round(s.moveSpeed * 1.12); },
+    apply: (s) => { s.moveSpeed = parseFloat((s.moveSpeed * 1.12).toFixed(3)); },
   },
   lifesteal_start: {
     id: "lifesteal_start",

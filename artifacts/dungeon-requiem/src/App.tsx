@@ -1,49 +1,75 @@
 /**
  * App.tsx
- * React wrapper for the Phaser game.
- * The game runs inside a dedicated div; React handles the outer shell/meta only.
- * STEAM NOTE: In an Electron/Tauri build, this React shell could be removed
- * and the game can be mounted directly into a native window element.
+ * Root application component.
+ * GameScene (R3F Canvas) stays mounted throughout the session.
+ * Screens overlay on top rather than re-mounting the Canvas.
  */
 
-import { useEffect, useRef } from "react";
-import { createGame, destroyGame } from "./game/GameInstance";
+import { useRef, useEffect, useCallback } from "react";
+import { useGameStore } from "./store/gameStore";
+import { GameManager } from "./game/GameManager";
+import { MainMenu } from "./ui/MainMenu";
+import { GameScene } from "./game/GameScene";
+import { GameOver } from "./ui/GameOver";
 
 export default function App() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mounted = useRef(false);
+  const phase = useGameStore((s) => s.phase);
+  const managerRef = useRef<GameManager | null>(null);
 
+  if (!managerRef.current) {
+    managerRef.current = new GameManager();
+  }
+
+  // Start when phase changes to playing
   useEffect(() => {
-    if (mounted.current) return;
-    mounted.current = true;
-
-    if (containerRef.current) {
-      createGame("game-container");
+    const manager = managerRef.current!;
+    if (phase === "playing" && !manager.running) {
+      manager.start();
+    } else if (phase === "gameover") {
+      manager.stop();
     }
+  }, [phase]);
 
-    return () => {
-      destroyGame();
-      mounted.current = false;
-    };
+  const handleRestart = useCallback(() => {
+    const manager = managerRef.current!;
+    const store = useGameStore.getState();
+    const prevBest = store.bestScore;
+    const prevWave = store.bestWave;
+    manager.reset();
+    store.resetGame();
+    store.setBestScore(prevBest, prevWave);
+    // Small delay to let state settle
+    requestAnimationFrame(() => {
+      manager.start();
+    });
   }, []);
 
   return (
-    <div
-      style={{
-        width: "100vw",
-        height: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#04000a",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        id="game-container"
-        ref={containerRef}
-        style={{ width: "100%", height: "100%" }}
-      />
+    <div style={styles.root}>
+      {/* Main menu */}
+      {phase === "menu" && <MainMenu />}
+
+      {/* 3D canvas — visible during all game phases */}
+      {phase !== "menu" && (
+        <GameScene manager={managerRef.current} onRestart={handleRestart} />
+      )}
+
+      {/* Game over overlay */}
+      {phase === "gameover" && (
+        <GameOver onRestart={handleRestart} />
+      )}
     </div>
   );
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  root: {
+    width: "100vw",
+    height: "100vh",
+    overflow: "hidden",
+    background: "#04000a",
+    position: "relative",
+    fontFamily: "'Segoe UI', monospace",
+    userSelect: "none",
+  },
+};
