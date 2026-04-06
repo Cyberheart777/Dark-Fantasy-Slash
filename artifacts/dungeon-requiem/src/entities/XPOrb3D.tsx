@@ -6,10 +6,10 @@
 import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import type { XPOrbRuntime } from "../game/GameManager";
+import type { XPOrb } from "../game/GameScene";
 
 interface XPOrbProps {
-  orb: XPOrbRuntime;
+  orb: XPOrb;
 }
 
 export function XPOrb3D({ orb }: XPOrbProps) {

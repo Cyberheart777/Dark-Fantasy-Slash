@@ -7,10 +7,10 @@
 import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import type { EnemyRuntimeData } from "../game/CombatManager3D";
+import type { EnemyRuntime } from "../game/GameScene";
 
 interface EnemyProps {
-  enemy: EnemyRuntimeData;
+  enemy: EnemyRuntime;
 }
 
 function HealthBar({ healthPct }: { healthPct: number }) {
