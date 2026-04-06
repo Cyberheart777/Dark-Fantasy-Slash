@@ -14,12 +14,11 @@ const W = GAME_CONFIG.WALL_THICKNESS;
 const WH = GAME_CONFIG.WALL_HEIGHT;
 const FULL = H * 2;
 
-// Stone colors
-const FLOOR_COLOR = "#2a2030";
-const WALL_COLOR = "#1a1520";
-const PILLAR_COLOR = "#221828";
-const ACCENT_COLOR = "#3a2845";
-const CEILING_COLOR = "#0d0a12";
+// Stone colors — bright enough to catch the dungeon lighting
+const FLOOR_COLOR = "#4a3860";
+const WALL_COLOR = "#3a2c50";
+const PILLAR_COLOR = "#42305a";
+const ACCENT_COLOR = "#6a4888";
 
 function FloorTile() {
   // Procedural stone texture via canvas
@@ -31,7 +30,7 @@ function FloorTile() {
     const ctx = canvas.getContext("2d")!;
 
     // Base stone color
-    ctx.fillStyle = "#2a2030";
+    ctx.fillStyle = "#5a4470";
     ctx.fillRect(0, 0, size, size);
 
     // Draw tile grid
@@ -43,9 +42,9 @@ function FloorTile() {
         const y = row * tileH;
         // Slight random variation
         const brightness = 0.85 + Math.random() * 0.15;
-        const r = Math.floor(42 * brightness);
-        const g = Math.floor(32 * brightness);
-        const b = Math.floor(48 * brightness);
+        const r = Math.floor(80 * brightness);
+        const g = Math.floor(62 * brightness);
+        const b = Math.floor(100 * brightness);
         ctx.fillStyle = `rgb(${r},${g},${b})`;
         ctx.fillRect(x + 2, y + 2, tileW - 4, tileH - 4);
         // Grout lines
@@ -169,17 +168,6 @@ function Pillars() {
   );
 }
 
-function Ceiling() {
-  return (
-    <>
-      <mesh position={[0, WH, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[FULL + W * 2, FULL + W * 2]} />
-        <meshStandardMaterial color={CEILING_COLOR} roughness={1} side={THREE.DoubleSide} />
-      </mesh>
-    </>
-  );
-}
-
 function ArenaBorderGlow() {
   // Subtle glowing trim at base of walls
   return (
@@ -210,7 +198,6 @@ export function DungeonRoom() {
       <FloorTile />
       <Walls />
       <Pillars />
-      <Ceiling />
       <ArenaBorderGlow />
     </group>
   );
