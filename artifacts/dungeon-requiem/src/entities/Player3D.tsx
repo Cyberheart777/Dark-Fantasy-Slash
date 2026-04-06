@@ -103,11 +103,13 @@ export function Player3D({ manager }: PlayerProps) {
     }
   });
 
-  const ARMOR_COLOR = "#4a6080";
-  const SKIN_COLOR = "#c8a070";
-  const CAPE_COLOR = "#6a0020";
-  const SWORD_COLOR = "#c8c8e0";
-  const BELT_COLOR = "#5a3a10";
+  const ARMOR_COLOR = "#5a7090";
+  const SKIN_COLOR = "#d0a878";
+  const CAPE_COLOR = "#8a0025";
+  const SWORD_COLOR = "#d0d0f0";
+  const BELT_COLOR = "#6a4a15";
+  const ARMOR_EMISSIVE = "#0a1830";
+  const ARMOR_EMISSIVE_INT = 0.4;
 
   return (
     <>
@@ -118,7 +120,7 @@ export function Player3D({ manager }: PlayerProps) {
           <group position={[-0.2, 0.5, 0]}>
             <mesh castShadow>
               <boxGeometry args={[0.22, 0.55, 0.22]} />
-              <meshStandardMaterial color={ARMOR_COLOR} roughness={0.6} metalness={0.3} />
+              <meshStandardMaterial color={ARMOR_COLOR} roughness={0.6} metalness={0.3} emissive={ARMOR_EMISSIVE} emissiveIntensity={ARMOR_EMISSIVE_INT} />
             </mesh>
             {/* Boot */}
             <mesh position={[0, -0.32, 0.05]} castShadow>
@@ -130,7 +132,7 @@ export function Player3D({ manager }: PlayerProps) {
           <group position={[0.2, 0.5, 0]}>
             <mesh castShadow>
               <boxGeometry args={[0.22, 0.55, 0.22]} />
-              <meshStandardMaterial color={ARMOR_COLOR} roughness={0.6} metalness={0.3} />
+              <meshStandardMaterial color={ARMOR_COLOR} roughness={0.6} metalness={0.3} emissive={ARMOR_EMISSIVE} emissiveIntensity={ARMOR_EMISSIVE_INT} />
             </mesh>
             <mesh position={[0, -0.32, 0.05]} castShadow>
               <boxGeometry args={[0.25, 0.18, 0.32]} />
@@ -142,7 +144,7 @@ export function Player3D({ manager }: PlayerProps) {
         {/* Body (torso) */}
         <mesh ref={bodyRef} position={[0, 1.0, 0]} castShadow>
           <boxGeometry args={[0.65, 0.70, 0.38]} />
-          <meshStandardMaterial color={ARMOR_COLOR} roughness={0.55} metalness={0.35} />
+          <meshStandardMaterial color={ARMOR_COLOR} roughness={0.55} metalness={0.35} emissive={ARMOR_EMISSIVE} emissiveIntensity={ARMOR_EMISSIVE_INT} />
         </mesh>
 
         {/* Belt */}
@@ -241,13 +243,13 @@ export function Player3D({ manager }: PlayerProps) {
         </group>
       </group>
 
-      {/* Follows player position via useFrame above */}
+      {/* Follows player position via useFrame above — bright enough to illuminate the warrior */}
       <pointLight
         ref={playerLightRef}
         color="#8070ff"
-        intensity={0.3}
-        distance={6}
-        decay={2}
+        intensity={2.0}
+        distance={10}
+        decay={1.5}
       />
     </>
   );

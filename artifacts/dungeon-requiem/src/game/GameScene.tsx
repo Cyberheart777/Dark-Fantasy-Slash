@@ -129,20 +129,34 @@ function GameLoop({ manager }: { manager: GameManager }) {
 function Lighting() {
   return (
     <>
-      {/* Ambient — very dim, cold dungeon feel */}
-      <ambientLight color="#1a1030" intensity={0.4} />
-      {/* Overhead fill — blue-purple */}
+      {/* Ambient — dungeon feel but bright enough to see characters */}
+      <ambientLight color="#6050a0" intensity={1.2} />
+      {/* Primary overhead fill — cool purple-white */}
       <directionalLight
-        color="#2a1850"
-        intensity={0.5}
-        position={[10, 20, 10]}
+        color="#b0a0e0"
+        intensity={1.8}
+        position={[5, 30, 15]}
         castShadow
         shadow-mapSize={[1024, 1024]}
         shadow-camera-far={120}
-        shadow-camera-left={-40}
-        shadow-camera-right={40}
-        shadow-camera-top={40}
-        shadow-camera-bottom={-40}
+        shadow-camera-left={-45}
+        shadow-camera-right={45}
+        shadow-camera-top={45}
+        shadow-camera-bottom={-45}
+      />
+      {/* Secondary fill from opposite side — warmer tone */}
+      <directionalLight
+        color="#806040"
+        intensity={0.6}
+        position={[-10, 15, -10]}
+      />
+      {/* Center arena light — ensures player always lit */}
+      <pointLight
+        color="#9070c0"
+        intensity={3.0}
+        distance={40}
+        decay={1.5}
+        position={[0, 12, 0]}
       />
     </>
   );
@@ -153,14 +167,20 @@ function SceneContent({ manager }: { manager: GameManager }) {
   return (
     <>
       <Lighting />
-      <fog attach="fog" color="#04000a" near={20} far={75} />
+      <fog attach="fog" color="#04000a" near={50} far={90} />
 
       <DungeonRoom />
 
-      {/* Torches */}
+      {/* Perimeter torches */}
       {TORCH_POSITIONS.map((pos, i) => (
         <Torch3D key={i} position={pos} />
       ))}
+
+      {/* Interior accent lights — illuminate the combat zone */}
+      <pointLight color="#ff7700" intensity={1.5} distance={25} decay={1.8} position={[-15, 3, -15]} />
+      <pointLight color="#ff7700" intensity={1.5} distance={25} decay={1.8} position={[ 15, 3, -15]} />
+      <pointLight color="#ff7700" intensity={1.5} distance={25} decay={1.8} position={[-15, 3,  15]} />
+      <pointLight color="#ff7700" intensity={1.5} distance={25} decay={1.8} position={[ 15, 3,  15]} />
 
       <GameLoop manager={manager} />
 
