@@ -11,9 +11,8 @@ import { useGLTF, useAnimations } from "@react-three/drei";
 import * as THREE from "three";
 import type { GameState } from "../game/GameScene";
 
-// Preload warrior model so there's no pop-in when the scene mounts
+// Preload only what we actually render
 useGLTF.preload(`${import.meta.env.BASE_URL}models/warrior/Animation_Left_Slash.glb`);
-useGLTF.preload(`${import.meta.env.BASE_URL}models/warrior/Character_output.glb`);
 
 interface PlayerProps {
   gs: React.RefObject<GameState | null>;
@@ -58,6 +57,20 @@ function WarriorGLB({ gs }: PlayerProps) {
     actions[clipName]!.reset().setLoop(THREE.LoopRepeat, Infinity).play();
     return () => { actions[clipName]?.stop(); };
   }, [actions, animations]);
+
+  // Dispose GPU resources when this component unmounts to prevent memory leak
+  useEffect(() => {
+    return () => {
+      model.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.geometry?.dispose();
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          mats.forEach((m) => (m as THREE.Material)?.dispose());
+        }
+      });
+    };
+  }, [model]);
 
   // Priority 1 runs AFTER drei's useAnimations (priority 0), so our position
   // always wins over any root-motion baked into the animation clip.
