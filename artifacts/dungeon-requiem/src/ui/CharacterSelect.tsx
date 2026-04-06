@@ -13,9 +13,19 @@ export function CharacterSelect() {
   const { setPhase, setSelectedClass, selectedClass } = useGameStore();
   const [confirmed, setConfirmed] = useState<CharacterClass>(selectedClass);
 
-  const handleConfirm = () => {
-    setSelectedClass(confirmed);
+  const enterGame = (cls: CharacterClass) => {
+    setSelectedClass(cls);
     setPhase("playing");
+  };
+
+  const handleCardTap = (cls: CharacterClass) => {
+    if (confirmed === cls) {
+      // Second tap on already-selected card → enter
+      enterGame(cls);
+    } else {
+      // First tap → just select
+      setConfirmed(cls);
+    }
   };
 
   const def = CHARACTER_DATA[confirmed];
@@ -28,7 +38,7 @@ export function CharacterSelect() {
         <div style={styles.header}>
           <button style={styles.backBtn} onClick={() => setPhase("menu")}>← BACK</button>
           <div style={styles.title}>CHOOSE YOUR CLASS</div>
-          <div style={styles.subtitle}>Your fate awaits in the depths.</div>
+          <div style={styles.subtitle}>Tap to select · Tap again to enter.</div>
         </div>
 
         {/* Class cards — stack vertically, full-width on mobile */}
@@ -49,7 +59,7 @@ export function CharacterSelect() {
                     ? `0 0 20px ${c.color}44, inset 0 0 20px ${c.color}14`
                     : "none",
                 }}
-                onClick={() => setConfirmed(cls)}
+                onClick={() => handleCardTap(cls)}
               >
                 {/* Top row: icon + name + badge */}
                 <div style={styles.cardTop}>
@@ -78,28 +88,23 @@ export function CharacterSelect() {
                 <div style={{ ...styles.attackBadge, color: c.accentColor, borderColor: c.color + "50" }}>
                   {cls === "warrior" ? "⚔ MELEE SWEEP" : cls === "mage" ? "✦ PIERCING ORB" : "◆ TWIN DAGGERS"}
                 </div>
+
+                {/* Enter button — only on selected card, no scrolling needed */}
+                {isSelected && (
+                  <div
+                    style={{
+                      ...styles.enterBtn,
+                      background: `linear-gradient(135deg, ${c.color}cc 0%, ${c.accentColor} 100%)`,
+                      boxShadow: `0 4px 20px ${c.color}80`,
+                    }}
+                  >
+                    ▶ ENTER AS {c.name.toUpperCase()}
+                  </div>
+                )}
               </button>
             );
           })}
         </div>
-
-        {/* Lore quote */}
-        <div style={styles.loreBox}>
-          <span style={{ color: "#8860cc" }}>❝ </span>
-          <span style={{ fontStyle: "italic", color: "#c0a0f0" }}>{def.lore}</span>
-        </div>
-
-        {/* Confirm button — large tap target */}
-        <button
-          style={{
-            ...styles.confirmBtn,
-            background: `linear-gradient(135deg, ${def.color} 0%, ${def.accentColor}cc 100%)`,
-            boxShadow: `0 4px 24px ${def.color}70`,
-          }}
-          onClick={handleConfirm}
-        >
-          ⚔ ENTER AS {def.name}
-        </button>
 
       </div>
     </div>
@@ -273,6 +278,19 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     padding: "6px 8px",
     fontFamily: "monospace",
+  },
+  enterBtn: {
+    width: "100%",
+    padding: "14px 0",
+    borderRadius: 8,
+    color: "#fff",
+    fontWeight: 900,
+    fontSize: 14,
+    letterSpacing: 2,
+    fontFamily: "monospace",
+    textAlign: "center",
+    marginTop: 4,
+    userSelect: "none",
   },
   loreBox: {
     textAlign: "center",
