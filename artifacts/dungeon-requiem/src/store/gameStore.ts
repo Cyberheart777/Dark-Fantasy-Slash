@@ -7,6 +7,7 @@
 import { create } from "zustand";
 import type { UpgradeDef } from "../data/UpgradeData";
 import type { CharacterClass } from "../data/CharacterData";
+import type { RaceType } from "../data/RaceData";
 
 export type GamePhase =
   | "menu"
@@ -87,8 +88,9 @@ export interface GameUIState {
   bestScore: number;
   bestWave: number;
 
-  // Character class
+  // Character class & race
   selectedClass: CharacterClass;
+  selectedRace: RaceType;
 
   // Soul shards (per-run counter — persistent total lives in metaStore)
   shardsThisRun: number;
@@ -106,6 +108,7 @@ export interface GameUIState {
   setBossState: (hp: number, maxHp: number, name: string, alive: boolean) => void;
   setBossSpecialWarn: (active: boolean) => void;
   setSelectedClass: (cls: CharacterClass) => void;
+  setSelectedRace: (race: RaceType) => void;
   setPlayerHP: (hp: number, maxHp: number) => void;
   setPlayerPos: (x: number, z: number, angle: number) => void;
   setProgression: (level: number, xp: number, xpToNext: number) => void;
@@ -151,6 +154,7 @@ const initialState = {
   bestScore: 0,
   bestWave: 0,
   selectedClass: "warrior" as CharacterClass,
+  selectedRace: "human" as RaceType,
   shardsThisRun: 0,
   bossHP: 0,
   bossMaxHP: 0,
@@ -164,6 +168,7 @@ export const useGameStore = create<GameUIState>((set) => ({
 
   setPhase: (phase) => set({ phase }),
   setSelectedClass: (selectedClass) => set({ selectedClass }),
+  setSelectedRace: (selectedRace) => set({ selectedRace }),
   addRunShards: (n) => set((s) => ({ shardsThisRun: s.shardsThisRun + n })),
   setBossState: (hp, maxHp, name, alive) => set({ bossHP: hp, bossMaxHP: maxHp, bossName: name, bossAlive: alive }),
   setBossSpecialWarn: (active) => set({ bossSpecialWarn: active }),
@@ -213,5 +218,6 @@ export const useGameStore = create<GameUIState>((set) => ({
       bestScore: 0,
       bestWave: 0,
       selectedClass: s.selectedClass,
+      selectedRace: s.selectedRace,
     })),
 }));

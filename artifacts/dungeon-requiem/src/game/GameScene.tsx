@@ -15,6 +15,7 @@ import { useMetaStore } from "../store/metaStore";
 import { GAME_CONFIG } from "../data/GameConfig";
 import { ENEMY_DATA, pickEnemyType } from "../data/EnemyData";
 import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
+import { RACE_DATA, type RaceType } from "../data/RaceData";
 import { ProgressionManager } from "../systems/ProgressionManager";
 import { createDefaultStats, type PlayerStats } from "../data/UpgradeData";
 import { buildMetaModifiers } from "../data/MetaUpgradeData";
@@ -130,21 +131,25 @@ const TORCH_POSITIONS: [number, number, number][] = [
 // Builds the starting PlayerStats for a class, bakes in persistent meta bonuses,
 // then wraps it in a ProgressionManager. Per-run upgrades stack on top via ProgressionManager.
 
-function makeProgWithMeta(cls: CharacterClass): { progression: ProgressionManager; startHp: number } {
+function makeProgWithMeta(cls: CharacterClass, race: RaceType): { progression: ProgressionManager; startHp: number } {
   const def = CHARACTER_DATA[cls];
-  // 1. Class base stats (flat, predictable starting point)
+  const raceDef = RACE_DATA[race];
+  // 1. Class base stats modified by race multipliers
   const classBase: PlayerStats = {
     ...createDefaultStats(),
-    maxHealth: def.hp, currentHealth: def.hp,
-    damage: def.damage, attackSpeed: def.attackSpeed,
-    moveSpeed: def.moveSpeed, armor: def.armor,
-    dashCooldown: def.dashCooldown, critChance: def.critChance,
+    maxHealth: Math.round(def.hp * raceDef.hpMult),
+    currentHealth: Math.round(def.hp * raceDef.hpMult),
+    damage: Math.round(def.damage * raceDef.damageMult),
+    attackSpeed: parseFloat((def.attackSpeed * raceDef.attackSpeedMult).toFixed(3)),
+    moveSpeed: parseFloat((def.moveSpeed * raceDef.moveSpeedMult).toFixed(3)),
+    armor: Math.max(0, def.armor + raceDef.armorBonus),
+    dashCooldown: def.dashCooldown,
+    critChance: Math.min(0.95, def.critChance + raceDef.critBonus),
     attackRange: def.attackRange,
   };
   // 2. Resolve meta flat bonuses on top (Layer 1 — flat additions only)
   const metaMods = buildMetaModifiers(useMetaStore.getState().purchased);
   const resolved = resolveStats(classBase, metaMods);
-  // Round integer stats after resolution to avoid floating-point HP
   resolved.maxHealth = Math.round(resolved.maxHealth);
   resolved.currentHealth = resolved.maxHealth;
   resolved.damage = Math.round(resolved.damage);
@@ -424,6 +429,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 store.setBossState(0, 0, "", false);
                 store.setBossSpecialWarn(false);
                 audioManager.play("boss_death");
+                useMetaStore.getState().unlockMilestone("boss_kill");
+                useMetaStore.getState().checkUnlocks();
               } else {
                 audioManager.play("enemy_death");
               }
@@ -532,6 +539,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 audioManager.play("player_death");
                 audioManager.stopMusic();
                 store.setBossState(0, 0, "", false);
+                { const meta = useMetaStore.getState(); meta.addTotalKills(g.kills); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
                 const bonusShards = Math.round(g.wave * 15 + g.kills);
                 if (bonusShards > 0) {
                   useMetaStore.getState().addShards(bonusShards);
@@ -571,6 +579,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 audioManager.stopMusic();
                 store.setBossState(0, 0, "", false);
                 store.setBossSpecialWarn(false);
+                { const meta = useMetaStore.getState(); meta.addTotalKills(g.kills); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
                 // Bonus shards for how far they got: waves survived + kills
                 const bonusShards = Math.round(
                   g.wave * 15 + g.kills,
@@ -638,6 +647,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             store.setBossState(0, 0, "", false);
             store.setBossSpecialWarn(false);
             audioManager.play("boss_death");
+            useMetaStore.getState().unlockMilestone("boss_kill");
+            useMetaStore.getState().checkUnlocks();
           } else {
             audioManager.play("enemy_death");
           }
@@ -674,6 +685,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               audioManager.play("player_death");
               audioManager.stopMusic();
               store.setBossState(0, 0, "", false);
+              { const meta = useMetaStore.getState(); meta.addTotalKills(g.kills); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
               const bonusShards = Math.round(g.wave * 15 + g.kills);
               if (bonusShards > 0) {
                 useMetaStore.getState().addShards(bonusShards);
@@ -723,6 +735,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               audioManager.play("player_death");
               audioManager.stopMusic();
               store.setBossState(0, 0, "", false);
+              { const meta = useMetaStore.getState(); meta.addTotalKills(g.kills); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
               const bonusShards = Math.round(g.wave * 15 + g.kills);
               if (bonusShards > 0) {
                 useMetaStore.getState().addShards(bonusShards);
@@ -780,6 +793,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     if (g.waveTimer >= GAME_CONFIG.DIFFICULTY.WAVE_DURATION) {
       g.waveTimer = 0;
       g.wave += 1;
+      { const meta = useMetaStore.getState(); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
       g.spawnInterval = Math.max(
         GAME_CONFIG.DIFFICULTY.MIN_SPAWN_INTERVAL,
         g.spawnInterval - GAME_CONFIG.DIFFICULTY.SPAWN_REDUCTION
@@ -964,7 +978,8 @@ export function GameScene({ onRestart }: GameSceneProps) {
   // Initialize game state once
   if (!gsRef.current) {
     const cls = useGameStore.getState().selectedClass;
-    const { progression, startHp } = makeProgWithMeta(cls);
+    const race = useGameStore.getState().selectedRace;
+    const { progression, startHp } = makeProgWithMeta(cls, race);
     const input = new InputManager3D();
     const gs0: GameState = {
       player: makePlayer(startHp),
@@ -998,9 +1013,10 @@ export function GameScene({ onRestart }: GameSceneProps) {
       // If the player is dead (e.g. restart after game-over), do a full reset
       if (g.player.dead) {
         const cls = useGameStore.getState().selectedClass;
+        const race = useGameStore.getState().selectedRace;
         useGameStore.getState().setBossState(0, 0, "", false);
         useGameStore.getState().setBossSpecialWarn(false);
-        const { progression: prog, startHp } = makeProgWithMeta(cls);
+        const { progression: prog, startHp } = makeProgWithMeta(cls, race);
         prog.onLevelUp = (_lvl, choices) => {
           audioManager.play("level_up");
           useGameStore.getState().setLevelUpChoices(choices);

@@ -1,318 +1,328 @@
 /**
  * CharacterSelect.tsx
- * Class selection screen — mobile-friendly with scrolling and large tap targets.
+ * Two-step character creation: Race → Class.
+ * Race and class have locked items shown with unlock conditions.
  */
 
 import { useState } from "react";
 import { useGameStore } from "../store/gameStore";
+import { useMetaStore } from "../store/metaStore";
 import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
+import { RACE_DATA, RACES, type RaceType } from "../data/RaceData";
 
 const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue"];
 
-export function CharacterSelect() {
-  const { setPhase, setSelectedClass, selectedClass } = useGameStore();
-  const [confirmed, setConfirmed] = useState<CharacterClass>(selectedClass);
+const CLASS_UNLOCK_CONDITION: Record<CharacterClass, string | null> = {
+  warrior: null,
+  mage: "Reach Wave 5",
+  rogue: "Slay 100 enemies (cumulative)",
+};
 
-  const enterGame = (cls: CharacterClass) => {
-    setSelectedClass(cls);
-    setPhase("playing");
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export function CharacterSelect() {
+  const { setPhase, setSelectedClass, setSelectedRace, selectedClass } = useGameStore();
+  const { unlockedClasses, unlockedRaces, milestones, totalKills, bestWaveEver } = useMetaStore();
+
+  const [step, setStep] = useState<"race" | "class">("race");
+  const [race, setRace] = useState<RaceType>("human");
+  const [cls, setCls] = useState<CharacterClass>(selectedClass);
+
+  const isClassUnlocked = (c: CharacterClass) => unlockedClasses.includes(c);
+  const isRaceUnlocked  = (r: RaceType)       => unlockedRaces.includes(r);
+
+  const confirmRace = (r: RaceType) => {
+    if (!isRaceUnlocked(r)) return;
+    setRace(r);
+    setStep("class");
   };
 
-  const handleCardTap = (cls: CharacterClass) => {
-    if (confirmed === cls) {
-      // Second tap on already-selected card → enter
-      enterGame(cls);
+  const confirmClass = (c: CharacterClass) => {
+    if (!isClassUnlocked(c)) return;
+    if (cls === c) {
+      setSelectedRace(race);
+      setSelectedClass(c);
+      setPhase("playing");
     } else {
-      // First tap → just select
-      setConfirmed(cls);
+      setCls(c);
     }
   };
 
-  const def = CHARACTER_DATA[confirmed];
+  // Progress hints
+  const wave5Done   = milestones["wave5"]   ?? bestWaveEver >= 5;
+  const kills100    = milestones["kills100"] ?? totalKills >= 100;
+  const bossKilled  = milestones["boss_kill"] ?? false;
+  const wave10Done  = milestones["wave10"]  ?? bestWaveEver >= 10;
+
+  const progressHints: { label: string; done: boolean; unlocks: string }[] = [
+    { label: `Wave 5 (best: ${bestWaveEver})`,      done: wave5Done,  unlocks: "Mage" },
+    { label: `100 kills (total: ${totalKills})`,    done: kills100,   unlocks: "Rogue" },
+    { label: "Defeat The Warden (Boss)",            done: bossKilled, unlocks: "Dwarf race" },
+    { label: `Wave 10 (best: ${bestWaveEver})`,     done: wave10Done, unlocks: "Elf race" },
+  ];
 
   return (
-    <div style={styles.overlay}>
-      <div style={styles.panel}>
-
-        {/* Header row with back + title */}
-        <div style={styles.header}>
-          <button style={styles.backBtn} onClick={() => setPhase("menu")}>← BACK</button>
-          <div style={styles.title}>CHOOSE YOUR CLASS</div>
-          <div style={styles.subtitle}>Tap to select · Tap again to enter.</div>
+    <div style={S.overlay}>
+      <div style={S.panel}>
+        {/* Header */}
+        <div style={S.header}>
+          <button style={S.backBtn} onClick={() => step === "class" ? setStep("race") : setPhase("menu")}>
+            ← BACK
+          </button>
+          <div style={S.title}>
+            {step === "race" ? "CHOOSE YOUR RACE" : "CHOOSE YOUR CLASS"}
+          </div>
+          <div style={S.stepIndicator}>
+            <span style={{ color: step === "race" ? "#d0a0ff" : "#4a3060" }}>① RACE</span>
+            <span style={{ color: "#3a2050", margin: "0 10px" }}>›</span>
+            <span style={{ color: step === "class" ? "#d0a0ff" : "#4a3060" }}>② CLASS</span>
+          </div>
         </div>
 
-        {/* Class cards — stack vertically, full-width on mobile */}
-        <div style={styles.cards}>
-          {CLASSES.map((cls) => {
-            const c = CHARACTER_DATA[cls];
-            const isSelected = confirmed === cls;
-            return (
-              <button
-                key={cls}
-                style={{
-                  ...styles.card,
-                  borderColor: isSelected ? c.accentColor : "#2a1f3d",
-                  background: isSelected
-                    ? `linear-gradient(135deg, #1a1030 0%, ${c.color}28 100%)`
-                    : "#0e0919",
-                  boxShadow: isSelected
-                    ? `0 0 20px ${c.color}44, inset 0 0 20px ${c.color}14`
-                    : "none",
-                }}
-                onClick={() => handleCardTap(cls)}
-              >
-                {/* Top row: icon + name + badge */}
-                <div style={styles.cardTop}>
-                  <span style={{ ...styles.classIcon, color: c.accentColor }}>
-                    {cls === "warrior" ? "⚔" : cls === "mage" ? "✦" : "◆"}
-                  </span>
-                  <div style={styles.cardTopText}>
-                    <div style={{ ...styles.className, color: c.accentColor }}>{c.name}</div>
-                    <div style={{ ...styles.classTitle, color: c.color }}>{c.title}</div>
-                  </div>
-                  {isSelected && (
-                    <span style={{ ...styles.checkmark, color: c.accentColor }}>✔</span>
-                  )}
-                </div>
-
-                <div style={styles.classDesc}>{c.description}</div>
-
-                {/* Stat bars */}
-                <div style={styles.statGrid}>
-                  <StatBar label="HP"  value={c.hp}          max={120} color="#e04040" />
-                  <StatBar label="DMG" value={c.damage}       max={32}  color="#e08020" />
-                  <StatBar label="SPD" value={c.moveSpeed}    max={11}  color="#20c0e0" />
-                  <StatBar label="ATK" value={c.attackSpeed}  max={2.5} color="#c040e0" />
-                </div>
-
-                <div style={{ ...styles.attackBadge, color: c.accentColor, borderColor: c.color + "50" }}>
-                  {cls === "warrior" ? "⚔ MELEE SWEEP" : cls === "mage" ? "✦ PIERCING ORB" : "◆ TWIN DAGGERS"}
-                </div>
-
-                {/* Enter button — only on selected card, no scrolling needed */}
-                {isSelected && (
-                  <div
+        {/* ── STEP 1: Race ── */}
+        {step === "race" && (
+          <>
+            <div style={S.cards}>
+              {RACES.map((r) => {
+                const def = RACE_DATA[r];
+                const locked = !isRaceUnlocked(r);
+                const isSelected = race === r;
+                return (
+                  <button
+                    key={r}
                     style={{
-                      ...styles.enterBtn,
-                      background: `linear-gradient(135deg, ${c.color}cc 0%, ${c.accentColor} 100%)`,
-                      boxShadow: `0 4px 20px ${c.color}80`,
+                      ...S.card,
+                      borderColor: locked ? "#1a1228"
+                        : isSelected ? "#9040e0" : "#2a1f3d",
+                      background: locked ? "#080610"
+                        : isSelected ? "linear-gradient(135deg, #1a1030 0%, #3010608a 100%)"
+                        : "#0e0919",
+                      opacity: locked ? 0.55 : 1,
+                      cursor: locked ? "not-allowed" : "pointer",
+                      boxShadow: isSelected && !locked ? "0 0 22px #7020c044, inset 0 0 20px #7020c014" : "none",
                     }}
+                    onClick={() => confirmRace(r)}
                   >
-                    ▶ ENTER AS {c.name.toUpperCase()}
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
+                    <div style={S.cardTop}>
+                      <span style={{ ...S.classIcon, color: locked ? "#4a3060" : "#a060e0" }}>{def.icon}</span>
+                      <div style={S.cardTopText}>
+                        <div style={{ ...S.className, color: locked ? "#4a3060" : "#c080ff" }}>{def.name}</div>
+                        <div style={{ ...S.classTitle, color: locked ? "#3a2050" : "#8050b0" }}>{def.title}</div>
+                      </div>
+                      {isSelected && !locked && <span style={{ ...S.checkmark, color: "#a060e0" }}>✔</span>}
+                      {locked && <span style={{ fontSize: 14, color: "#4a3060" }}>🔒</span>}
+                    </div>
 
+                    {locked ? (
+                      <div style={S.lockNote}>🔒 {def.unlockCondition}</div>
+                    ) : (
+                      <>
+                        <div style={S.classDesc}>{def.description}</div>
+                        <div style={{ ...S.italicLore }}>{def.lore}</div>
+                      </>
+                    )}
+
+                    {isSelected && !locked && (
+                      <div style={S.enterBtn} onClick={() => setStep("class")}>
+                        ▶ CONTINUE AS {def.name}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Unlock progress panel */}
+            <div style={S.milestoneBox}>
+              <div style={S.milestoneTitle}>UNLOCK PROGRESS</div>
+              {progressHints.map((h) => (
+                <div key={h.label} style={S.milestoneRow}>
+                  <span style={{ color: h.done ? "#60ff40" : "#604050", fontSize: 11 }}>
+                    {h.done ? "✔" : "○"}
+                  </span>
+                  <span style={{ flex: 1, color: h.done ? "#a0e080" : "#504060", fontSize: 10, marginLeft: 6 }}>
+                    {h.label}
+                  </span>
+                  <span style={{ color: h.done ? "#60c040" : "#4a3060", fontSize: 10 }}>
+                    → {h.unlocks}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ── STEP 2: Class ── */}
+        {step === "class" && (
+          <>
+            {/* Selected race reminder */}
+            <div style={S.raceBadge}>
+              {RACE_DATA[race].icon} {RACE_DATA[race].name} — {RACE_DATA[race].description}
+            </div>
+
+            <div style={S.cards}>
+              {CLASSES.map((c) => {
+                const def = CHARACTER_DATA[c];
+                const locked = !isClassUnlocked(c);
+                const isSelected = cls === c;
+                return (
+                  <button
+                    key={c}
+                    style={{
+                      ...S.card,
+                      borderColor: locked ? "#1a1228"
+                        : isSelected ? def.accentColor : "#2a1f3d",
+                      background: locked ? "#080610"
+                        : isSelected ? `linear-gradient(135deg, #1a1030 0%, ${def.color}28 100%)`
+                        : "#0e0919",
+                      opacity: locked ? 0.55 : 1,
+                      cursor: locked ? "not-allowed" : "pointer",
+                      boxShadow: isSelected && !locked ? `0 0 20px ${def.color}44, inset 0 0 20px ${def.color}14` : "none",
+                    }}
+                    onClick={() => confirmClass(c)}
+                  >
+                    <div style={S.cardTop}>
+                      <span style={{ ...S.classIcon, color: locked ? "#4a3060" : def.accentColor }}>
+                        {c === "warrior" ? "⚔" : c === "mage" ? "✦" : "◆"}
+                      </span>
+                      <div style={S.cardTopText}>
+                        <div style={{ ...S.className, color: locked ? "#4a3060" : def.accentColor }}>{def.name}</div>
+                        <div style={{ ...S.classTitle, color: locked ? "#3a2050" : def.color }}>{def.title}</div>
+                      </div>
+                      {isSelected && !locked && <span style={{ ...S.checkmark, color: def.accentColor }}>✔</span>}
+                      {locked && <span style={{ fontSize: 14, color: "#4a3060" }}>🔒</span>}
+                    </div>
+
+                    {locked ? (
+                      <div style={S.lockNote}>🔒 {CLASS_UNLOCK_CONDITION[c]}</div>
+                    ) : (
+                      <>
+                        <div style={S.classDesc}>{def.description}</div>
+                        <div style={S.statGrid}>
+                          <StatBar label="HP"  value={def.hp}          max={120}  color="#e04040" />
+                          <StatBar label="DMG" value={def.damage}       max={32}   color="#e08020" />
+                          <StatBar label="SPD" value={def.moveSpeed}    max={11}   color="#20c0e0" />
+                          <StatBar label="ATK" value={def.attackSpeed}  max={2.5}  color="#c040e0" />
+                        </div>
+                        <div style={{ ...S.attackBadge, color: def.accentColor, borderColor: def.color + "50" }}>
+                          {c === "warrior" ? "⚔ MELEE SWEEP" : c === "mage" ? "✦ PIERCING ORB" : "◆ TWIN DAGGERS"}
+                        </div>
+                      </>
+                    )}
+
+                    {isSelected && !locked && (
+                      <div
+                        style={{
+                          ...S.enterBtn,
+                          background: `linear-gradient(135deg, ${def.color}cc 0%, ${def.accentColor} 100%)`,
+                          boxShadow: `0 4px 20px ${def.color}80`,
+                        }}
+                      >
+                        ▶ ENTER AS {RACE_DATA[race].name} {def.name}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
+
+// ─── StatBar helper ────────────────────────────────────────────────────────────
 
 function StatBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
   const pct = Math.min(1, value / max);
   return (
-    <div style={styles.statRow}>
-      <span style={styles.statLabel}>{label}</span>
-      <div style={styles.statTrack}>
-        <div style={{ ...styles.statFill, width: `${pct * 100}%`, background: color }} />
+    <div style={S.statRow}>
+      <span style={S.statLabel}>{label}</span>
+      <div style={S.statTrack}>
+        <div style={{ ...S.statFill, width: `${pct * 100}%`, background: color }} />
       </div>
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+// ─── Styles ────────────────────────────────────────────────────────────────────
+
+const S: Record<string, React.CSSProperties> = {
   overlay: {
-    position: "absolute",
-    inset: 0,
-    overflowY: "auto",
-    WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
+    position: "absolute", inset: 0, overflowY: "auto",
     background: "linear-gradient(160deg, #04000a 0%, #0e0620 100%)",
-    fontFamily: "'Segoe UI', monospace",
-    userSelect: "none",
-    zIndex: 10,
+    fontFamily: "'Segoe UI', monospace", userSelect: "none", zIndex: 10,
   },
   panel: {
-    width: "100%",
-    maxWidth: 620,
-    margin: "0 auto",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "stretch",
-    gap: 16,
-    padding: "20px 16px 36px",
-    boxSizing: "border-box",
+    width: "100%", maxWidth: 620, margin: "0 auto",
+    display: "flex", flexDirection: "column", alignItems: "stretch",
+    gap: 12, padding: "20px 16px 40px", boxSizing: "border-box",
   },
-  header: {
-    textAlign: "center",
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-    paddingTop: 4,
-  },
+  header: { textAlign: "center", display: "flex", flexDirection: "column", gap: 6, paddingTop: 4 },
   backBtn: {
-    alignSelf: "flex-start",
-    background: "none",
-    border: "1px solid #3a2a50",
-    color: "#806090",
-    padding: "10px 18px",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontFamily: "monospace",
-    fontSize: 13,
-    letterSpacing: 1,
-    minHeight: 44,
-    marginBottom: 4,
+    alignSelf: "flex-start", background: "none", border: "1px solid #3a2a50",
+    color: "#806090", padding: "10px 18px", borderRadius: 8, cursor: "pointer",
+    fontFamily: "monospace", fontSize: 13, letterSpacing: 1, minHeight: 44, marginBottom: 4,
   },
   title: {
-    fontSize: 22,
-    fontWeight: 900,
-    letterSpacing: 5,
-    color: "#d0a0ff",
-    textShadow: "0 0 20px #9030d0",
-    fontFamily: "monospace",
+    fontSize: 20, fontWeight: 900, letterSpacing: 5, color: "#d0a0ff",
+    textShadow: "0 0 20px #9030d0", fontFamily: "monospace",
   },
-  subtitle: {
-    fontSize: 12,
-    color: "#806090",
-    letterSpacing: 2,
-    fontFamily: "monospace",
+  stepIndicator: {
+    fontSize: 11, letterSpacing: 3, fontFamily: "monospace",
+    display: "flex", justifyContent: "center", alignItems: "center", gap: 0, marginTop: 4,
   },
-  cards: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-    width: "100%",
-  },
+  cards: { display: "flex", flexDirection: "column", gap: 10, width: "100%" },
   card: {
-    width: "100%",
-    border: "2px solid #2a1f3d",
-    borderRadius: 12,
-    padding: "18px 16px",
-    cursor: "pointer",
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-    background: "#0e0919",
-    textAlign: "left",
-    // Large tap target
-    minHeight: 44,
+    width: "100%", border: "2px solid #2a1f3d", borderRadius: 12, padding: "16px",
+    cursor: "pointer", display: "flex", flexDirection: "column", gap: 8,
+    background: "#0e0919", textAlign: "left", minHeight: 44,
     transition: "border-color 0.15s, box-shadow 0.15s, background 0.15s",
   },
-  cardTop: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-  },
-  classIcon: {
-    fontSize: 28,
-    filter: "drop-shadow(0 0 6px currentColor)",
-    flexShrink: 0,
-  },
-  cardTopText: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: 2,
-  },
-  className: {
-    fontSize: 16,
-    fontWeight: 900,
-    letterSpacing: 3,
-    fontFamily: "monospace",
-  },
-  classTitle: {
-    fontSize: 10,
-    letterSpacing: 2,
-    fontFamily: "monospace",
-    textTransform: "uppercase",
-  },
-  checkmark: {
-    fontSize: 18,
-    fontWeight: 900,
-    flexShrink: 0,
-  },
-  classDesc: {
-    fontSize: 12,
-    color: "#9080a8",
-    lineHeight: 1.6,
-    fontFamily: "monospace",
-  },
-  statGrid: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-  },
-  statRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
+  cardTop: { display: "flex", alignItems: "center", gap: 12 },
+  classIcon: { fontSize: 26, filter: "drop-shadow(0 0 6px currentColor)", flexShrink: 0 },
+  cardTopText: { flex: 1, display: "flex", flexDirection: "column", gap: 2 },
+  className: { fontSize: 15, fontWeight: 900, letterSpacing: 3, fontFamily: "monospace" },
+  classTitle: { fontSize: 10, letterSpacing: 2, fontFamily: "monospace", textTransform: "uppercase" },
+  checkmark: { fontSize: 16, fontWeight: 900, flexShrink: 0 },
+  classDesc: { fontSize: 11, color: "#9080a8", lineHeight: 1.6, fontFamily: "monospace" },
+  italicLore: { fontSize: 10, color: "#604878", fontStyle: "italic", fontFamily: "monospace", lineHeight: 1.5 },
+  lockNote: { fontSize: 11, color: "#5a3870", fontFamily: "monospace", letterSpacing: 1 },
+  statGrid: { display: "flex", flexDirection: "column", gap: 5 },
+  statRow: { display: "flex", alignItems: "center", gap: 8 },
   statLabel: {
-    fontSize: 9,
-    letterSpacing: 1,
-    color: "#605070",
-    fontFamily: "monospace",
-    width: 26,
-    textAlign: "right",
-    flexShrink: 0,
+    fontSize: 9, letterSpacing: 1, color: "#605070", fontFamily: "monospace", width: 26,
+    textAlign: "right", flexShrink: 0,
   },
-  statTrack: {
-    flex: 1,
-    height: 7,
-    background: "#1a1228",
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  statFill: {
-    height: "100%",
-    borderRadius: 4,
-  },
+  statTrack: { flex: 1, height: 6, background: "#1a1228", borderRadius: 4, overflow: "hidden" },
+  statFill: { height: "100%", borderRadius: 4 },
   attackBadge: {
-    fontSize: 10,
-    letterSpacing: 2,
-    textAlign: "center",
-    border: "1px solid",
-    borderRadius: 4,
-    padding: "6px 8px",
-    fontFamily: "monospace",
+    fontSize: 9, letterSpacing: 2, textAlign: "center", border: "1px solid",
+    borderRadius: 4, padding: "5px 8px", fontFamily: "monospace",
   },
   enterBtn: {
-    width: "100%",
-    padding: "14px 0",
-    borderRadius: 8,
-    color: "#fff",
-    fontWeight: 900,
-    fontSize: 14,
-    letterSpacing: 2,
-    fontFamily: "monospace",
-    textAlign: "center",
-    marginTop: 4,
-    userSelect: "none",
+    width: "100%", padding: "13px 0", borderRadius: 8, color: "#fff",
+    fontWeight: 900, fontSize: 13, letterSpacing: 2, fontFamily: "monospace",
+    textAlign: "center", marginTop: 2, userSelect: "none",
+    background: "linear-gradient(135deg, #6020c0cc 0%, #9040e0 100%)",
   },
-  loreBox: {
+  raceBadge: {
+    background: "#0d0820", border: "1px solid #3a1f60",
+    borderRadius: 8, padding: "10px 14px", fontSize: 11,
+    color: "#b080f0", fontFamily: "monospace", letterSpacing: 1,
     textAlign: "center",
-    fontSize: 13,
-    lineHeight: 1.7,
-    padding: "12px 16px",
-    border: "1px solid #2a1a40",
-    borderRadius: 8,
-    background: "#0a0614",
-    color: "#c0a0f0",
   },
-  confirmBtn: {
-    width: "100%",
-    padding: "18px 24px",
-    border: "none",
-    borderRadius: 10,
-    color: "#fff",
-    fontWeight: 900,
-    fontSize: 15,
-    letterSpacing: 2,
-    fontFamily: "monospace",
-    cursor: "pointer",
-    minHeight: 58,
+  milestoneBox: {
+    background: "#080612", border: "1px solid #1e1230",
+    borderRadius: 8, padding: "12px 14px",
+    display: "flex", flexDirection: "column", gap: 7,
+  },
+  milestoneTitle: {
+    fontSize: 9, letterSpacing: 3, color: "#4a3060",
+    fontFamily: "monospace", marginBottom: 2,
+  },
+  milestoneRow: {
+    display: "flex", alignItems: "center", gap: 4,
   },
 };
