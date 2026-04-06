@@ -36,7 +36,7 @@ export const GAME_CONFIG = {
   },
 
   DIFFICULTY: {
-    WAVE_DURATION: 20,          // seconds between intensity bumps
+    WAVE_DURATION: 30,          // seconds between intensity bumps
     BASE_SPAWN_INTERVAL: 2.2,   // seconds between spawns at start
     MIN_SPAWN_INTERVAL: 0.28,
     SPAWN_REDUCTION: 0.12,      // seconds removed per wave

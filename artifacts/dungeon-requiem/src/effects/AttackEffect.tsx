@@ -33,7 +33,7 @@ export function AttackEffect({ x, z, angle, active }: AttackEffectProps) {
     }
 
     groupRef.current.position.set(x, 0.8, z);
-    groupRef.current.rotation.y = angle + Math.PI;
+    groupRef.current.rotation.y = angle;
 
     const p = Math.min(1, progress.current);
     groupRef.current.scale.setScalar(p);

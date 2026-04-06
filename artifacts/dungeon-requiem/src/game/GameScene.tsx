@@ -90,6 +90,7 @@ interface GameState {
   xpOrbs: XPOrb[];
   projectiles: Projectile[];
   score: number; kills: number; survivalTime: number;
+  wave: number;
   spawnTimer: number; waveTimer: number;
   spawnInterval: number;
   charClass: CharacterClass;
@@ -470,7 +471,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (e.attackTimer <= 0) {
           e.attackTimer = e.attackInterval;
           if (p.invTimer <= 0 && !p.isDashing && !p.dead) {
-            const rawDmg = e.damage * (1 + useGameStore.getState().wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
+            const rawDmg = e.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
             const effective = Math.max(1, rawDmg - stats.armor);
             const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
             if (!isDodged) {
@@ -485,7 +486,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 store.setBossSpecialWarn(false);
                 // Bonus shards for how far they got: waves survived + kills
                 const bonusShards = Math.round(
-                  useGameStore.getState().wave * 15 + g.kills,
+                  g.wave * 15 + g.kills,
                 );
                 if (bonusShards > 0) {
                   useMetaStore.getState().addShards(bonusShards);
@@ -593,7 +594,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               audioManager.play("player_death");
               audioManager.stopMusic();
               store.setBossState(0, 0, "", false);
-              const bonusShards = Math.round(store.wave * 15 + g.kills);
+              const bonusShards = Math.round(g.wave * 15 + g.kills);
               if (bonusShards > 0) {
                 useMetaStore.getState().addShards(bonusShards);
                 store.addRunShards(bonusShards);
@@ -621,15 +622,14 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     g.waveTimer += delta;
     if (g.waveTimer >= GAME_CONFIG.DIFFICULTY.WAVE_DURATION) {
       g.waveTimer = 0;
-      const currentWave = store.wave + 1;
-      store.setWaveInfo(currentWave, g.score, g.kills, g.survivalTime);
+      g.wave += 1;
       g.spawnInterval = Math.max(
         GAME_CONFIG.DIFFICULTY.MIN_SPAWN_INTERVAL,
         g.spawnInterval - GAME_CONFIG.DIFFICULTY.SPAWN_REDUCTION
       );
       // Boss wave trigger
-      if (currentWave % GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL === 0 && !g.bossAlive) {
-        const boss = spawnBoss(currentWave);
+      if (g.wave % GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL === 0 && !g.bossAlive) {
+        const boss = spawnBoss(g.wave);
         g.enemies.push(boss);
         g.bossAlive = true;
         g.bossId = boss.id;
@@ -642,7 +642,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       g.spawnTimer += delta;
       if (g.spawnTimer >= g.spawnInterval) {
         g.spawnTimer = 0;
-        g.enemies.push(spawnEnemy(store.wave));
+        g.enemies.push(spawnEnemy(g.wave));
       }
     }
 
@@ -668,12 +668,12 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         value: o.value, collected: o.collected,
       }))
     );
-    store.setWaveInfo(store.wave, g.score, g.kills, g.survivalTime);
+    store.setWaveInfo(g.wave, g.score, g.kills, g.survivalTime);
 
     // ── Game over ─────────────────────────────────────────────────────────
     if (p.dead) {
       g.running = false;
-      if (g.score > store.bestScore) store.setBestScore(g.score, store.wave);
+      if (g.score > store.bestScore) store.setBestScore(g.score, g.wave);
       store.setPhase("gameover");
     }
   });
@@ -791,7 +791,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       enemies: [],
       xpOrbs: [],
       projectiles: [],
-      score: 0, kills: 0, survivalTime: 0,
+      score: 0, kills: 0, survivalTime: 0, wave: 1,
       spawnTimer: 0, waveTimer: 0,
       spawnInterval: GAME_CONFIG.DIFFICULTY.BASE_SPAWN_INTERVAL,
       charClass: cls,
@@ -830,7 +830,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           enemies: [],
           xpOrbs: [],
           projectiles: [],
-          score: 0, kills: 0, survivalTime: 0,
+          score: 0, kills: 0, survivalTime: 0, wave: 1,
           spawnTimer: 0, waveTimer: 0,
           spawnInterval: GAME_CONFIG.DIFFICULTY.BASE_SPAWN_INTERVAL,
           charClass: cls,
