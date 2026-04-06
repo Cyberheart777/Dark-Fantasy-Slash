@@ -21,7 +21,11 @@ export type UpgradeId =
   | "dash_cooldown"
   | "xp_gain_boost"
   | "berserker_rage"
-  | "iron_skin";
+  | "iron_skin"
+  | "attack_range_boost"
+  | "soul_feast"
+  | "wraithplate"
+  | "overclock";
 
 export interface UpgradeDef {
   id: UpgradeId;
@@ -49,6 +53,7 @@ export interface PlayerStats {
   xpMultiplier: number;
   attackRange: number;
   attackArc: number;
+  onKillHeal: number;
 }
 
 export function createDefaultStats(): PlayerStats {
@@ -69,6 +74,7 @@ export function createDefaultStats(): PlayerStats {
     xpMultiplier: 1.0,
     attackRange: 5,        // units (3D scale)
     attackArc: 120,
+    onKillHeal: 0,
   };
 }
 
@@ -190,9 +196,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   berserker_rage: {
     id: "berserker_rage",
-    name: "Berserker Rage",
+    name: "Glass Cannon",
     description: "+20% damage but -10% max health",
-    icon: "😤",
+    icon: "💥",
     maxStacks: 3,
     apply: (s) => {
       s.damage = Math.round(s.damage * 1.20);
@@ -207,6 +213,41 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "🪬",
     maxStacks: 4,
     apply: (s) => { s.dodgeChance += 0.05; },
+  },
+  attack_range_boost: {
+    id: "attack_range_boost",
+    name: "Executioner's Reach",
+    description: "+1 attack range (melee arc & projectile distance)",
+    icon: "🗡️",
+    maxStacks: 4,
+    apply: (s) => { s.attackRange += 1; },
+  },
+  soul_feast: {
+    id: "soul_feast",
+    name: "Soul Feast",
+    description: "Heal 8 HP on every kill",
+    icon: "👻",
+    maxStacks: 5,
+    apply: (s) => { s.onKillHeal += 8; },
+  },
+  wraithplate: {
+    id: "wraithplate",
+    name: "Wraithplate",
+    description: "+15 armor",
+    icon: "🦴",
+    maxStacks: 4,
+    apply: (s) => { s.armor += 15; },
+  },
+  overclock: {
+    id: "overclock",
+    name: "Overclock",
+    description: "+5% attack speed and +5% move speed",
+    icon: "⚡",
+    maxStacks: 5,
+    apply: (s) => {
+      s.attackSpeed = parseFloat((s.attackSpeed * 1.05).toFixed(3));
+      s.moveSpeed   = parseFloat((s.moveSpeed   * 1.05).toFixed(3));
+    },
   },
 };
 

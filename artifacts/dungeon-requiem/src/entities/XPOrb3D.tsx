@@ -65,7 +65,6 @@ export function XPOrb3D({ orb }: XPOrbProps) {
           />
         </mesh>
       )}
-      <pointLight color={style.light} intensity={style.lightIntensity} distance={3.5} decay={2} />
     </group>
   );
 }

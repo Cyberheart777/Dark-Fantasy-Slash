@@ -58,10 +58,12 @@ export interface EnemyRuntime {
   scale: number; color: string; emissive: string;
   vx: number; vz: number;
   phasing: boolean; phaseTimer: number;
-  // Boss-only fields (present but unused on regular enemies)
+  // Boss/elite extended fields
   specialTimer: number;
   specialWarning: boolean;
   specialWarnTimer: number;
+  minionTimer: number;
+  radialTimer: number;
 }
 
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
@@ -213,8 +215,11 @@ function spawnEnemy(wave: number): EnemyRuntime {
     dead: false, hitFlashTimer: 0,
     scale: def.scale, color: def.color, emissive: def.emissive,
     vx: 0, vz: 0, phasing: false, phaseTimer: 0,
-    specialTimer: type === "wraith" ? 2.0 + Math.random() * 2.0 : 0,
+    specialTimer: type === "wraith" ? 2.0 + Math.random() * 2.0
+                : type === "elite"  ? 2.5 + Math.random() * 1.0
+                : 0,
     specialWarning: false, specialWarnTimer: 0,
+    minionTimer: 0, radialTimer: 0,
   };
 }
 
@@ -243,6 +248,8 @@ function spawnBoss(wave: number): EnemyRuntime {
     specialTimer: GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_INTERVAL,
     specialWarning: false,
     specialWarnTimer: 0,
+    minionTimer: 10,
+    radialTimer: 5,
   };
 }
 
@@ -285,7 +292,6 @@ function AimResolver({ gs }: { gs: React.RefObject<GameState | null> }) {
 
 // ─── Main game loop ───────────────────────────────────────────────────────────
 
-const ATTACK_ARC_HALF = (GAME_CONFIG.PLAYER.ATTACK_ARC / 2) * (Math.PI / 180);
 const ARENA = GAME_CONFIG.ARENA_HALF - 0.5;
 
 function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
@@ -387,7 +393,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             const eAngle = Math.atan2(edx, edz);
             let angleDiff = Math.abs(eAngle - p.angle);
             if (angleDiff > Math.PI) angleDiff = Math.PI * 2 - angleDiff;
-            if (angleDiff > ATTACK_ARC_HALF) continue;
+            const arcHalf = (stats.attackArc / 2) * (Math.PI / 180);
+            if (angleDiff > arcHalf) continue;
             if (cleaved.current.has(e.id) && Math.random() > stats.cleaveChance) continue;
             cleaved.current.add(e.id);
 
@@ -409,6 +416,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               g.score += e.scoreValue;
               useMetaStore.getState().addShards(5);
               useGameStore.getState().addRunShards(5);
+              if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
               const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
               g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
               if (e.type === "boss") {
@@ -429,6 +437,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           for (let i = 0; i < count; i++) {
             const spread = count > 1 ? (i - (count - 1) / 2) * def.projectileSpread : 0;
             const angle = p.angle + spread;
+            const projStyle = g.charClass === "mage" ? "orb" : "dagger";
             g.projectiles.push({
               id: projId(),
               x: p.x, z: p.z,
@@ -441,9 +450,28 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               hitIds: new Set(),
               color: def.accentColor,
               glowColor: def.color,
-              style: g.charClass === "mage" ? "orb" : "dagger",
+              style: projStyle,
               dead: false,
             });
+            // Twin Fang proc — fire a second projectile with slight offset
+            if (stats.doubleStrikeChance > 0 && Math.random() < stats.doubleStrikeChance) {
+              const extraAngle = angle + (Math.random() - 0.5) * 0.25;
+              g.projectiles.push({
+                id: projId(),
+                x: p.x, z: p.z,
+                vx: Math.sin(extraAngle) * def.projectileSpeed,
+                vz: Math.cos(extraAngle) * def.projectileSpeed,
+                damage: stats.damage,
+                radius: def.projectileRadius,
+                lifetime: def.projectileLifetime,
+                piercing: def.projectilePiercing,
+                hitIds: new Set(),
+                color: def.accentColor,
+                glowColor: def.color,
+                style: projStyle,
+                dead: false,
+              });
+            }
           }
         }
       }
@@ -484,6 +512,34 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             damage: e.damage * 0.9,
             lifetime: 4.5, dead: false,
           });
+        }
+      }
+
+      // Elite AoE ground slam
+      if (e.type === "elite") {
+        e.specialTimer -= delta;
+        if (e.specialTimer <= 0) {
+          e.specialTimer = 2.5 + Math.random() * 0.5;
+          if (dist <= 3.5 && !p.dead && p.invTimer <= 0 && !p.isDashing) {
+            const rawDmg = e.damage * 1.4 * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
+            const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
+            if (!isDodged) {
+              const effective = Math.max(1, rawDmg - stats.armor);
+              p.hp -= effective;
+              p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.8;
+              if (p.hp <= 0) {
+                p.hp = 0; p.dead = true;
+                audioManager.play("player_death");
+                audioManager.stopMusic();
+                store.setBossState(0, 0, "", false);
+                const bonusShards = Math.round(g.wave * 15 + g.kills);
+                if (bonusShards > 0) {
+                  useMetaStore.getState().addShards(bonusShards);
+                  store.addRunShards(bonusShards);
+                }
+              } else { audioManager.play("player_hurt"); }
+            }
+          }
         }
       }
 
@@ -574,6 +630,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           g.score += e.scoreValue;
           useMetaStore.getState().addShards(5);
           useGameStore.getState().addRunShards(5);
+          if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
           const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
           g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
           if (e.type === "boss") {
@@ -686,6 +743,34 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           store.setBossSpecialWarn(true);
         }
       }
+      // Boss radial projectile burst every 5s
+      e.radialTimer -= delta;
+      if (e.radialTimer <= 0) {
+        e.radialTimer = 5.0;
+        const BURST_COUNT = 10;
+        for (let i = 0; i < BURST_COUNT; i++) {
+          const angle = (i / BURST_COUNT) * Math.PI * 2;
+          g.enemyProjectiles.push({
+            id: eprojId(), x: e.x, z: e.z,
+            vx: Math.sin(angle) * 9,
+            vz: Math.cos(angle) * 9,
+            damage: e.damage * 0.75,
+            lifetime: 4.5, dead: false,
+          });
+        }
+        audioManager.play("boss_special");
+      }
+
+      // Boss minion spawn every 10s
+      e.minionTimer -= delta;
+      if (e.minionTimer <= 0) {
+        e.minionTimer = 10.0;
+        const count = 1 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < count; i++) {
+          g.enemies.push(spawnEnemy(g.wave));
+        }
+      }
+
       // Sync boss HP to HUD each frame
       store.setBossState(e.hp, e.maxHp, ENEMY_DATA.boss.displayName, true);
     }
@@ -785,11 +870,10 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
   });
   return (
     <group ref={ref}>
-      <mesh castShadow>
+      <mesh>
         <octahedronGeometry args={[0.22, 0]} />
-        <meshStandardMaterial color="#1a0030" emissive="#8800ff" emissiveIntensity={4} roughness={0.1} metalness={0.2} />
+        <meshStandardMaterial color="#1a0030" emissive="#8800ff" emissiveIntensity={5} roughness={0.1} metalness={0.2} />
       </mesh>
-      <pointLight color="#6600cc" intensity={1.8} distance={4} decay={2} />
     </group>
   );
 }
