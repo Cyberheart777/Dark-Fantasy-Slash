@@ -1,18 +1,15 @@
 /**
  * Player3D.tsx
  * Class-specific player meshes.
- * Warrior uses the real Meshy GLB model with skeletal animation.
- * Mage + Rogue retain low-poly geometry until their models arrive.
+ * All three classes use low-poly procedural geometry during development.
+ * Real Meshy GLB models (assets saved in public/models/) will be wired in
+ * during the Electron/Steam packaging phase where GPU limits don't apply.
  */
 
-import { useRef, useEffect, useMemo } from "react";
+import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { useGLTF, useAnimations } from "@react-three/drei";
 import * as THREE from "three";
 import type { GameState } from "../game/GameScene";
-
-// Preload only what we actually render
-useGLTF.preload(`${import.meta.env.BASE_URL}models/warrior/Animation_Left_Slash.glb`);
 
 interface PlayerProps {
   gs: React.RefObject<GameState | null>;
@@ -23,91 +20,110 @@ export function Player3D({ gs }: PlayerProps) {
 
   if (charClass === "mage")  return <MageMeshAnimated  gs={gs} />;
   if (charClass === "rogue") return <RogueMeshAnimated gs={gs} />;
-  return <WarriorGLB gs={gs} />;
+  return <WarriorMeshAnimated gs={gs} />;
 }
 
-// ─── Warrior — real 3D model ───────────────────────────────────────────────────
+// ─── Warrior — low-poly geometry (GLBs load at Electron/Steam package time) ───
 
-function WarriorGLB({ gs }: PlayerProps) {
-  const lightRef = useRef<THREE.PointLight>(null);
+function WarriorMeshAnimated({ gs }: PlayerProps) {
+  const groupRef    = useRef<THREE.Group>(null);
+  const bodyRef     = useRef<THREE.Mesh>(null);
+  const leftArmRef  = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const legsRef     = useRef<THREE.Group>(null);
+  const weaponRef   = useRef<THREE.Group>(null);
+  const capeRef     = useRef<THREE.Mesh>(null);
+  const playerLtRef = useRef<THREE.PointLight>(null);
+  const t           = useRef(0);
+  const lastX       = useRef(0);
+  const lastZ       = useRef(0);
+  const weaponSwing = useRef(0);
+  const lastAttack  = useRef(0);
 
-  // Load the animation GLB — bundles the full skinned mesh + the slash clip
-  const { scene, animations } = useGLTF(
-    `${import.meta.env.BASE_URL}models/warrior/Animation_Left_Slash.glb`
-  );
-
-  // Clone so this instance has its own transform, materials, and skeleton
-  const model = useMemo(() => {
-    const clone = scene.clone(true);
-    clone.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        child.castShadow    = true;
-        child.receiveShadow = true;
-      }
-    });
-    return clone;
-  }, [scene]);
-
-  // Wire animations to the cloned model
-  const { actions } = useAnimations(animations, model);
-
-  useEffect(() => {
-    const clipName = animations[0]?.name;
-    if (!clipName || !actions[clipName]) return;
-    actions[clipName]!.reset().setLoop(THREE.LoopRepeat, Infinity).play();
-    return () => { actions[clipName]?.stop(); };
-  }, [actions, animations]);
-
-  // Dispose GPU resources when this component unmounts to prevent memory leak
-  useEffect(() => {
-    return () => {
-      model.traverse((child) => {
-        const mesh = child as THREE.Mesh;
-        if (mesh.isMesh) {
-          mesh.geometry?.dispose();
-          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-          mats.forEach((m) => (m as THREE.Material)?.dispose());
-        }
-      });
-    };
-  }, [model]);
-
-  // Priority 1 runs AFTER drei's useAnimations (priority 0), so our position
-  // always wins over any root-motion baked into the animation clip.
   useFrame((_, delta) => {
-    if (!gs.current) return;
+    if (!gs.current || !groupRef.current) return;
+    t.current += delta;
     const p = gs.current.player;
-
-    // Stamp model to exact player position every frame
-    model.position.set(p.x, 0, p.z);
-    model.rotation.y = p.angle + Math.PI;
-
-    // Aura light
-    if (lightRef.current) {
-      lightRef.current.position.set(p.x, 2, p.z);
-      const invPct = Math.max(0, p.invTimer / GAME_CONFIG_INV_TIME);
-      lightRef.current.intensity = 1.5 + invPct * 3;
-      lightRef.current.color.setRGB(
-        invPct > 0.1 ? 1   : 0.55,
-        invPct > 0.1 ? 0.2 : 0.45,
-        invPct > 0.1 ? 0.1 : 1.0,
-      );
+    groupRef.current.position.set(p.x, 0, p.z);
+    groupRef.current.rotation.y = p.angle + Math.PI;
+    const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
+    lastX.current = p.x; lastZ.current = p.z;
+    if (leftArmRef.current && rightArmRef.current && legsRef.current) {
+      if (isMoving && !p.isDashing) {
+        const freq = 8, amp = 0.5;
+        leftArmRef.current.rotation.x  =  Math.sin(t.current * freq) * amp;
+        rightArmRef.current.rotation.x = -Math.sin(t.current * freq) * amp;
+        const lg = legsRef.current.children;
+        if (lg[0]) (lg[0] as THREE.Group).rotation.x =  Math.sin(t.current * freq) * amp;
+        if (lg[1]) (lg[1] as THREE.Group).rotation.x = -Math.sin(t.current * freq) * amp;
+      } else {
+        leftArmRef.current.rotation.x  = Math.sin(t.current * 1.5) * 0.05;
+        rightArmRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.05 + 0.1;
+        const lg = legsRef.current.children;
+        if (lg[0]) (lg[0] as THREE.Group).rotation.x = 0;
+        if (lg[1]) (lg[1] as THREE.Group).rotation.x = 0;
+      }
     }
+    if (bodyRef.current) bodyRef.current.position.y = 1.0 + Math.sin(t.current * 1.5) * 0.03;
+    if (p.attackTrigger !== lastAttack.current) { lastAttack.current = p.attackTrigger; weaponSwing.current = 1; }
+    if (weaponSwing.current > 0) weaponSwing.current = Math.max(0, weaponSwing.current - delta * 5);
+    if (weaponRef.current) {
+      const swp = weaponSwing.current;
+      if (swp > 0) { const prog = 1 - swp; weaponRef.current.rotation.x = prog * Math.PI * 1.4 - Math.PI * 0.5; weaponRef.current.rotation.z = Math.sin(prog * Math.PI) * 0.5; }
+      else { weaponRef.current.rotation.x = THREE.MathUtils.lerp(weaponRef.current.rotation.x, 0, 0.15); weaponRef.current.rotation.z = THREE.MathUtils.lerp(weaponRef.current.rotation.z, 0, 0.15); }
+    }
+    groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, p.isDashing ? -0.25 : 0, 0.2);
+    if (capeRef.current) capeRef.current.rotation.x = Math.sin(t.current * 3) * 0.1;
+    if (playerLtRef.current) {
+      playerLtRef.current.position.set(p.x, 2, p.z);
+      const invPct = Math.max(0, p.invTimer / GAME_CONFIG_INV_TIME);
+      playerLtRef.current.intensity = 1.5 + invPct * 3;
+      if (invPct > 0.1) playerLtRef.current.color.setRGB(1, 0.2, 0.1);
+      else playerLtRef.current.color.setRGB(0.55, 0.45, 1.0);
+    }
+  });
 
-    // Suppress unused delta warning — animation mixer is handled by useAnimations
-    void delta;
-  }, 1); // <-- higher priority than useAnimations' default 0
-
+  const ARMOR = "#5a7090"; const SKIN = "#d0a878"; const CAPE = "#8a0025";
+  const SWORD = "#d0d0f0"; const BELT = "#6a4a15"; const EMIS = "#0a1830"; const EMIS_I = 0.45;
   return (
     <>
-      {/*
-        Render the model directly — no wrapper group needed.
-        Position is driven imperatively in useFrame above.
-        Scale: Meshy exports in metres (1 unit = 1 m).
-        If the character looks giant or tiny, change scale here.
-      */}
-      <primitive object={model} />
-      <pointLight ref={lightRef} color="#8070ff" intensity={1.5} distance={10} decay={2} />
+      <group ref={groupRef}>
+        <group ref={legsRef}>
+          <group position={[-0.2, 0.5, 0]}>
+            <mesh castShadow><boxGeometry args={[0.22, 0.55, 0.22]} /><meshStandardMaterial color={ARMOR} roughness={0.6} metalness={0.3} emissive={EMIS} emissiveIntensity={EMIS_I} /></mesh>
+            <mesh position={[0, -0.32, 0.05]} castShadow><boxGeometry args={[0.25, 0.18, 0.32]} /><meshStandardMaterial color="#2a1a0a" roughness={0.8} /></mesh>
+          </group>
+          <group position={[0.2, 0.5, 0]}>
+            <mesh castShadow><boxGeometry args={[0.22, 0.55, 0.22]} /><meshStandardMaterial color={ARMOR} roughness={0.6} metalness={0.3} emissive={EMIS} emissiveIntensity={EMIS_I} /></mesh>
+            <mesh position={[0, -0.32, 0.05]} castShadow><boxGeometry args={[0.25, 0.18, 0.32]} /><meshStandardMaterial color="#2a1a0a" roughness={0.8} /></mesh>
+          </group>
+        </group>
+        <mesh ref={bodyRef} position={[0, 1.0, 0]} castShadow><boxGeometry args={[0.65, 0.70, 0.38]} /><meshStandardMaterial color={ARMOR} roughness={0.55} metalness={0.35} emissive={EMIS} emissiveIntensity={EMIS_I} /></mesh>
+        <mesh position={[0, 0.7, 0]} castShadow><boxGeometry args={[0.68, 0.12, 0.40]} /><meshStandardMaterial color={BELT} roughness={0.8} /></mesh>
+        <mesh position={[-0.42, 1.22, 0]} castShadow><boxGeometry args={[0.22, 0.18, 0.38]} /><meshStandardMaterial color="#3a5070" roughness={0.5} metalness={0.4} emissive={EMIS} emissiveIntensity={EMIS_I} /></mesh>
+        <mesh position={[0.42, 1.22, 0]} castShadow><boxGeometry args={[0.22, 0.18, 0.38]} /><meshStandardMaterial color="#3a5070" roughness={0.5} metalness={0.4} emissive={EMIS} emissiveIntensity={EMIS_I} /></mesh>
+        <mesh ref={capeRef} position={[0, 1.0, -0.25]} castShadow><boxGeometry args={[0.6, 0.8, 0.06]} /><meshStandardMaterial color={CAPE} roughness={0.95} emissive="#3a0010" emissiveIntensity={0.3} /></mesh>
+        <group ref={leftArmRef} position={[-0.45, 1.15, 0]}>
+          <mesh castShadow position={[0, -0.2, 0]}><boxGeometry args={[0.2, 0.45, 0.2]} /><meshStandardMaterial color={ARMOR} roughness={0.6} metalness={0.3} emissive={EMIS} emissiveIntensity={EMIS_I} /></mesh>
+          <mesh castShadow position={[0, -0.47, 0]}><boxGeometry args={[0.22, 0.18, 0.22]} /><meshStandardMaterial color="#3a5070" roughness={0.5} metalness={0.5} /></mesh>
+          <mesh position={[-0.08, -0.3, 0.15]} castShadow><boxGeometry args={[0.08, 0.4, 0.3]} /><meshStandardMaterial color="#2a3a50" roughness={0.5} metalness={0.5} /></mesh>
+        </group>
+        <group ref={rightArmRef} position={[0.45, 1.15, 0]}>
+          <mesh castShadow position={[0, -0.2, 0]}><boxGeometry args={[0.2, 0.45, 0.2]} /><meshStandardMaterial color={ARMOR} roughness={0.6} metalness={0.3} emissive={EMIS} emissiveIntensity={EMIS_I} /></mesh>
+          <mesh castShadow position={[0, -0.47, 0]}><boxGeometry args={[0.22, 0.18, 0.22]} /><meshStandardMaterial color="#3a5070" roughness={0.5} metalness={0.5} /></mesh>
+          <group ref={weaponRef} position={[0.1, -0.45, 0]}>
+            <mesh castShadow position={[0, -0.5, 0]}><boxGeometry args={[0.08, 1.0, 0.04]} /><meshStandardMaterial color={SWORD} roughness={0.2} metalness={0.9} emissive="#8080ff" emissiveIntensity={0.4} /></mesh>
+            <mesh castShadow position={[0, -0.02, 0]}><boxGeometry args={[0.28, 0.06, 0.08]} /><meshStandardMaterial color="#c0a020" roughness={0.4} metalness={0.7} /></mesh>
+          </group>
+        </group>
+        <group position={[0, 1.65, 0]}>
+          <mesh castShadow><boxGeometry args={[0.42, 0.42, 0.38]} /><meshStandardMaterial color={SKIN} roughness={0.85} /></mesh>
+          <mesh castShadow position={[0, 0.2, 0]}><boxGeometry args={[0.46, 0.28, 0.42]} /><meshStandardMaterial color="#3a5070" roughness={0.5} metalness={0.4} emissive={EMIS} emissiveIntensity={EMIS_I} /></mesh>
+          <mesh position={[0, 0.12, 0.21]}><boxGeometry args={[0.3, 0.05, 0.02]} /><meshStandardMaterial color="#ff2200" emissive="#ff2200" emissiveIntensity={3} /></mesh>
+          <mesh castShadow position={[0, 0.4, 0]}><boxGeometry args={[0.1, 0.2, 0.35]} /><meshStandardMaterial color={CAPE} roughness={0.9} /></mesh>
+        </group>
+      </group>
+      <pointLight ref={playerLtRef} color="#8070ff" intensity={1.5} distance={10} decay={2} />
     </>
   );
 }
