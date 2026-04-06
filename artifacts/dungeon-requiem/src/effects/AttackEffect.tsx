@@ -1,9 +1,10 @@
 /**
  * AttackEffect.tsx
- * Sword swing arc visual and hit sparks.
+ * Fire-and-forget sword swing arc visual.
+ * Each increment of triggerKey plays one clean flash animation.
  */
 
-import { useRef, useEffect } from "react";
+import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 
@@ -11,32 +12,33 @@ interface AttackEffectProps {
   x: number;
   z: number;
   angle: number;
-  active: boolean;
+  triggerKey: number;
 }
 
-export function AttackEffect({ x, z, angle, active }: AttackEffectProps) {
+export function AttackEffect({ x, z, angle, triggerKey }: AttackEffectProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const progress = useRef(0);
   const lightRef = useRef<THREE.PointLight>(null);
-
-  useEffect(() => {
-    if (active) progress.current = 0;
-  }, [active]);
+  const progress  = useRef(0);
+  const prevTrigger = useRef(triggerKey);
 
   useFrame((_, delta) => {
     if (!groupRef.current || !lightRef.current) return;
 
-    if (active && progress.current < 1) {
-      progress.current += delta * 5;
-    } else if (!active) {
-      progress.current = Math.max(0, progress.current - delta * 8);
+    if (triggerKey !== prevTrigger.current) {
+      prevTrigger.current = triggerKey;
+      progress.current = 1;
+    }
+
+    if (progress.current > 0) {
+      progress.current = Math.max(0, progress.current - delta * 4.5);
     }
 
     groupRef.current.position.set(x, 0.8, z);
     groupRef.current.rotation.y = angle;
 
-    const p = Math.min(1, progress.current);
-    groupRef.current.scale.setScalar(p);
+    const p = progress.current;
+    const scale = Math.sin(p * Math.PI);
+    groupRef.current.scale.setScalar(scale);
     groupRef.current.children.forEach((child, i) => {
       if (child instanceof THREE.Mesh) {
         (child.material as THREE.MeshStandardMaterial).opacity = p * (1 - i * 0.15);
@@ -50,9 +52,12 @@ export function AttackEffect({ x, z, angle, active }: AttackEffectProps) {
   return (
     <>
       <group ref={groupRef}>
-        {/* Arc slashes */}
         {[0, 0.18, 0.35].map((offset, i) => (
-          <mesh key={i} position={[Math.sin(-0.6 + offset * 2) * 2.5, offset * 0.3, Math.cos(-0.6 + offset * 2) * 2.5]} rotation={[0, -0.6 + offset * 2, Math.PI / 4]}>
+          <mesh
+            key={i}
+            position={[Math.sin(-0.6 + offset * 2) * 2.5, offset * 0.3, Math.cos(-0.6 + offset * 2) * 2.5]}
+            rotation={[0, -0.6 + offset * 2, Math.PI / 4]}
+          >
             <planeGeometry args={[0.15 - i * 0.03, 2.0 - i * 0.3]} />
             <meshStandardMaterial
               color="#e0e0ff"
@@ -66,13 +71,7 @@ export function AttackEffect({ x, z, angle, active }: AttackEffectProps) {
           </mesh>
         ))}
       </group>
-      <pointLight
-        ref={lightRef}
-        color="#8080ff"
-        intensity={0}
-        distance={8}
-        decay={2}
-      />
+      <pointLight ref={lightRef} color="#8080ff" intensity={0} distance={8} decay={2} />
     </>
   );
 }

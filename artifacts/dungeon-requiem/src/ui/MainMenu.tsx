@@ -60,8 +60,7 @@ export function MainMenu() {
           <div style={styles.controlsTitle}>CONTROLS</div>
           <div style={styles.controlsGrid}>
             <span style={styles.key}>W A S D</span><span style={styles.action}>Move</span>
-            <span style={styles.key}>Mouse</span><span style={styles.action}>Aim</span>
-            <span style={styles.key}>LMB / Space</span><span style={styles.action}>Attack</span>
+            <span style={styles.key}>Mouse</span><span style={styles.action}>Aim &amp; auto-attack</span>
             <span style={styles.key}>Shift</span><span style={styles.action}>Dash (invincible)</span>
             <span style={styles.key}>ESC</span><span style={styles.action}>Pause</span>
           </div>

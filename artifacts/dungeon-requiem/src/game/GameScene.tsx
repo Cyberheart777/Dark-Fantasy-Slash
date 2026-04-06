@@ -41,7 +41,7 @@ export interface PlayerRuntime {
   dashTimer: number; dashCooldown: number;
   dashVX: number; dashVZ: number;
   isDashing: boolean;
-  attackTimer: number; isAttacking: boolean; attackAngle: number;
+  attackTimer: number; attackTrigger: number; attackAngle: number;
   dead: boolean;
   regenTimer: number;
 }
@@ -157,7 +157,7 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     invTimer: 0,
     dashTimer: 0, dashCooldown: 0,
     dashVX: 0, dashVZ: 0, isDashing: false,
-    attackTimer: 0, isAttacking: false, attackAngle: 0,
+    attackTimer: 0, attackTrigger: 0, attackAngle: 0,
     dead: false, regenTimer: 0,
   };
 }
@@ -268,7 +268,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
   const phase = useGameStore((s) => s.phase);
   const enemies = useGameStore((s) => s.enemies);
   const xpOrbs = useGameStore((s) => s.xpOrbs);
-  const isAttacking = useGameStore((s) => s.isAttacking);
+  const attackTrigger = useGameStore((s) => s.attackTrigger);
   const playerX = useGameStore((s) => s.playerX);
   const playerZ = useGameStore((s) => s.playerZ);
   const playerAngle = useGameStore((s) => s.playerAngle);
@@ -292,10 +292,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     if (!p.dead) {
       if (p.invTimer > 0) p.invTimer -= delta;
       if (p.dashCooldown > 0) p.dashCooldown -= delta;
-      if (p.attackTimer > 0) {
-        p.attackTimer -= delta;
-        if (p.attackTimer <= 0) p.isAttacking = false;
-      }
+      if (p.attackTimer > 0) p.attackTimer -= delta;
 
       // Aim
       const dx = input.worldAimX - p.x;
@@ -346,11 +343,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       p.x = Math.max(-ARENA, Math.min(ARENA, p.x));
       p.z = Math.max(-ARENA, Math.min(ARENA, p.z));
 
-      // Attack
-      if (input.attack && p.attackTimer <= 0) {
-        g.input.consumeAttack();
+      // Auto-attack — fires automatically when cooldown expires
+      if (p.attackTimer <= 0) {
         const attackDuration = 1 / stats.attackSpeed;
-        p.isAttacking = true;
+        p.attackTrigger++;
         p.attackTimer = attackDuration;
         p.attackAngle = p.angle;
         cleaved.current.clear();
@@ -649,7 +645,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     // ── Sync to UI store ──────────────────────────────────────────────────
     store.setPlayerHP(p.hp, p.maxHp);
     store.setPlayerPos(p.x, p.z, p.angle);
-    store.setAttackState(p.isAttacking, p.isDashing);
+    store.setAttackState(p.attackTrigger, p.isDashing);
     store.setProgression(
       g.progression.level,
       g.progression.xp,
@@ -683,7 +679,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       <CameraController gs={gs} />
       <AimResolver gs={gs} />
       <Player3D gs={gs} />
-      <AttackEffect x={playerX} z={playerZ} angle={playerAngle} active={isAttacking} />
+      <AttackEffect x={playerX} z={playerZ} angle={playerAngle} triggerKey={attackTrigger} />
       <BossAoeRing gs={gs} />
       {gs.current?.enemies.filter((e) => !e.dead).map((e) => (
         <Enemy3D key={e.id} enemy={e} />

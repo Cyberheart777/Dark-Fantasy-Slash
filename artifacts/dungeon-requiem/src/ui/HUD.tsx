@@ -11,7 +11,7 @@ export function HUD() {
   const {
     playerHP, playerMaxHP, xp, xpToNext, level,
     wave, score, kills, survivalTime,
-    acquiredUpgrades, isDashing, isAttacking,
+    acquiredUpgrades, isDashing,
     bossHP, bossMaxHP, bossName, bossAlive, bossSpecialWarn,
   } = useGameStore();
 
@@ -75,8 +75,7 @@ export function HUD() {
       {/* Controls hint */}
       <div style={styles.controls}>
         <span>WASD Move</span>
-        <span>Mouse Aim</span>
-        <span>LMB / Space Attack</span>
+        <span>Mouse Aim &amp; auto-attack</span>
         <span>Shift Dash</span>
         <span>ESC Pause</span>
       </div>

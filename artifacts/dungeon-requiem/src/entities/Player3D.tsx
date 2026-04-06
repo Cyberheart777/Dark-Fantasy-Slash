@@ -22,9 +22,11 @@ export function Player3D({ gs }: PlayerProps) {
   const weaponRef   = useRef<THREE.Group>(null);
   const capeRef     = useRef<THREE.Mesh>(null);
   const playerLtRef = useRef<THREE.PointLight>(null);
-  const t           = useRef(0);
-  const lastX       = useRef(0);
-  const lastZ       = useRef(0);
+  const t                = useRef(0);
+  const lastX            = useRef(0);
+  const lastZ            = useRef(0);
+  const weaponSwingProg  = useRef(0);
+  const lastAttackTrigger = useRef(0);
 
   useFrame((_, delta) => {
     if (!gs.current) return;
@@ -61,11 +63,18 @@ export function Player3D({ gs }: PlayerProps) {
       bodyRef.current.position.y = 1.0 + Math.sin(t.current * 1.5) * 0.03;
     }
 
-    // Weapon swing
+    // Weapon swing — fire-and-forget, driven by attackTrigger counter
+    if (p.attackTrigger !== lastAttackTrigger.current) {
+      lastAttackTrigger.current = p.attackTrigger;
+      weaponSwingProg.current = 1;
+    }
+    if (weaponSwingProg.current > 0) {
+      weaponSwingProg.current = Math.max(0, weaponSwingProg.current - delta * 5);
+    }
     if (weaponRef.current) {
-      if (p.isAttacking) {
-        const dur = 1 / gs.current.progression.stats.attackSpeed;
-        const prog = 1 - Math.max(0, p.attackTimer) / dur;
+      const swp = weaponSwingProg.current;
+      if (swp > 0) {
+        const prog = 1 - swp;
         weaponRef.current.rotation.x = prog * Math.PI * 1.4 - Math.PI * 0.5;
         weaponRef.current.rotation.z = Math.sin(prog * Math.PI) * 0.5;
       } else {

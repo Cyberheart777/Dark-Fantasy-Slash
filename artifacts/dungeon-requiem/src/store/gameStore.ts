@@ -74,7 +74,7 @@ export interface GameUIState {
 
   // Combat feedback
   attackFlash: boolean;
-  isAttacking: boolean;
+  attackTrigger: number;
   isDashing: boolean;
 
   // Settings
@@ -116,7 +116,7 @@ export interface GameUIState {
   setXPOrbs: (orbs: XPOrbState[]) => void;
   addDamagePopup: (popup: DamagePopup) => void;
   removeDamagePopup: (id: string) => void;
-  setAttackState: (isAttacking: boolean, isDashing: boolean) => void;
+  setAttackState: (attackTrigger: number, isDashing: boolean) => void;
   setVolume: (master: number, sfx: number, music: number, muted: boolean) => void;
   setBestScore: (score: number, wave: number) => void;
   resetGame: () => void;
@@ -142,7 +142,7 @@ const initialState = {
   xpOrbs: [] as XPOrbState[],
   damagePopups: [] as DamagePopup[],
   attackFlash: false,
-  isAttacking: false,
+  attackTrigger: 0,
   isDashing: false,
   masterVolume: 0.6,
   sfxVolume: 0.7,
@@ -198,8 +198,8 @@ export const useGameStore = create<GameUIState>((set) => ({
   removeDamagePopup: (id) =>
     set((s) => ({ damagePopups: s.damagePopups.filter((p) => p.id !== id) })),
 
-  setAttackState: (isAttacking, isDashing) =>
-    set({ isAttacking, isDashing }),
+  setAttackState: (attackTrigger, isDashing) =>
+    set({ attackTrigger, isDashing }),
 
   setVolume: (masterVolume, sfxVolume, musicVolume, muted) =>
     set({ masterVolume, sfxVolume, musicVolume, muted }),
