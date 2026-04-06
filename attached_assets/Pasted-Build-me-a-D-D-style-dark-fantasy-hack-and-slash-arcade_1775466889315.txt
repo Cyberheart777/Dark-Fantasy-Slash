@@ -1,0 +1,231 @@
+Build me a D&D-style dark fantasy hack-and-slash arcade game with RPG progression that starts as a playable browser game, but is architected from day one so it can later be ported and released on Steam with minimal rework.
+
+Main goal:
+Create a polished top-down fantasy action game with real-time combat, enemy waves, experience, leveling, upgrades, and replayability. The game should feel like a fast arcade action RPG with strong progression and satisfying combat.
+
+Critical requirement:
+The codebase must be built in a way that is future-friendly for Steam release.
+That means:
+- Clean modular architecture
+- No unnecessary browser-only dependencies
+- Input system that can later support keyboard, mouse, and controller
+- Save/load system that can later be adapted for desktop saves
+- Resolution handling suitable for desktop/fullscreen play
+- Easy future wrapping with Electron, Tauri, or conversion into a desktop build pipeline
+- Asset structure, settings, menus, and progression systems built like a real PC indie game, not just a simple browser demo
+
+Recommended stack:
+- Phaser 3 with HTML/CSS/JavaScript
+- Structure code cleanly and professionally
+- Organize folders into:
+  - /src
+  - /scenes
+  - /systems
+  - /entities
+  - /ui
+  - /data
+  - /assets
+- Create reusable managers for combat, progression, spawning, upgrades, save data, audio, and settings
+
+Game concept:
+- Top-down hack-and-slash fantasy survival/action game
+- Dark dungeon / arena setting
+- Player fights endless or stage-based waves of enemies
+- Enemies drop XP
+- XP levels the player up
+- Each level grants upgrade choices
+- Difficulty scales over time
+- Player eventually dies or clears a stage, then sees a summary/results screen
+
+Gameplay style:
+- Fast, punchy, responsive
+- Inspired by classic fantasy arcade action and action-RPG progression
+- D&D-inspired tone, but do not use copyrighted D&D names, monsters, classes, icons, or assets directly
+- Create original-but-familiar fantasy archetypes
+
+Player:
+Start with 1 class only:
+- Warrior / dungeon adventurer
+Stats:
+- Health
+- Damage
+- Attack speed
+- Movement speed
+- Crit chance
+- Armor
+- Level
+- XP
+- Optional secondary stats like life steal, cleave chance, dodge chance
+
+Controls:
+- WASD movement
+- Mouse aim or auto-target melee attack
+- Add an input abstraction layer so controls can later support:
+  - keyboard/mouse
+  - Xbox-style controller
+  - Steam Deck style controls
+- Include a simple keybinding/settings structure, even if basic in version 1
+
+Combat:
+- Real-time melee combat
+- Sword slash arc, cone, or short-range cleave
+- Hit detection should feel responsive
+- Add:
+  - damage popups
+  - hit flash
+  - enemy death effects
+  - brief invulnerability frames after player hit
+  - optional light screen shake
+  - XP pickup feedback
+- Combat should feel satisfying within the first minute of play
+
+Experience and leveling:
+- Enemies drop XP orbs or immediate XP rewards
+- XP bar visible on HUD
+- Early levels should come quickly, then slow down
+- On level up, pause action and show 3 upgrade choices
+- Make upgrade system data-driven so new upgrades can easily be added later
+
+Example upgrades:
+- +10% damage
+- +10% attack speed
+- +15 max health
+- +5% crit chance
+- +10% movement speed
+- life steal
+- cleave width increase
+- double strike chance
+- armor increase
+- health regen
+- dash cooldown reduction if dash is added later
+
+Enemies:
+Include at least 4 original enemy archetypes:
+1. Fast weak melee creature
+2. Slow tanky brute
+3. Mid-speed agile undead or assassin type
+4. Elite enemy with much higher health/damage that appears later
+Design enemy system so more enemy types and bosses can be added easily
+
+Difficulty scaling:
+- Increase enemy spawn rate over time
+- Increase enemy health/damage gradually
+- Introduce intensity ramping
+- Make runs become noticeably harder after a few minutes
+- Optional mini-boss or boss system if manageable
+
+Game modes:
+Version 1 should include one strong core mode:
+- Survival arena mode
+Optional architecture hook for future expansion:
+- stage runs
+- boss rush
+- dungeon rooms
+- meta progression
+
+UI / UX:
+Create UI that feels like a real indie PC game:
+- Start screen
+- Main menu
+- Settings menu stub
+- Pause menu
+- HUD during gameplay
+- Level-up overlay
+- Game over / run summary screen
+HUD should show:
+- Health bar
+- XP bar
+- Level
+- Survival timer
+- Kill count
+- Chosen upgrades/passives
+- Optional minimap placeholder or gold count hook
+
+Save / progression structure:
+Even if version 1 is simple, build a save system abstraction now.
+Need support for:
+- local save data
+- high score / best run
+- settings persistence
+- future unlocks
+Use localStorage for browser version, but separate save logic so it can later be swapped for desktop file save handling
+
+Steam portability requirements:
+Build with future Steam release in mind:
+- Avoid anything that only works in browser unless isolated
+- Add fullscreen-friendly resolution scaling
+- Make UI readable on desktop monitors
+- Keep performance stable with many enemies
+- Make assets easy to replace with commercial-ready versions
+- Create a clean game loop and menu structure that could later support:
+  - achievements
+  - controller support
+  - settings menu
+  - audio sliders
+  - save slots
+  - cloud save integration later
+- Include comments in code noting what would need to change for Steam packaging
+
+Packaging direction:
+In the README, include a section explaining:
+1. How to run in browser
+2. How this project could later be wrapped for desktop using Electron or Tauri
+3. What systems are already built to support a later Steam release
+4. What should be improved before a commercial launch
+
+Technical quality:
+- Keep code modular and readable
+- Use config/data files for balancing
+- Separate gameplay constants from logic
+- Do not hardcode everything into one giant file
+- Add a simple state manager for menus/gameplay/game over
+- Use placeholder art if necessary, but keep asset pipeline organized
+
+Audio:
+- Add hooks for sound effects and music
+- Even if placeholders are used, structure audio like a real game
+- Support mute and volume settings architecture
+
+Performance:
+- Optimize for many enemies on screen
+- Avoid wasteful loops where possible
+- Keep collisions and updates efficient
+- Aim for smooth desktop gameplay
+
+Version 1 scope:
+Do not overbuild.
+Make a complete, fun, polished playable prototype first.
+Prioritize:
+1. responsive movement
+2. satisfying melee combat
+3. enemy spawning/scaling
+4. XP and leveling
+5. upgrade choices
+6. clear UI
+7. solid architecture for future Steam porting
+
+Nice-to-have if manageable:
+- Boss every few minutes
+- Gold drops
+- Simple out-of-run upgrades
+- Controller support stub
+- Dash ability
+- Basic audio
+- Character select placeholder for future classes
+- Local leaderboard / best runs
+- Procedural room variation hook
+
+Deliverables:
+1. Fully playable game
+2. Clean modular file structure
+3. README with run instructions
+4. README section called “Path to Steam Release”
+5. Config files for balance tuning
+6. Save system abstraction
+7. Input abstraction layer
+8. Menus and HUD that feel like a real PC indie game
+9. Code comments identifying systems designed for future desktop/Steam packaging
+10. README section called “Top 10 Improvements Before Commercial Release”
+
+Important:
+This should not feel like a basic web toy. It should feel like the foundation of a real indie action game that begins in the browser but can later become a Steam release with much less rebuilding.
