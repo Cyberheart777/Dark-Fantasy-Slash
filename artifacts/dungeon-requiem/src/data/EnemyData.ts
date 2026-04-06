@@ -9,7 +9,7 @@
  *   orange= 50× (boss)
  */
 
-export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss";
+export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss" | "xp_goblin";
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
 
 export interface EnemyDef {
@@ -111,6 +111,22 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     color: "#1a001a",
     emissive: "#3d003d",
     scale: 2.2,
+  },
+  xp_goblin: {
+    type: "xp_goblin",
+    displayName: "Gold Hoarder",
+    health: 22,
+    damage: 0,
+    moveSpeed: 13.0,
+    xpReward: GREEN_XP * 40,     // 400 — massive XP jackpot
+    crystalTier: "orange",
+    attackRange: 0,
+    attackInterval: 999,
+    collisionRadius: 0.55,
+    scoreValue: 250,
+    color: "#ffcc00",
+    emissive: "#aa6600",
+    scale: 0.65,
   },
 };
 

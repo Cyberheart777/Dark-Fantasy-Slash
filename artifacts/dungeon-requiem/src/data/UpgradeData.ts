@@ -1,8 +1,8 @@
 /**
  * UpgradeData.ts
  * Data-driven upgrade/passive definitions.
+ * Relics are rare, game-changing items offered every 4 levels.
  * Adding new upgrades: just add an entry to UPGRADES.
- * STEAM NOTE: Supports external JSON loading for content mods.
  */
 
 export type UpgradeId =
@@ -25,14 +25,24 @@ export type UpgradeId =
   | "attack_range_boost"
   | "soul_feast"
   | "wraithplate"
-  | "overclock";
+  | "overclock"
+  // ── Relics ─────────────────────────────────────────────────────────────────
+  | "relic_soulfire"
+  | "relic_vampiric"
+  | "relic_phantom_echo"
+  | "relic_deaths_bargain"
+  | "relic_abyss_crown"
+  | "relic_blood_covenant"
+  | "relic_storm_heart"
+  | "relic_iron_oath";
 
 export interface UpgradeDef {
   id: UpgradeId;
   name: string;
   description: string;
-  icon: string;   // Emoji placeholder — replace with spritesheet key for Steam build
+  icon: string;
   maxStacks: number;
+  isRelic?: boolean;
   apply: (stats: PlayerStats) => void;
 }
 
@@ -54,6 +64,12 @@ export interface PlayerStats {
   attackRange: number;
   attackArc: number;
   onKillHeal: number;
+  // ── Relic-powered fields ───────────────────────────────────────────────────
+  soulfireChance: number;      // 0..1 — kills trigger area explosion
+  phantomEchoEvery: number;    // 0=off, N=bonus strike every Nth attack
+  deathBargainActive: number;  // 1=cheat-death ready, 0=used or not acquired
+  incomingDamageMult: number;  // 1.0 default, Abyss Crown raises this
+  stormCallInterval: number;   // 0=off, N=auto lightning every N seconds
 }
 
 export function createDefaultStats(): PlayerStats {
@@ -62,7 +78,7 @@ export function createDefaultStats(): PlayerStats {
     currentHealth: 120,
     damage: 18,
     attackSpeed: 1.0,
-    moveSpeed: 8,          // units/second (3D scale)
+    moveSpeed: 8,
     critChance: 0.05,
     armor: 5,
     lifesteal: 0,
@@ -70,11 +86,16 @@ export function createDefaultStats(): PlayerStats {
     dodgeChance: 0,
     doubleStrikeChance: 0,
     healthRegen: 0,
-    dashCooldown: 2.2,     // seconds (3D scale)
+    dashCooldown: 2.2,
     xpMultiplier: 1.0,
-    attackRange: 5,        // units (3D scale)
+    attackRange: 5,
     attackArc: 120,
     onKillHeal: 0,
+    soulfireChance: 0,
+    phantomEchoEvery: 0,
+    deathBargainActive: 0,
+    incomingDamageMult: 1.0,
+    stormCallInterval: 0,
   };
 }
 
@@ -249,23 +270,135 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
       s.moveSpeed   = parseFloat((s.moveSpeed   * 1.05).toFixed(3));
     },
   },
+
+  // ── Relics ─────────────────────────────────────────────────────────────────
+
+  relic_soulfire: {
+    id: "relic_soulfire",
+    name: "Soulfire Blade",
+    description: "Kills have a 35% chance to explode, dealing 2× your damage to nearby foes.",
+    icon: "🔥",
+    maxStacks: 1,
+    isRelic: true,
+    apply: (s) => { s.soulfireChance = 0.35; },
+  },
+  relic_vampiric: {
+    id: "relic_vampiric",
+    name: "Vampiric Shroud",
+    description: "+18% lifesteal. Every kill fully refreshes your invincibility window.",
+    icon: "🧛",
+    maxStacks: 1,
+    isRelic: true,
+    apply: (s) => { s.lifesteal += 0.18; s.onKillHeal += 5; },
+  },
+  relic_phantom_echo: {
+    id: "relic_phantom_echo",
+    name: "Phantom Echo",
+    description: "Every 5th attack fires a free ghost strike for 70% damage. Costs nothing.",
+    icon: "👁️",
+    maxStacks: 1,
+    isRelic: true,
+    apply: (s) => { s.phantomEchoEvery = 5; },
+  },
+  relic_deaths_bargain: {
+    id: "relic_deaths_bargain",
+    name: "Death's Bargain",
+    description: "Once per run, survive a lethal blow. You live with 1 HP and cannot die for 2s.",
+    icon: "💀",
+    maxStacks: 1,
+    isRelic: true,
+    apply: (s) => { s.deathBargainActive = 1; },
+  },
+  relic_abyss_crown: {
+    id: "relic_abyss_crown",
+    name: "Abyss Crown",
+    description: "+100% XP gain. Cursed: you take 25% more damage from all sources.",
+    icon: "👑",
+    maxStacks: 1,
+    isRelic: true,
+    apply: (s) => {
+      s.xpMultiplier = parseFloat((s.xpMultiplier * 2.0).toFixed(3));
+      s.incomingDamageMult = parseFloat((s.incomingDamageMult * 1.25).toFixed(3));
+    },
+  },
+  relic_blood_covenant: {
+    id: "relic_blood_covenant",
+    name: "Blood Covenant",
+    description: "Sacrifice 30% of your max HP. In return, deal +70% more damage permanently.",
+    icon: "🩸",
+    maxStacks: 1,
+    isRelic: true,
+    apply: (s) => {
+      s.damage = Math.round(s.damage * 1.70);
+      s.maxHealth = Math.max(1, Math.round(s.maxHealth * 0.70));
+      s.currentHealth = Math.min(s.currentHealth, s.maxHealth);
+    },
+  },
+  relic_storm_heart: {
+    id: "relic_storm_heart",
+    name: "Storm Heart",
+    description: "Every 12 seconds, a lightning storm strikes up to 10 enemies for 3× your damage.",
+    icon: "⚡",
+    maxStacks: 1,
+    isRelic: true,
+    apply: (s) => { s.stormCallInterval = 12; },
+  },
+  relic_iron_oath: {
+    id: "relic_iron_oath",
+    name: "Iron Oath",
+    description: "Gain +80 armor and +40% max HP. Your dash is disabled — you stand your ground.",
+    icon: "⚙️",
+    maxStacks: 1,
+    isRelic: true,
+    apply: (s) => {
+      s.armor += 80;
+      const bonus = Math.round(s.maxHealth * 0.40);
+      s.maxHealth += bonus;
+      s.currentHealth = Math.min(s.currentHealth + bonus, s.maxHealth);
+      s.dashCooldown = 9999;
+    },
+  },
 };
 
-/** Pick 3 random upgrades, avoiding over-stacked ones */
+const RELIC_IDS: UpgradeId[] = [
+  "relic_soulfire", "relic_vampiric", "relic_phantom_echo", "relic_deaths_bargain",
+  "relic_abyss_crown", "relic_blood_covenant", "relic_storm_heart", "relic_iron_oath",
+];
+
+/** Pick 3 level-up choices. Every 4th level guarantees 1 relic slot. */
 export function pickUpgradeChoices(
   acquired: Map<UpgradeId, number>,
-  count = 3
+  count = 3,
+  level = 1
 ): UpgradeDef[] {
-  const available = (Object.values(UPGRADES) as UpgradeDef[]).filter((u) => {
+  const normalPool = (Object.values(UPGRADES) as UpgradeDef[]).filter((u) => {
+    if (u.isRelic) return false;
     const stacks = acquired.get(u.id) ?? 0;
     return stacks < u.maxStacks;
   });
+  const relicPool = RELIC_IDS
+    .map((id) => UPGRADES[id])
+    .filter((u) => (acquired.get(u.id) ?? 0) < u.maxStacks);
 
-  // Shuffle
-  for (let i = available.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [available[i], available[j]] = [available[j], available[i]];
+  const shuffled = <T>(arr: T[]): T[] => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  const offerRelic = relicPool.length > 0 && (
+    level % 4 === 0 ||
+    (level >= 5 && Math.random() < 0.25)
+  );
+
+  if (offerRelic) {
+    const relic = shuffled(relicPool)[0];
+    const normals = shuffled(normalPool).slice(0, count - 1);
+    return shuffled([relic, ...normals]);
   }
 
-  return available.slice(0, count);
+  return shuffled(normalPool).slice(0, count);
 }

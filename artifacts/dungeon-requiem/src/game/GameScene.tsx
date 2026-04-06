@@ -45,6 +45,7 @@ export interface PlayerRuntime {
   attackTimer: number; attackTrigger: number; attackAngle: number;
   dead: boolean;
   regenTimer: number;
+  echoAttackCounter: number;
 }
 
 export interface EnemyRuntime {
@@ -115,6 +116,8 @@ interface GameState {
   running: boolean;
   bossAlive: boolean;
   bossId: string | null;
+  goblinWaveSpawned: number;
+  stormCallTimer: number;
 }
 
 // ─── Torch positions ──────────────────────────────────────────────────────────
@@ -154,7 +157,7 @@ function makeProgWithMeta(cls: CharacterClass, race: RaceType): { progression: P
   resolved.currentHealth = resolved.maxHealth;
   resolved.damage = Math.round(resolved.damage);
   // 3. Hand off to ProgressionManager — per-run upgrades (additive %) stack on top
-  const progression = new ProgressionManager(resolved);
+  const progression = new ProgressionManager(resolved, cls);
   return { progression, startHp: resolved.maxHealth };
 }
 
@@ -170,11 +173,12 @@ function projId()  { return `p${_pid++}`; }
 function eprojId() { return `ep${_epid++}`; }
 
 const CRYSTAL_TIER: Record<string, CrystalTier> = {
-  scuttler: "green",
-  wraith:   "blue",
-  brute:    "blue",
-  elite:    "purple",
-  boss:     "orange",
+  scuttler:  "green",
+  wraith:    "blue",
+  brute:     "blue",
+  elite:     "purple",
+  boss:      "orange",
+  xp_goblin: "orange",
 };
 
 // ─── Factory helpers ──────────────────────────────────────────────────────────
@@ -188,8 +192,78 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     dashTimer: 0, dashCooldown: 0,
     dashVX: 0, dashVZ: 0, isDashing: false,
     attackTimer: 0, attackTrigger: 0, attackAngle: 0,
-    dead: false, regenTimer: 0,
+    dead: false, regenTimer: 0, echoAttackCounter: 0,
   };
+}
+
+function spawnGoblin(): EnemyRuntime {
+  const def = ENEMY_DATA.xp_goblin;
+  const half = GAME_CONFIG.ARENA_HALF - 4;
+  const edge = Math.floor(Math.random() * 4);
+  let x = 0, z = 0;
+  switch (edge) {
+    case 0: x = Math.random() * half * 2 - half; z = -half; break;
+    case 1: x = Math.random() * half * 2 - half; z =  half; break;
+    case 2: x = -half; z = Math.random() * half * 2 - half; break;
+    case 3: x =  half; z = Math.random() * half * 2 - half; break;
+  }
+  return {
+    id: enemyId(), type: "xp_goblin", x, z,
+    hp: def.health, maxHp: def.health,
+    damage: 0, moveSpeed: def.moveSpeed,
+    attackRange: 0, attackInterval: 999, attackTimer: 999,
+    collisionRadius: def.collisionRadius,
+    xpReward: def.xpReward, scoreValue: def.scoreValue,
+    dead: false, hitFlashTimer: 0,
+    scale: def.scale, color: def.color, emissive: def.emissive,
+    vx: 0, vz: 0, phasing: false, phaseTimer: 0,
+    specialTimer: 15.0, // despawn countdown
+    specialWarning: false, specialWarnTimer: 0,
+    minionTimer: 0, radialTimer: 0,
+  };
+}
+
+// ─── Centralised player death handler ─────────────────────────────────────────
+// Handles Death's Bargain relic — call this wherever player hp drops to 0.
+
+function handlePlayerFatalDmg(p: PlayerRuntime, g: GameState): boolean {
+  const stats = g.progression.stats;
+  if (stats.deathBargainActive === 1) {
+    p.hp = 1;
+    stats.deathBargainActive = 0;
+    p.invTimer = 2.0; // 2s of post-bargain invincibility
+    audioManager.play("player_hurt");
+    return false; // survived
+  }
+  p.hp = 0; p.dead = true;
+  audioManager.play("player_death");
+  audioManager.stopMusic();
+  const store = useGameStore.getState();
+  store.setBossState(0, 0, "", false);
+  store.setBossSpecialWarn(false);
+  { const meta = useMetaStore.getState(); meta.addTotalKills(g.kills); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
+  const bonusShards = Math.round(g.wave * 15 + g.kills);
+  if (bonusShards > 0) {
+    useMetaStore.getState().addShards(bonusShards);
+    store.addRunShards(bonusShards);
+  }
+  return true; // died
+}
+
+// ─── Soulfire relic — explosion on kill ───────────────────────────────────────
+
+function triggerSoulfire(deadEnemy: EnemyRuntime, g: GameState): void {
+  if (Math.random() > g.progression.stats.soulfireChance) return;
+  const dmg = Math.round(g.progression.stats.damage * 2.0);
+  for (const nearby of g.enemies) {
+    if (nearby.dead || nearby.id === deadEnemy.id) continue;
+    const dx = nearby.x - deadEnemy.x;
+    const dz = nearby.z - deadEnemy.z;
+    if (Math.sqrt(dx * dx + dz * dz) <= 4.5) {
+      nearby.hp -= dmg;
+      nearby.hitFlashTimer = 0.25;
+    }
+  }
 }
 
 function spawnEnemy(wave: number): EnemyRuntime {
@@ -422,6 +496,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               useMetaStore.getState().addShards(5);
               useGameStore.getState().addRunShards(5);
               if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              if (stats.soulfireChance > 0) triggerSoulfire(e, g);
               const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
               g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
               if (e.type === "boss") {
@@ -433,6 +508,31 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 useMetaStore.getState().checkUnlocks();
               } else {
                 audioManager.play("enemy_death");
+              }
+            }
+          }
+          // Phantom Echo relic: every Nth attack, fire a free bonus sweep at 70% damage
+          if (stats.phantomEchoEvery > 0) {
+            p.echoAttackCounter++;
+            if (p.echoAttackCounter % stats.phantomEchoEvery === 0) {
+              const echoDmg = Math.round(stats.damage * 0.7);
+              for (const e of g.enemies) {
+                if (e.dead) continue;
+                const edx = e.x - p.x; const edz = e.z - p.z;
+                const dist = Math.sqrt(edx * edx + edz * edz);
+                if (dist > stats.attackRange * 1.2) continue;
+                const eAngle = Math.atan2(edx, edz);
+                let ad = Math.abs(eAngle - p.angle);
+                if (ad > Math.PI) ad = Math.PI * 2 - ad;
+                if (ad > ((stats.attackArc / 2 + 20) * (Math.PI / 180))) continue;
+                e.hp -= echoDmg; e.hitFlashTimer = 0.12;
+                if (e.hp <= 0 && !e.dead) {
+                  e.dead = true; g.kills++; g.score += e.scoreValue;
+                  if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+                  if (stats.soulfireChance > 0) triggerSoulfire(e, g);
+                  const xg = Math.round(e.xpReward * stats.xpMultiplier);
+                  g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
+                }
               }
             }
           }
@@ -502,6 +602,22 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       const edz = p.z - e.z;
       const dist = Math.sqrt(edx * edx + edz * edz);
 
+      // XP Goblin: flees player, despawns after 15s without dropping XP
+      if (e.type === "xp_goblin") {
+        e.specialTimer -= delta;
+        if (e.specialTimer <= 0) { e.dead = true; continue; }
+        if (dist > 0.1) {
+          const speed = e.moveSpeed;
+          e.vx = THREE.MathUtils.lerp(e.vx, -(edx / dist) * speed, 0.12);
+          e.vz = THREE.MathUtils.lerp(e.vz, -(edz / dist) * speed, 0.12);
+          e.x += e.vx * delta;
+          e.z += e.vz * delta;
+        }
+        e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
+        e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
+        continue; // goblins don't attack
+      }
+
       // Wraith phasing + ranged shot
       if (e.type === "wraith") {
         e.phaseTimer -= delta;
@@ -531,21 +647,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             const rawDmg = e.damage * 1.4 * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
             const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
             if (!isDodged) {
-              const effective = Math.max(1, rawDmg - stats.armor);
+              const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
               p.hp -= effective;
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.8;
-              if (p.hp <= 0) {
-                p.hp = 0; p.dead = true;
-                audioManager.play("player_death");
-                audioManager.stopMusic();
-                store.setBossState(0, 0, "", false);
-                { const meta = useMetaStore.getState(); meta.addTotalKills(g.kills); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
-                const bonusShards = Math.round(g.wave * 15 + g.kills);
-                if (bonusShards > 0) {
-                  useMetaStore.getState().addShards(bonusShards);
-                  store.addRunShards(bonusShards);
-                }
-              } else { audioManager.play("player_hurt"); }
+              if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
+              else { audioManager.play("player_hurt"); }
             }
           }
         }
@@ -567,30 +673,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           e.attackTimer = e.attackInterval;
           if (p.invTimer <= 0 && !p.isDashing && !p.dead) {
             const rawDmg = e.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
-            const effective = Math.max(1, rawDmg - stats.armor);
+            const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
             const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
             if (!isDodged) {
               p.hp -= effective;
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
-              if (p.hp <= 0) {
-                p.hp = 0;
-                p.dead = true;
-                audioManager.play("player_death");
-                audioManager.stopMusic();
-                store.setBossState(0, 0, "", false);
-                store.setBossSpecialWarn(false);
-                { const meta = useMetaStore.getState(); meta.addTotalKills(g.kills); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
-                // Bonus shards for how far they got: waves survived + kills
-                const bonusShards = Math.round(
-                  g.wave * 15 + g.kills,
-                );
-                if (bonusShards > 0) {
-                  useMetaStore.getState().addShards(bonusShards);
-                  useGameStore.getState().addRunShards(bonusShards);
-                }
-              } else {
-                audioManager.play("player_hurt");
-              }
+              if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
+              else { audioManager.play("player_hurt"); }
             }
           }
         }
@@ -640,6 +729,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           useMetaStore.getState().addShards(5);
           useGameStore.getState().addRunShards(5);
           if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+          if (stats.soulfireChance > 0) triggerSoulfire(e, g);
           const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
           g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
           if (e.type === "boss") {
@@ -676,24 +766,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const rawDmg = ep.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
           const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
           if (!isDodged) {
-            const effective = Math.max(1, rawDmg - stats.armor);
+            const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
             p.hp -= effective;
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.6;
-            if (p.hp <= 0) {
-              p.hp = 0;
-              p.dead = true;
-              audioManager.play("player_death");
-              audioManager.stopMusic();
-              store.setBossState(0, 0, "", false);
-              { const meta = useMetaStore.getState(); meta.addTotalKills(g.kills); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
-              const bonusShards = Math.round(g.wave * 15 + g.kills);
-              if (bonusShards > 0) {
-                useMetaStore.getState().addShards(bonusShards);
-                store.addRunShards(bonusShards);
-              }
-            } else {
-              audioManager.play("player_hurt");
-            }
+            if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
+            else { audioManager.play("player_hurt"); }
           }
         }
       }
@@ -726,24 +803,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const dist = Math.sqrt((p.x - e.x) ** 2 + (p.z - e.z) ** 2);
           if (dist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
             const rawDmg = e.damage * 3;
-            const effective = Math.max(100, rawDmg - stats.armor);
+            const effective = Math.max(100, (rawDmg - stats.armor) * stats.incomingDamageMult);
             p.hp -= effective;
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
-            if (p.hp <= 0) {
-              p.hp = 0;
-              p.dead = true;
-              audioManager.play("player_death");
-              audioManager.stopMusic();
-              store.setBossState(0, 0, "", false);
-              { const meta = useMetaStore.getState(); meta.addTotalKills(g.kills); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
-              const bonusShards = Math.round(g.wave * 15 + g.kills);
-              if (bonusShards > 0) {
-                useMetaStore.getState().addShards(bonusShards);
-                store.addRunShards(bonusShards);
-              }
-            } else {
-              audioManager.play("player_hurt");
-            }
+            if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
+            else { audioManager.play("player_hurt"); }
           }
         }
       } else {
@@ -788,6 +852,27 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       store.setBossState(e.hp, e.maxHp, ENEMY_DATA.boss.displayName, true);
     }
 
+    // ── Storm Heart relic: auto-lightning every N seconds ────────────────
+    if (stats.stormCallInterval > 0) {
+      g.stormCallTimer -= delta;
+      if (g.stormCallTimer <= 0) {
+        g.stormCallTimer = stats.stormCallInterval;
+        const targets = g.enemies.filter((e) => !e.dead).slice(0, 10);
+        for (const t of targets) {
+          const stormDmg = Math.round(stats.damage * 3.0);
+          t.hp -= stormDmg; t.hitFlashTimer = 0.3;
+          if (t.hp <= 0 && !t.dead) {
+            t.dead = true; g.kills++; g.score += t.scoreValue;
+            if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+            if (stats.soulfireChance > 0) triggerSoulfire(t, g);
+            const xg = Math.round(t.xpReward * stats.xpMultiplier);
+            g.xpOrbs.push({ id: orbId(), x: t.x, z: t.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[t.type] ?? "green" });
+            if (t.type === "boss") { g.bossAlive = false; g.bossId = null; store.setBossState(0, 0, "", false); }
+          }
+        }
+      }
+    }
+
     // ── Spawning ──────────────────────────────────────────────────────────
     g.waveTimer += delta;
     if (g.waveTimer >= GAME_CONFIG.DIFFICULTY.WAVE_DURATION) {
@@ -798,6 +883,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         GAME_CONFIG.DIFFICULTY.MIN_SPAWN_INTERVAL,
         g.spawnInterval - GAME_CONFIG.DIFFICULTY.SPAWN_REDUCTION
       );
+      // Guaranteed goblin every 7 waves
+      if (g.wave % 7 === 0 && g.goblinWaveSpawned !== g.wave) {
+        g.goblinWaveSpawned = g.wave;
+        g.enemies.push(spawnGoblin());
+      }
       // Boss wave trigger
       if (g.wave % GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL === 0 && !g.bossAlive) {
         const boss = spawnBoss(g.wave);
@@ -814,6 +904,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (g.spawnTimer >= g.spawnInterval) {
         g.spawnTimer = 0;
         g.enemies.push(spawnEnemy(g.wave));
+        // 8% random chance to also spawn a goblin (max 1 goblin at a time)
+        if (Math.random() < 0.08 && !g.enemies.some((e) => e.type === "xp_goblin" && !e.dead)) {
+          g.enemies.push(spawnGoblin());
+        }
       }
     }
 
@@ -996,6 +1090,8 @@ export function GameScene({ onRestart }: GameSceneProps) {
       bossAlive: false,
       bossId: null,
       enemyProjectiles: [],
+      goblinWaveSpawned: 0,
+      stormCallTimer: 0,
     };
     progression.onLevelUp = (_lvl, choices) => {
       audioManager.play("level_up");
@@ -1037,6 +1133,8 @@ export function GameScene({ onRestart }: GameSceneProps) {
           bossAlive: false,
           bossId: null,
           enemyProjectiles: [],
+          goblinWaveSpawned: 0,
+          stormCallTimer: 0,
         };
         _eid = 1; _oid = 1; _pid = 1; _epid = 1;
       } else {
