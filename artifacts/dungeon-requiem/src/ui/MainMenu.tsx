@@ -28,7 +28,7 @@ export function MainMenu() {
 
         <button
           style={styles.btnPrimary}
-          onClick={() => setPhase("playing")}
+          onClick={() => setPhase("charselect")}
         >
           ⚔ BEGIN DESCENT
         </button>

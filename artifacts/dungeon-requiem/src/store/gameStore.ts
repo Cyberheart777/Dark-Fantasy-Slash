@@ -6,9 +6,11 @@
 
 import { create } from "zustand";
 import type { UpgradeDef } from "../data/UpgradeData";
+import type { CharacterClass } from "../data/CharacterData";
 
 export type GamePhase =
   | "menu"
+  | "charselect"
   | "playing"
   | "paused"
   | "levelup"
@@ -84,8 +86,12 @@ export interface GameUIState {
   bestScore: number;
   bestWave: number;
 
+  // Character class
+  selectedClass: CharacterClass;
+
   // Actions
   setPhase: (phase: GamePhase) => void;
+  setSelectedClass: (cls: CharacterClass) => void;
   setPlayerHP: (hp: number, maxHp: number) => void;
   setPlayerPos: (x: number, z: number, angle: number) => void;
   setProgression: (level: number, xp: number, xpToNext: number) => void;
@@ -130,12 +136,14 @@ const initialState = {
   muted: false,
   bestScore: 0,
   bestWave: 0,
+  selectedClass: "warrior" as CharacterClass,
 };
 
 export const useGameStore = create<GameUIState>((set) => ({
   ...initialState,
 
   setPhase: (phase) => set({ phase }),
+  setSelectedClass: (selectedClass) => set({ selectedClass }),
 
   setPlayerHP: (playerHP, playerMaxHP) => set({ playerHP, playerMaxHP }),
 
@@ -176,10 +184,11 @@ export const useGameStore = create<GameUIState>((set) => ({
   setBestScore: (bestScore, bestWave) => set({ bestScore, bestWave }),
 
   resetGame: () =>
-    set({
+    set((s) => ({
       ...initialState,
       phase: "playing",
       bestScore: 0,
       bestWave: 0,
-    }),
+      selectedClass: s.selectedClass,
+    })),
 }));

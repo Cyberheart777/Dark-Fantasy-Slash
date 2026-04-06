@@ -7,6 +7,7 @@ import { useCallback } from "react";
 import { useGameStore } from "./store/gameStore";
 import { GameScene } from "./game/GameScene";
 import { MainMenu } from "./ui/MainMenu";
+import { CharacterSelect } from "./ui/CharacterSelect";
 import { GameOver } from "./ui/GameOver";
 
 export default function App() {
@@ -23,8 +24,9 @@ export default function App() {
   return (
     <div style={styles.root}>
       {phase === "menu" && <MainMenu />}
+      {phase === "charselect" && <CharacterSelect />}
 
-      {phase !== "menu" && (
+      {(phase !== "menu" && phase !== "charselect") && (
         <GameScene onRestart={handleRestart} />
       )}
 

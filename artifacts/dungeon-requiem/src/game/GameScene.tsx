@@ -12,6 +12,7 @@ import * as THREE from "three";
 import { useGameStore } from "../store/gameStore";
 import { GAME_CONFIG } from "../data/GameConfig";
 import { ENEMY_DATA, pickEnemyType } from "../data/EnemyData";
+import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
 import { ProgressionManager } from "../systems/ProgressionManager";
 import { InputManager3D } from "./InputManager3D";
 import { DungeonRoom } from "../world/DungeonRoom";
@@ -20,6 +21,7 @@ import { Player3D } from "../entities/Player3D";
 import { Enemy3D } from "../entities/Enemy3D";
 import { XPOrb3D } from "../entities/XPOrb3D";
 import { AttackEffect } from "../effects/AttackEffect";
+import { Projectile3D } from "../entities/Projectile3D";
 import { HUD } from "../ui/HUD";
 import { LevelUp } from "../ui/LevelUp";
 import { PauseMenu } from "../ui/PauseMenu";
@@ -58,13 +60,30 @@ export interface XPOrb {
   value: number; collected: boolean; floatOffset: number;
 }
 
+export interface Projectile {
+  id: string;
+  x: number; z: number;
+  vx: number; vz: number;
+  damage: number;
+  radius: number;
+  lifetime: number;
+  piercing: boolean;
+  hitIds: Set<string>;
+  color: string;
+  glowColor: string;
+  style: "orb" | "dagger";
+  dead: boolean;
+}
+
 interface GameState {
   player: PlayerRuntime;
   enemies: EnemyRuntime[];
   xpOrbs: XPOrb[];
+  projectiles: Projectile[];
   score: number; kills: number; survivalTime: number;
   spawnTimer: number; waveTimer: number;
   spawnInterval: number;
+  charClass: CharacterClass;
   progression: ProgressionManager;
   input: InputManager3D;
   running: boolean;
@@ -84,16 +103,18 @@ const TORCH_POSITIONS: [number, number, number][] = [
 
 let _eid = 1;
 let _oid = 1;
+let _pid = 1;
 function enemyId() { return `e${_eid++}`; }
 function orbId()   { return `o${_oid++}`; }
+function projId()  { return `p${_pid++}`; }
 
 // ─── Factory helpers ──────────────────────────────────────────────────────────
 
-function makePlayer(): PlayerRuntime {
+function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRuntime {
   return {
     x: 0, z: 0, angle: 0,
-    hp: GAME_CONFIG.PLAYER.START_HEALTH,
-    maxHp: GAME_CONFIG.PLAYER.START_HEALTH,
+    hp: startHp,
+    maxHp: startHp,
     invTimer: 0,
     dashTimer: 0, dashCooldown: 0,
     dashVX: 0, dashVZ: 0, isDashing: false,
@@ -265,43 +286,63 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         p.attackAngle = p.angle;
         cleaved.current.clear();
 
-        // Hit enemies in arc
-        for (const e of g.enemies) {
-          if (e.dead) continue;
-          const edx = e.x - p.x;
-          const edz = e.z - p.z;
-          const dist = Math.sqrt(edx * edx + edz * edz);
-          if (dist > stats.attackRange) continue;
-          const eAngle = Math.atan2(edx, edz);
-          let angleDiff = Math.abs(eAngle - p.angle);
-          if (angleDiff > Math.PI) angleDiff = Math.PI * 2 - angleDiff;
-          if (angleDiff > ATTACK_ARC_HALF) continue;
-          if (cleaved.current.has(e.id) && Math.random() > stats.cleaveChance) continue;
-          cleaved.current.add(e.id);
+        if (g.charClass === "warrior") {
+          // ── Melee arc sweep ────────────────────────────────────────────
+          for (const e of g.enemies) {
+            if (e.dead) continue;
+            const edx = e.x - p.x;
+            const edz = e.z - p.z;
+            const dist = Math.sqrt(edx * edx + edz * edz);
+            if (dist > stats.attackRange) continue;
+            const eAngle = Math.atan2(edx, edz);
+            let angleDiff = Math.abs(eAngle - p.angle);
+            if (angleDiff > Math.PI) angleDiff = Math.PI * 2 - angleDiff;
+            if (angleDiff > ATTACK_ARC_HALF) continue;
+            if (cleaved.current.has(e.id) && Math.random() > stats.cleaveChance) continue;
+            cleaved.current.add(e.id);
 
-          // Damage
-          let dmg = stats.damage;
-          const isCrit = Math.random() < stats.critChance;
-          if (isCrit) dmg = Math.floor(dmg * 1.85);
-          e.hp -= dmg;
-          e.hitFlashTimer = 0.15;
-
-          // Double strike
-          if (stats.doubleStrikeChance > 0 && Math.random() < stats.doubleStrikeChance) {
+            let dmg = stats.damage;
+            const isCrit = Math.random() < stats.critChance;
+            if (isCrit) dmg = Math.floor(dmg * 1.85);
             e.hp -= dmg;
-          }
+            e.hitFlashTimer = 0.15;
 
-          // Lifesteal
-          if (stats.lifesteal > 0) {
-            p.hp = Math.min(p.maxHp, p.hp + dmg * stats.lifesteal);
+            if (stats.doubleStrikeChance > 0 && Math.random() < stats.doubleStrikeChance) {
+              e.hp -= dmg;
+            }
+            if (stats.lifesteal > 0) {
+              p.hp = Math.min(p.maxHp, p.hp + dmg * stats.lifesteal);
+            }
+            if (e.hp <= 0) {
+              e.dead = true;
+              g.kills++;
+              g.score += e.scoreValue;
+              const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
+              g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2 });
+            }
           }
-
-          if (e.hp <= 0) {
-            e.dead = true;
-            g.kills++;
-            g.score += e.scoreValue;
-            const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
-            g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2 });
+        } else {
+          // ── Projectile attack (Mage / Rogue) ───────────────────────────
+          const def = CHARACTER_DATA[g.charClass];
+          const count = def.projectileCount;
+          for (let i = 0; i < count; i++) {
+            const spread = count > 1 ? (i - (count - 1) / 2) * def.projectileSpread : 0;
+            const angle = p.angle + spread;
+            g.projectiles.push({
+              id: projId(),
+              x: p.x, z: p.z,
+              vx: Math.sin(angle) * def.projectileSpeed,
+              vz: Math.cos(angle) * def.projectileSpeed,
+              damage: stats.damage,
+              radius: def.projectileRadius,
+              lifetime: def.projectileLifetime,
+              piercing: def.projectilePiercing,
+              hitIds: new Set(),
+              color: def.accentColor,
+              glowColor: def.color,
+              style: g.charClass === "mage" ? "orb" : "dagger",
+              dead: false,
+            });
           }
         }
       }
@@ -371,6 +412,47 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
 
     // Remove dead enemies after a moment
     g.enemies = g.enemies.filter((e) => !e.dead);
+
+    // ── Projectiles ───────────────────────────────────────────────────────
+    for (const proj of g.projectiles) {
+      if (proj.dead) continue;
+      proj.x += proj.vx * delta;
+      proj.z += proj.vz * delta;
+      proj.lifetime -= delta;
+      if (proj.lifetime <= 0 || Math.abs(proj.x) > ARENA + 4 || Math.abs(proj.z) > ARENA + 4) {
+        proj.dead = true;
+        continue;
+      }
+      for (const e of g.enemies) {
+        if (e.dead || proj.hitIds.has(e.id)) continue;
+        const pdx = proj.x - e.x;
+        const pdz = proj.z - e.z;
+        if (Math.sqrt(pdx * pdx + pdz * pdz) > proj.radius + e.collisionRadius) continue;
+
+        let dmg = proj.damage;
+        const isCrit = Math.random() < stats.critChance;
+        if (isCrit) dmg = Math.floor(dmg * 1.85);
+        e.hp -= dmg;
+        e.hitFlashTimer = 0.15;
+        if (stats.lifesteal > 0) {
+          p.hp = Math.min(p.maxHp, p.hp + dmg * stats.lifesteal);
+        }
+        if (proj.piercing) {
+          proj.hitIds.add(e.id);
+        } else {
+          proj.dead = true;
+        }
+        if (e.hp <= 0) {
+          e.dead = true;
+          g.kills++;
+          g.score += e.scoreValue;
+          const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
+          g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2 });
+        }
+        if (!proj.piercing) break;
+      }
+    }
+    g.projectiles = g.projectiles.filter((pr) => !pr.dead);
 
     // ── XP Orbs ───────────────────────────────────────────────────────────
     const pickupR = GAME_CONFIG.PLAYER.PICKUP_RADIUS;
@@ -446,6 +528,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       {gs.current?.xpOrbs.map((o) => (
         <XPOrb3D key={o.id} orb={o} />
       ))}
+      {gs.current?.projectiles.filter((pr) => !pr.dead).map((pr) => (
+        <Projectile3D key={pr.id} proj={pr} />
+      ))}
     </>
   );
 }
@@ -503,20 +588,29 @@ export function GameScene({ onRestart }: GameSceneProps) {
 
   // Initialize game state once
   if (!gsRef.current) {
-    const progression = new ProgressionManager();
+    const cls = useGameStore.getState().selectedClass;
+    const def = CHARACTER_DATA[cls];
+    const progression = new ProgressionManager({
+      maxHealth: def.hp, currentHealth: def.hp,
+      damage: def.damage, attackSpeed: def.attackSpeed,
+      moveSpeed: def.moveSpeed, armor: def.armor,
+      dashCooldown: def.dashCooldown, critChance: def.critChance,
+      attackRange: def.attackRange,
+    });
     const input = new InputManager3D();
     const gs0: GameState = {
-      player: makePlayer(),
+      player: makePlayer(def.hp),
       enemies: [],
       xpOrbs: [],
+      projectiles: [],
       score: 0, kills: 0, survivalTime: 0,
       spawnTimer: 0, waveTimer: 0,
       spawnInterval: GAME_CONFIG.DIFFICULTY.BASE_SPAWN_INTERVAL,
+      charClass: cls,
       progression,
       input,
       running: false,
     };
-    // Level-up callback: pause game and show upgrade choices
     progression.onLevelUp = (_lvl, choices) => {
       useGameStore.getState().setLevelUpChoices(choices);
       useGameStore.getState().setPhase("levelup");
@@ -530,23 +624,33 @@ export function GameScene({ onRestart }: GameSceneProps) {
     if (phase === "playing") {
       // If the player is dead (e.g. restart after game-over), do a full reset
       if (g.player.dead) {
-        const prog = new ProgressionManager();
+        const cls = useGameStore.getState().selectedClass;
+        const def = CHARACTER_DATA[cls];
+        const prog = new ProgressionManager({
+          maxHealth: def.hp, currentHealth: def.hp,
+          damage: def.damage, attackSpeed: def.attackSpeed,
+          moveSpeed: def.moveSpeed, armor: def.armor,
+          dashCooldown: def.dashCooldown, critChance: def.critChance,
+          attackRange: def.attackRange,
+        });
         prog.onLevelUp = (_lvl, choices) => {
           useGameStore.getState().setLevelUpChoices(choices);
           useGameStore.getState().setPhase("levelup");
         };
         gsRef.current = {
-          player: makePlayer(),
+          player: makePlayer(def.hp),
           enemies: [],
           xpOrbs: [],
+          projectiles: [],
           score: 0, kills: 0, survivalTime: 0,
           spawnTimer: 0, waveTimer: 0,
           spawnInterval: GAME_CONFIG.DIFFICULTY.BASE_SPAWN_INTERVAL,
+          charClass: cls,
           progression: prog,
           input: g.input,
           running: true,
         };
-        _eid = 1; _oid = 1;
+        _eid = 1; _oid = 1; _pid = 1;
       } else {
         g.running = true;
       }

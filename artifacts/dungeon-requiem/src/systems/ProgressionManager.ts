@@ -15,8 +15,8 @@ export class ProgressionManager {
 
   onLevelUp?: (level: number, choices: UpgradeDef[]) => void;
 
-  constructor() {
-    this._stats = createDefaultStats();
+  constructor(baseStats?: Partial<PlayerStats>) {
+    this._stats = baseStats ? { ...createDefaultStats(), ...baseStats } : createDefaultStats();
     this._xpToNextLevel = this.calcXpThreshold(1);
   }
 
