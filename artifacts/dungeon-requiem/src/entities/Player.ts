@@ -1,6 +1,6 @@
 /**
  * Player.ts
- * Player entity — handles movement, attack, dash, and health.
+ * Player entity using 16-bit pixel art sprite with walk/attack/dash animations.
  */
 
 import Phaser from "phaser";
@@ -9,12 +9,11 @@ import type { PlayerStats } from "../data/UpgradeData";
 import type { InputManager } from "../systems/InputManager";
 
 export class Player extends Phaser.GameObjects.Container {
-  // Stats reference (owned by ProgressionManager)
   stats: PlayerStats;
 
-  private body_circle!: Phaser.GameObjects.Arc;
-  private weapon_sprite!: Phaser.GameObjects.Rectangle;
-  private glow!: Phaser.GameObjects.Arc;
+  private sprite!: Phaser.GameObjects.Sprite;
+  private shadowEllipse!: Phaser.GameObjects.Ellipse;
+  private glowCircle!: Phaser.GameObjects.Arc;
 
   // Combat state
   private attackCooldown = 0;
@@ -25,14 +24,12 @@ export class Player extends Phaser.GameObjects.Container {
   private dashVY = 0;
   private invincibilityTimer = 0;
   private _isDead = false;
+  private isAttacking = false;
 
-  // Health
   currentHealth: number;
 
-  // Attack indicator arc (used for visual feedback)
   attackArcGraphics!: Phaser.GameObjects.Graphics;
 
-  // Events
   onDeath?: () => void;
   onAttack?: (x: number, y: number, angle: number) => void;
 
@@ -40,31 +37,29 @@ export class Player extends Phaser.GameObjects.Container {
     super(scene, x, y);
     this.stats = stats;
     this.currentHealth = stats.maxHealth;
-    this.buildGraphics();
+    this.buildSprite();
     scene.add.existing(this);
 
     this.attackArcGraphics = scene.add.graphics();
     this.attackArcGraphics.setDepth(5);
   }
 
-  private buildGraphics(): void {
-    // Glow ring
-    this.glow = this.scene.add.arc(0, 0, 22, 0, 360, false, 0x4488ff, 0.18);
-    this.add(this.glow);
+  private buildSprite(): void {
+    // Drop shadow
+    this.shadowEllipse = this.scene.add.ellipse(0, 20, 38, 12, 0x000000, 0.35);
+    this.add(this.shadowEllipse);
 
-    // Body
-    this.body_circle = this.scene.add.arc(0, 0, 18, 0, 360, false, 0xc8a460);
-    this.body_circle.setStrokeStyle(2, 0xffd700);
-    this.add(this.body_circle);
+    // Glow ring (behind sprite)
+    this.glowCircle = this.scene.add.arc(0, 0, 26, 0, 360, false, 0x4466ff, 0.12);
+    this.add(this.glowCircle);
 
-    // Helmet visor
-    const visor = this.scene.add.arc(0, -6, 8, 0, 360, false, 0x4a6e8a);
-    this.add(visor);
+    // Pixel art sprite — 16x16 frames @ 3x = 48x48 display
+    this.sprite = this.scene.add.sprite(0, 0, "player_sheet");
+    this.sprite.setOrigin(0.5, 0.5);
+    this.add(this.sprite);
 
-    // Weapon
-    this.weapon_sprite = this.scene.add.rectangle(14, 0, 22, 5, 0xe0e0e0);
-    this.weapon_sprite.setStrokeStyle(1, 0xaaaaaa);
-    this.add(this.weapon_sprite);
+    // Start idle animation
+    this.sprite.play("player_idle");
   }
 
   get isDead(): boolean { return this._isDead; }
@@ -75,9 +70,9 @@ export class Player extends Phaser.GameObjects.Container {
     input.setPlayerPosition(this.x, this.y);
     const state = input.state;
 
-    // Cooldown timers
-    if (this.attackCooldown > 0)    this.attackCooldown -= delta;
-    if (this.dashCooldownLeft > 0)  this.dashCooldownLeft -= delta;
+    // Timers
+    if (this.attackCooldown > 0)     this.attackCooldown -= delta;
+    if (this.dashCooldownLeft > 0)   this.dashCooldownLeft -= delta;
     if (this.invincibilityTimer > 0) this.invincibilityTimer -= delta;
 
     // Health regen
@@ -88,6 +83,8 @@ export class Player extends Phaser.GameObjects.Container {
       );
     }
 
+    const isMoving = state.moveX !== 0 || state.moveY !== 0;
+
     // Dash
     if (this.isDashing) {
       this.dashTimer -= delta;
@@ -95,12 +92,20 @@ export class Player extends Phaser.GameObjects.Container {
       this.y += this.dashVY * delta;
       if (this.dashTimer <= 0) {
         this.isDashing = false;
+        this.sprite.play("player_idle");
       }
     } else {
-      // Normal movement
-      if (state.moveX !== 0 || state.moveY !== 0) {
+      // Movement
+      if (isMoving) {
         this.x += state.moveX * this.stats.moveSpeed * (delta / 1000);
         this.y += state.moveY * this.stats.moveSpeed * (delta / 1000);
+        if (!this.isAttacking && this.sprite.anims.currentAnim?.key !== "player_walk") {
+          this.sprite.play("player_walk");
+        }
+      } else {
+        if (!this.isAttacking && this.sprite.anims.currentAnim?.key !== "player_idle") {
+          this.sprite.play("player_idle");
+        }
       }
 
       // Dash initiation
@@ -114,46 +119,49 @@ export class Player extends Phaser.GameObjects.Container {
         this.dashTimer = GAME_CONFIG.PLAYER.DASH_DURATION;
         this.dashCooldownLeft = this.stats.dashCooldown;
         this.invincibilityTimer = Math.max(this.invincibilityTimer, GAME_CONFIG.PLAYER.DASH_DURATION + 100);
+        this.sprite.play("player_dash");
       }
     }
 
-    // World boundary clamp (arena size 3000x3000)
+    // World bounds
     const HALF = 1500;
-    this.x = Phaser.Math.Clamp(this.x, -HALF + 24, HALF - 24);
-    this.y = Phaser.Math.Clamp(this.y, -HALF + 24, HALF - 24);
+    this.x = Phaser.Math.Clamp(this.x, -HALF + 28, HALF - 28);
+    this.y = Phaser.Math.Clamp(this.y, -HALF + 28, HALF - 28);
 
-    // Rotate weapon toward aim
+    // Rotate container toward aim direction
     const aimAngle = Math.atan2(
       state.aimY - this.y,
       state.aimX - this.x
     );
     this.setRotation(aimAngle);
 
+    // Mirror sprite so it faces the right direction
+    // When aiming left (angle > 90° or < -90°), flip sprite vertically on rotated axis
+    const facingLeft = Math.abs(Phaser.Math.RadToDeg(aimAngle)) > 90;
+    this.sprite.setFlipY(facingLeft);
+
     // Attack
-    if (this.attackCooldown <= 0) {
+    if (this.attackCooldown <= 0 && state.attack) {
       const attackInterval = 1000 / this.stats.attackSpeed;
-      if (state.attack) {
-        this.attackCooldown = attackInterval;
-        this.onAttack?.(this.x, this.y, aimAngle);
-        this.flashWeapon();
-      }
+      this.attackCooldown = attackInterval;
+      this.onAttack?.(this.x, this.y, aimAngle);
+      this.playAttackAnimation();
     }
 
     // Invincibility blink
-    this.setAlpha(this.invincibilityTimer > 0 ? (Math.sin(Date.now() * 0.03) > 0 ? 0.5 : 1) : 1);
+    if (this.invincibilityTimer > 0) {
+      this.sprite.setAlpha(Math.sin(Date.now() * 0.025) > 0 ? 0.5 : 1.0);
+    } else {
+      this.sprite.setAlpha(1);
+    }
   }
 
-  private flashWeapon(): void {
-    this.scene.tweens.add({
-      targets: this.weapon_sprite,
-      fillColor: 0xffffff,
-      duration: 60,
-      yoyo: true,
-      onComplete: () => {
-        if (this.weapon_sprite && this.weapon_sprite.active) {
-          this.weapon_sprite.fillColor = 0xe0e0e0;
-        }
-      },
+  private playAttackAnimation(): void {
+    this.isAttacking = true;
+    this.sprite.play("player_attack");
+    this.sprite.once("animationcomplete", () => {
+      this.isAttacking = false;
+      this.sprite.play("player_walk");
     });
   }
 
@@ -162,17 +170,15 @@ export class Player extends Phaser.GameObjects.Container {
     this.currentHealth -= amount;
     this.invincibilityTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_FRAMES;
 
-    // Hit flash
-    this.scene.tweens.add({
-      targets: this.body_circle,
-      fillColor: 0xff2222,
-      duration: GAME_CONFIG.FEEDBACK.HIT_FLASH_DURATION,
-      yoyo: true,
-      onComplete: () => {
-        if (this.body_circle && this.body_circle.active) {
-          this.body_circle.fillColor = 0xc8a460;
-        }
-      },
+    // Hit flash (tint the sprite)
+    this.sprite.setTint(0xff2222);
+    this.sprite.play("player_hit");
+    this.scene.time.delayedCall(GAME_CONFIG.FEEDBACK.HIT_FLASH_DURATION * 2, () => {
+      if (this.sprite?.active) {
+        this.sprite.clearTint();
+        this.sprite.play("player_idle");
+        this.isAttacking = false;
+      }
     });
 
     if (this.currentHealth <= 0) {
@@ -196,11 +202,12 @@ export class Player extends Phaser.GameObjects.Container {
   }
 
   private deathEffect(): void {
+    this.sprite.clearTint();
     this.scene.tweens.add({
       targets: this,
       alpha: 0,
-      scaleX: 2,
-      scaleY: 2,
+      scaleX: 2.2,
+      scaleY: 2.2,
       duration: GAME_CONFIG.FEEDBACK.DEATH_EFFECT_DURATION,
       ease: "Power2",
     });

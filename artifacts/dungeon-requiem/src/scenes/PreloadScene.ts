@@ -1,12 +1,13 @@
 /**
  * PreloadScene.ts
- * Asset loading with a progress bar.
- * STEAM NOTE: Replace placeholder graphics with real asset files.
- * Organized by: textures/, audio/, fonts/ subdirectories.
+ * Asset loading + pixel art texture generation.
+ * STEAM NOTE: Replace generateAllTextures() calls with real asset loads:
+ *   this.load.spritesheet("player_sheet", "assets/textures/player.png", { frameWidth: 48, frameHeight: 48 });
  */
 
 import Phaser from "phaser";
 import { GAME_CONFIG } from "../data/GameConfig";
+import { generateAllTextures, registerAnimations } from "../assets/PixelArtGenerator";
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -17,44 +18,41 @@ export class PreloadScene extends Phaser.Scene {
     const W = this.scale.width;
     const H = this.scale.height;
 
-    // Loading bar UI
-    const barBg = this.add.rectangle(W / 2, H / 2, 400, 24, 0x222222);
-    barBg.setStrokeStyle(2, 0x444444);
-    const bar = this.add.rectangle(W / 2 - 198, H / 2, 0, 20, 0x4444cc);
+    // Loading bar
+    const barBg = this.add.rectangle(W / 2, H / 2, 400, 24, 0x1a0025);
+    barBg.setStrokeStyle(2, 0x440066);
+    const bar = this.add.rectangle(W / 2 - 198, H / 2, 0, 20, 0x7700cc);
     bar.setOrigin(0, 0.5);
 
-    this.add.text(W / 2, H / 2 - 40, "DUNGEON REQUIEM", {
+    this.add.text(W / 2, H / 2 - 50, "DUNGEON REQUIEM", {
       fontFamily: "Georgia, serif",
-      fontSize: "28px",
+      fontSize: "30px",
       color: "#cc8844",
       stroke: "#000",
       strokeThickness: 3,
     }).setOrigin(0.5);
 
-    this.add.text(W / 2, H / 2 + 30, "Loading...", {
+    this.add.text(W / 2, H / 2 + 34, "Generating dungeon...", {
       fontFamily: "Georgia, serif",
-      fontSize: "13px",
-      color: "#888888",
+      fontSize: "12px",
+      color: "#664477",
     }).setOrigin(0.5);
 
     this.load.on("progress", (value: number) => {
       bar.setSize(396 * value, 20);
     });
 
-    // ── AUDIO STUBS ─────────────────────────────────────────
-    // STEAM NOTE: Replace these with actual audio files.
-    // Example: this.load.audio("player_attack", "assets/audio/sfx/sword_slash.ogg");
-    // All SFX keys listed in AudioManager.ts should have corresponding loads here.
-
-    // ── TEXTURE STUBS ────────────────────────────────────────
-    // STEAM NOTE: Replace procedural graphics with real spritesheets.
-    // Example:
-    //   this.load.spritesheet("player", "assets/textures/player_sheet.png", { frameWidth: 48, frameHeight: 48 });
-    //   this.load.image("dungeon_floor", "assets/textures/dungeon_tileset.png");
+    // ── Audio placeholders ───────────────────────────────────────────────
+    // STEAM NOTE: Add real audio files here:
+    // this.load.audio("player_attack", "assets/audio/sfx/sword_slash.ogg");
   }
 
   create(): void {
-    this.time.delayedCall(100, () => {
+    // Generate all pixel art textures programmatically
+    generateAllTextures(this);
+    registerAnimations(this);
+
+    this.time.delayedCall(120, () => {
       this.scene.start(GAME_CONFIG.SCENES.MAIN_MENU);
     });
   }

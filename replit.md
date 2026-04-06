@@ -24,8 +24,9 @@ Full top-down hack-and-slash survival RPG.
 **Game architecture:**
 ```
 src/
+  assets/         — PixelArtGenerator.ts (procedural 16-bit sprite + tile generation)
   data/           — GameConfig, EnemyData, UpgradeData, SaveData
-  entities/       — Player, Enemy
+  entities/       — Player (sprite+anim), Enemy (sprite+anim)
   scenes/         — Boot, Preload, MainMenu, Game, GameOver, Pause, Settings, LevelUp
   systems/        — InputManager, CombatManager, ProgressionManager, SpawnManager, AudioManager
   ui/             — HUD (UIScene), DamagePopup

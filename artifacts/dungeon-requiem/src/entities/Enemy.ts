@@ -1,12 +1,13 @@
 /**
  * Enemy.ts
- * Base enemy entity. Data-driven via EnemyDef.
- * STEAM NOTE: Add animation frames via spritesheet when art is ready.
+ * Enemy entity using 16-bit pixel art sprites with walk/idle animations.
+ * Data-driven via EnemyDef — add new enemy types in EnemyData.ts.
  */
 
 import Phaser from "phaser";
 import { type EnemyDef } from "../data/EnemyData";
 import { GAME_CONFIG } from "../data/GameConfig";
+import { ENEMY_SPRITE_INFO } from "../assets/PixelArtGenerator";
 
 export class Enemy extends Phaser.GameObjects.Container {
   def: EnemyDef;
@@ -16,14 +17,15 @@ export class Enemy extends Phaser.GameObjects.Container {
   private attackTimer = 0;
   private wave: number;
 
-  private bodyCircle!: Phaser.GameObjects.Arc;
+  private sprite!: Phaser.GameObjects.Sprite;
+  private shadowEllipse!: Phaser.GameObjects.Ellipse;
   private healthBarBg!: Phaser.GameObjects.Rectangle;
   private healthBarFg!: Phaser.GameObjects.Rectangle;
-  private eyeLeft!: Phaser.GameObjects.Arc;
-  private eyeRight!: Phaser.GameObjects.Arc;
+  private glowRing?: Phaser.GameObjects.Arc;
 
   xpReward: number;
   scoreValue: number;
+  private _scaledDamage: number;
 
   onDeath?: (enemy: Enemy) => void;
   onAttackPlayer?: (damage: number, x: number, y: number) => void;
@@ -33,62 +35,65 @@ export class Enemy extends Phaser.GameObjects.Container {
     this.def = def;
     this.wave = wave;
 
-    // Scale stats per wave
-    const hpScale = 1 + GAME_CONFIG.DIFFICULTY.HP_SCALE_PER_WAVE * wave;
+    const hpScale  = 1 + GAME_CONFIG.DIFFICULTY.HP_SCALE_PER_WAVE * wave;
     const dmgScale = 1 + GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE * wave;
     this.maxHealth = Math.round(def.health * hpScale);
     this.currentHealth = this.maxHealth;
     this.xpReward = def.xpReward;
     this.scoreValue = def.scoreValue;
-
-    // Stored for use in combat
     this._scaledDamage = Math.round(def.damage * dmgScale);
 
-    this.buildGraphics();
+    this.buildSprite();
     scene.add.existing(this);
     this.setDepth(3);
   }
 
-  private _scaledDamage: number;
   getScaledDamage(): number { return this._scaledDamage; }
-  getArmor(): number { return 0; } // Stub — enemies could have armor later
+  getArmor(): number { return 0; }
 
-  private buildGraphics(): void {
+  private buildSprite(): void {
+    const info = ENEMY_SPRITE_INFO[this.def.type];
     const r = this.def.bodyRadius;
 
     // Shadow
-    const shadow = this.scene.add.ellipse(0, r * 0.6, r * 2.2, r * 0.8, 0x000000, 0.3);
-    this.add(shadow);
+    this.shadowEllipse = this.scene.add.ellipse(0, r * 0.7, r * 2.4, r * 0.7, 0x000000, 0.3);
+    this.add(this.shadowEllipse);
 
-    // Body
-    this.bodyCircle = this.scene.add.arc(0, 0, r, 0, 360, false, this.def.bodyColor);
-    this.bodyCircle.setStrokeStyle(2, 0x000000, 0.8);
-    this.add(this.bodyCircle);
-
-    // Eyes
-    const eyeOff = r * 0.3;
-    this.eyeLeft = this.scene.add.arc(-eyeOff, -r * 0.2, r * 0.2, 0, 360, false, this.def.eyeColor);
-    this.eyeRight = this.scene.add.arc(eyeOff, -r * 0.2, r * 0.2, 0, 360, false, this.def.eyeColor);
-    this.add(this.eyeLeft);
-    this.add(this.eyeRight);
-
-    // Boss crown
-    if (this.def.type === "boss") {
-      const crown = this.scene.add.rectangle(0, -r - 10, r * 1.6, 8, 0xffdd00);
-      this.add(crown);
+    // Boss / elite glow ring
+    if (this.def.type === "boss" || this.def.type === "elite") {
+      const glowColor = this.def.type === "boss" ? 0xAA00CC : 0xAA0000;
+      this.glowRing = this.scene.add.arc(0, 0, r * 1.5, 0, 360, false, glowColor, 0.18);
+      this.add(this.glowRing);
     }
 
-    // Health bar (shown on elites and bosses always, others only when damaged)
-    this.healthBarBg = this.scene.add.rectangle(0, r + 10, r * 2.4, 5, 0x330000);
-    this.healthBarFg = this.scene.add.rectangle(
-      -(r * 1.2) + (r * 1.2), r + 10, r * 2.4, 5, 0x00dd44
-    );
+    // Pixel art sprite
+    this.sprite = this.scene.add.sprite(0, 0, info.sheet);
+    this.sprite.setOrigin(0.5, 0.5);
+    this.sprite.setScale(info.scale);
+    this.add(this.sprite);
+    this.sprite.play(info.anim);
+
+    // Health bar
+    const barW = r * 2.4;
+    this.healthBarBg = this.scene.add.rectangle(0, r + 10, barW, 5, 0x330000);
+    this.healthBarFg = this.scene.add.rectangle(0, r + 10, barW, 5, 0x00dd44);
     this.add(this.healthBarBg);
     this.add(this.healthBarFg);
 
-    if (this.def.type !== "elite" && this.def.type !== "boss") {
-      this.healthBarBg.setVisible(false);
-      this.healthBarFg.setVisible(false);
+    const showAlways = this.def.type === "elite" || this.def.type === "boss";
+    this.healthBarBg.setVisible(showAlways);
+    this.healthBarFg.setVisible(showAlways);
+
+    // Boss name label
+    if (this.def.type === "boss") {
+      const label = this.scene.add.text(0, r + 22, this.def.displayName.toUpperCase(), {
+        fontFamily: "Georgia, serif",
+        fontSize: "10px",
+        color: "#ff88ff",
+        stroke: "#000",
+        strokeThickness: 2,
+      }).setOrigin(0.5, 0);
+      this.add(label);
     }
   }
 
@@ -97,18 +102,21 @@ export class Enemy extends Phaser.GameObjects.Container {
   update(playerX: number, playerY: number, delta: number): void {
     if (this._isDead) return;
 
-    // Move toward player
     const dx = playerX - this.x;
     const dy = playerY - this.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (dist > 1) {
-      const speed = this.def.moveSpeed;
-      this.x += (dx / dist) * speed * (delta / 1000);
-      this.y += (dy / dist) * speed * (delta / 1000);
+    if (dist > 2) {
+      this.x += (dx / dist) * this.def.moveSpeed * (delta / 1000);
+      this.y += (dy / dist) * this.def.moveSpeed * (delta / 1000);
 
-      // Rotate eyes toward player
-      this.setRotation(Math.atan2(dy, dx));
+      // Flip sprite based on movement direction
+      this.sprite.setFlipX(dx < 0);
+    }
+
+    // Pulse glow for boss/elite
+    if (this.glowRing) {
+      this.glowRing.setAlpha(0.12 + Math.sin(Date.now() * 0.003) * 0.08);
     }
 
     // Attack
@@ -116,6 +124,11 @@ export class Enemy extends Phaser.GameObjects.Container {
     if (dist <= this.def.attackRange && this.attackTimer >= this.def.attackInterval) {
       this.attackTimer = 0;
       this.onAttackPlayer?.(this._scaledDamage, this.x, this.y);
+      // Flash tint on attack
+      this.sprite.setTint(0xffaa44);
+      this.scene.time.delayedCall(80, () => {
+        if (this.sprite?.active) this.sprite.clearTint();
+      });
     }
   }
 
@@ -124,21 +137,14 @@ export class Enemy extends Phaser.GameObjects.Container {
     this.currentHealth -= amount;
     this.updateHealthBar();
 
-    // Show health bar on damage
+    // Show health bar
     this.healthBarBg.setVisible(true);
     this.healthBarFg.setVisible(true);
 
     // Hit flash
-    this.scene.tweens.add({
-      targets: this.bodyCircle,
-      fillColor: 0xffffff,
-      duration: GAME_CONFIG.FEEDBACK.HIT_FLASH_DURATION,
-      yoyo: true,
-      onComplete: () => {
-        if (this.bodyCircle && this.bodyCircle.active) {
-          this.bodyCircle.fillColor = this.def.bodyColor;
-        }
-      },
+    this.sprite.setTint(0xffffff);
+    this.scene.time.delayedCall(GAME_CONFIG.FEEDBACK.HIT_FLASH_DURATION, () => {
+      if (this.sprite?.active) this.sprite.clearTint();
     });
 
     if (this.currentHealth <= 0) {
@@ -155,18 +161,17 @@ export class Enemy extends Phaser.GameObjects.Container {
     const newWidth = totalWidth * pct;
     this.healthBarFg.setSize(newWidth, 5);
     this.healthBarFg.setX(-(totalWidth / 2) + newWidth / 2);
-
-    if (pct > 0.5) this.healthBarFg.fillColor = 0x00dd44;
-    else if (pct > 0.25) this.healthBarFg.fillColor = 0xffaa00;
-    else this.healthBarFg.fillColor = 0xff2200;
+    this.healthBarFg.fillColor = pct > 0.5 ? 0x00dd44 : pct > 0.25 ? 0xffaa00 : 0xff2200;
   }
 
   private deathEffect(): void {
+    // Death burst
+    this.sprite.setTint(0xff4400);
     this.scene.tweens.add({
       targets: this,
       alpha: 0,
-      scaleX: 1.6,
-      scaleY: 1.6,
+      scaleX: 1.8,
+      scaleY: 1.8,
       duration: GAME_CONFIG.FEEDBACK.DEATH_EFFECT_DURATION,
       ease: "Power2",
       onComplete: () => {

@@ -820,51 +820,52 @@ function createSpriteCanvas(
   return canvas;
 }
 
+/**
+ * Add a canvas texture with explicit numbered frames so that
+ * scene.anims.generateFrameNumbers() can find them.
+ */
+function addSheet(
+  scene: Phaser.Scene,
+  key: string,
+  frames: string[][],
+  palette: Record<string, number | null>,
+  frameW: number,
+  frameH: number,
+  scale: number = 1,
+): void {
+  if (scene.textures.exists(key)) return;
+  const canvas = createSpriteCanvas(frames, palette, frameW, frameH, scale);
+  const texture = scene.textures.addCanvas(key, canvas)!;
+  const dw = frameW * scale;
+  const dh = frameH * scale;
+  frames.forEach((_f, fi) => {
+    texture.add(fi, 0, fi * dw, 0, dw, dh);
+  });
+}
+
 /** Generate all game textures and register them with Phaser */
 export function generateAllTextures(scene: Phaser.Scene): void {
-  const add = (key: string, canvas: HTMLCanvasElement) => {
-    if (!scene.textures.exists(key)) {
-      scene.textures.addCanvas(key, canvas);
-    }
+  const addSingle = (key: string, rows: string[], palette: Record<string, number | null>, w: number, h: number, scale: number) => {
+    if (scene.textures.exists(key)) return;
+    const canvas = createSpriteCanvas([rows], palette, w, h, scale);
+    scene.textures.addCanvas(key, canvas);
   };
 
-  // Player spritesheet: 9 frames (4 walk + 3 attack + 1 dash + 1 hit), 16x16 scaled 3x
-  add("player_sheet", createSpriteCanvas(PLAYER_FRAMES, P_PLAYER, 16, 16, 3));
+  // ── Sprite sheets (with numbered frames) ────────────────
+  addSheet(scene, "player_sheet",   PLAYER_FRAMES,   P_PLAYER,   16, 16, 3);
+  addSheet(scene, "scuttler_sheet", SCUTTLER_FRAMES, P_SCUTTLER, 16, 16, 3);
+  addSheet(scene, "brute_sheet",    BRUTE_FRAMES,    P_BRUTE,    16, 20, 3);
+  addSheet(scene, "wraith_sheet",   WRAITH_FRAMES,   P_WRAITH,   16, 16, 3);
+  addSheet(scene, "elite_sheet",    ELITE_FRAMES,    P_ELITE,    16, 16, 3);
+  addSheet(scene, "boss_sheet",     BOSS_FRAMES,     P_BOSS,     16, 24, 3);
+  addSheet(scene, "orb_sheet",      ORB_FRAMES,      P_ORB,       8,  8, 3);
+  addSheet(scene, "torch_sheet",    TORCH_FRAMES,    P_FLOOR,     8,  8, 2);
 
-  // Enemy sheets
-  add("scuttler_sheet", createSpriteCanvas(SCUTTLER_FRAMES, P_SCUTTLER, 16, 16, 3));
-  add("brute_sheet",    createSpriteCanvas(BRUTE_FRAMES,   P_BRUTE,   16, 20, 3));
-  add("wraith_sheet",   createSpriteCanvas(WRAITH_FRAMES,  P_WRAITH,  16, 16, 3));
-  add("elite_sheet",    createSpriteCanvas(ELITE_FRAMES,   P_ELITE,   16, 16, 3));
-  add("boss_sheet",     createSpriteCanvas(BOSS_FRAMES,    P_BOSS,    16, 24, 3));
-
-  // XP Orb
-  add("orb_sheet", createSpriteCanvas(ORB_FRAMES, P_ORB, 8, 8, 3));
-
-  // Floor tiles — generate a combined tile atlas
-  const floorAtlas = document.createElement("canvas");
-  floorAtlas.width = 16 * 2 * FLOOR_TILES.length;  // 3 variants side by side, scaled 2x
-  floorAtlas.height = 16 * 2;
-  const fCtx = floorAtlas.getContext("2d")!;
+  // ── Static textures (single frame, no animation) ─────────
   FLOOR_TILES.forEach((tile, ti) => {
-    for (let row = 0; row < 16; row++) {
-      const rowStr = tile[row] ?? "";
-      for (let col = 0; col < 16; col++) {
-        const char = rowStr[col] ?? ".";
-        const color = P_FLOOR[char];
-        if (color === null || color === undefined) continue;
-        fCtx.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
-        fCtx.fillRect((ti * 16 + col) * 2, row * 2, 2, 2);
-      }
-    }
+    addSingle(`floor_tile_${ti}`, tile, P_FLOOR, 16, 16, 2);
   });
-  add("floor_atlas", floorAtlas);
-
-  // Wall tile
-  add("wall_tile", createSpriteCanvas([WALL_TILE], P_FLOOR, 16, 16, 2));
-
-  // Torch frames
-  add("torch_sheet", createSpriteCanvas(TORCH_FRAMES, P_FLOOR, 8, 8, 2));
+  addSingle("wall_tile", WALL_TILE, P_FLOOR, 16, 16, 2);
 }
 
 /** Register all Phaser animations. Call after generateAllTextures. */

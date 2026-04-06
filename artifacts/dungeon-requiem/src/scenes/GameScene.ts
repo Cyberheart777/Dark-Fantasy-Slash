@@ -145,46 +145,83 @@ export class GameScene extends Phaser.Scene {
     this.floorGraphics = this.add.graphics().setDepth(0);
     const g = this.floorGraphics;
 
-    // Background fill
-    g.fillStyle(0x090010);
+    // Deep background fill
+    g.fillStyle(0x060010);
     g.fillRect(-ARENA_HALF, -ARENA_HALF, ARENA_HALF * 2, ARENA_HALF * 2);
 
-    // Stone tiles
-    const TILE = 120;
-    for (let tx = -ARENA_HALF; tx < ARENA_HALF; tx += TILE) {
-      for (let ty = -ARENA_HALF; ty < ARENA_HALF; ty += TILE) {
-        const shade = 0x0e0018 + Math.floor(Math.random() * 3) * 0x010000;
-        g.fillStyle(shade);
-        g.fillRect(tx + 1, ty + 1, TILE - 2, TILE - 2);
-        g.lineStyle(1, 0x1a0025, 0.6);
-        g.strokeRect(tx, ty, TILE, TILE);
+    // ── Tiled pixel art floor ─────────────────────────────
+    const TILE_SIZE = 32; // floor_tile textures are 32x32 (16px @ 2x scale)
+    const rng = Phaser.Math.RND;
+
+    for (let tx = -ARENA_HALF; tx < ARENA_HALF; tx += TILE_SIZE) {
+      for (let ty = -ARENA_HALF; ty < ARENA_HALF; ty += TILE_SIZE) {
+        // Pick a tile variant: mostly v0 (stone), occasionally v1 (lighter) or v2 (cracked)
+        const roll = rng.frac();
+        const variantIdx = roll < 0.65 ? 0 : roll < 0.88 ? 1 : 2;
+
+        const tileImg = this.add.image(tx, ty, `floor_tile_${variantIdx}`)
+          .setOrigin(0, 0)
+          .setDepth(0);
+
+        // Subtle tint variation for natural variation
+        if (rng.frac() < 0.25) {
+          tileImg.setTint(0xbbaabb);
+        }
       }
     }
 
-    // Scattered dungeon details
-    g.fillStyle(0x1a0025, 0.4);
-    for (let i = 0; i < 180; i++) {
-      const rx = (Math.random() - 0.5) * ARENA_HALF * 1.9;
-      const ry = (Math.random() - 0.5) * ARENA_HALF * 1.9;
-      g.fillRect(rx, ry, 6, 2);
+    // ── Border wall tiles ────────────────────────────────
+    const wallTileSize = 32;
+    for (let tx = -ARENA_HALF; tx <= ARENA_HALF - wallTileSize; tx += wallTileSize) {
+      this.add.image(tx, -ARENA_HALF, "wall_tile").setOrigin(0, 0).setDepth(1).setDisplaySize(wallTileSize, wallTileSize);
+      this.add.image(tx, ARENA_HALF - wallTileSize, "wall_tile").setOrigin(0, 0).setDepth(1).setDisplaySize(wallTileSize, wallTileSize);
+    }
+    for (let ty = -ARENA_HALF + wallTileSize; ty < ARENA_HALF - wallTileSize; ty += wallTileSize) {
+      this.add.image(-ARENA_HALF, ty, "wall_tile").setOrigin(0, 0).setDepth(1).setDisplaySize(wallTileSize, wallTileSize);
+      this.add.image(ARENA_HALF - wallTileSize, ty, "wall_tile").setOrigin(0, 0).setDepth(1).setDisplaySize(wallTileSize, wallTileSize);
     }
 
-    // Border walls
-    g.lineStyle(8, 0x330044);
+    // Border glow line
+    g.lineStyle(4, 0x440066, 0.8);
     g.strokeRect(-ARENA_HALF, -ARENA_HALF, ARENA_HALF * 2, ARENA_HALF * 2);
 
-    // Torches at corners
-    const torchPositions = [
+    // ── Animated torches ─────────────────────────────────
+    const torchPositions: [number, number][] = [
       [-ARENA_HALF + 60, -ARENA_HALF + 60],
-      [ARENA_HALF - 60, -ARENA_HALF + 60],
-      [-ARENA_HALF + 60, ARENA_HALF - 60],
-      [ARENA_HALF - 60, ARENA_HALF - 60],
+      [ARENA_HALF - 60,  -ARENA_HALF + 60],
+      [-ARENA_HALF + 60,  ARENA_HALF - 60],
+      [ARENA_HALF - 60,   ARENA_HALF - 60],
+      [0, -ARENA_HALF + 60],
+      [0, ARENA_HALF - 60],
+      [-ARENA_HALF + 60, 0],
+      [ARENA_HALF - 60, 0],
     ];
+
     for (const [tx, ty] of torchPositions) {
-      g.fillStyle(0xff8800, 0.8);
-      g.fillCircle(tx, ty, 10);
-      g.fillStyle(0xff4400, 0.5);
-      g.fillCircle(tx, ty, 18);
+      // Glow pool under torch
+      g.fillStyle(0xff6600, 0.12);
+      g.fillCircle(tx, ty, 38);
+
+      // Torch flame sprite
+      const torch = this.add.sprite(tx, ty - 8, "torch_sheet")
+        .setDepth(2)
+        .setDisplaySize(16, 16)
+        .play("torch_flicker");
+
+      // Slight random offset on animation start so they don't all pulse in sync
+      torch.anims.setProgress(Math.random());
+
+      // Orange point light feel — subtle additive circle
+      const glowPulse = this.add.arc(tx, ty, 30, 0, 360, false, 0xff8800, 0.06).setDepth(1);
+      this.tweens.add({
+        targets: glowPulse,
+        alpha: 0.12,
+        radius: 36,
+        duration: 600 + Math.random() * 400,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
     }
   }
 
