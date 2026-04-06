@@ -416,7 +416,7 @@ export function Enemy3D({ enemy }: EnemyProps) {
 
       {/* Health bar */}
       <group ref={healthBarGroupRef} position={[0, hpBarHeight, 0]}>
-        <HealthBar healthPct={enemy.health / enemy.maxHealth} />
+        <HealthBar healthPct={enemy.hp / enemy.maxHp} />
       </group>
     </group>
   );

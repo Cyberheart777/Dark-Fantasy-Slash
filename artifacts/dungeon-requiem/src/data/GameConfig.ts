@@ -41,7 +41,11 @@ export const GAME_CONFIG = {
     MIN_SPAWN_INTERVAL: 0.28,
     SPAWN_REDUCTION: 0.12,      // seconds removed per wave
     ELITE_SPAWN_START_WAVE: 4,
-    BOSS_SPAWN_START_WAVE: 8,
+    BOSS_WAVE_INTERVAL: 5,      // boss spawns every N waves (wave 5, 10, 15…)
+    BOSS_HP_SCALE_PER_WAVE: 0.2,// boss HP multiplier per appearance
+    BOSS_SPECIAL_INTERVAL: 5.0, // seconds between boss AoE attacks
+    BOSS_SPECIAL_WARN_TIME: 1.4,// warning duration before AoE damage lands
+    BOSS_SPECIAL_RADIUS: 9,     // AoE radius in world units
     HP_SCALE_PER_WAVE: 0.12,
     DAMAGE_SCALE_PER_WAVE: 0.08,
   },

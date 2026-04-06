@@ -5,13 +5,29 @@
  */
 
 import { useGameStore } from "../store/gameStore";
+import { useEffect, useRef, useState } from "react";
 
 export function HUD() {
   const {
     playerHP, playerMaxHP, xp, xpToNext, level,
     wave, score, kills, survivalTime,
     acquiredUpgrades, isDashing, isAttacking,
+    bossHP, bossMaxHP, bossName, bossAlive, bossSpecialWarn,
   } = useGameStore();
+
+  // Boss arrival announcement
+  const prevBossAlive = useRef(false);
+  const [bossAnnounce, setBossAnnounce] = useState(false);
+  const announceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (bossAlive && !prevBossAlive.current) {
+      setBossAnnounce(true);
+      if (announceTimer.current) clearTimeout(announceTimer.current);
+      announceTimer.current = setTimeout(() => setBossAnnounce(false), 3200);
+    }
+    prevBossAlive.current = bossAlive;
+    return () => { if (announceTimer.current) clearTimeout(announceTimer.current); };
+  }, [bossAlive]);
 
   const hpPct = Math.max(0, playerHP / playerMaxHP) * 100;
   const xpPct = Math.min(100, (xp / xpToNext) * 100);
@@ -86,6 +102,37 @@ export function HUD() {
       <div style={{ ...styles.actionIndicator, opacity: isDashing ? 1 : 0.3 }}>
         <span style={{ color: isDashing ? "#88aaff" : "#666" }}>◈ DASH</span>
       </div>
+
+      {/* Boss HP bar — full width, center-bottom, shown only when boss is alive */}
+      {bossAlive && bossMaxHP > 0 && (
+        <div style={styles.bossBar}>
+          <div style={styles.bossBarHeader}>
+            <span style={styles.bossBarName}>{bossName}</span>
+            {bossSpecialWarn && (
+              <span style={styles.bossWarn}>⚠ SHOCKWAVE INCOMING</span>
+            )}
+          </div>
+          <div style={styles.bossBarTrack}>
+            <div style={{
+              ...styles.bossBarFill,
+              width: `${Math.max(0, (bossHP / bossMaxHP)) * 100}%`,
+            }} />
+          </div>
+          <div style={styles.bossBarFooter}>
+            <span style={{ color: "#aaa", fontSize: 11 }}>
+              {Math.max(0, Math.ceil(bossHP)).toLocaleString()} / {bossMaxHP.toLocaleString()}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Boss arrival announcement */}
+      {bossAnnounce && (
+        <div style={styles.bossAnnounce}>
+          <div style={styles.bossAnnounceTop}>⚠ BOSS APPROACHES ⚠</div>
+          <div style={styles.bossAnnounceBottom}>{bossName}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -207,5 +254,83 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     letterSpacing: 2,
     transition: "opacity 0.2s",
+  },
+  bossBar: {
+    position: "absolute",
+    bottom: 52,
+    left: "50%",
+    transform: "translateX(-50%)",
+    width: "min(600px, 90vw)",
+    background: "rgba(0,0,0,0.75)",
+    border: "1px solid #660033",
+    borderRadius: 8,
+    padding: "10px 14px 8px",
+    backdropFilter: "blur(6px)",
+    boxShadow: "0 0 24px rgba(180,0,80,0.4)",
+  },
+  bossBarHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  bossBarName: {
+    color: "#ff44aa",
+    fontSize: 15,
+    fontWeight: "bold",
+    letterSpacing: 2,
+    textShadow: "0 0 10px #ff0066",
+    textTransform: "uppercase" as const,
+  },
+  bossWarn: {
+    color: "#ff4400",
+    fontSize: 13,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    animation: "none",
+    textShadow: "0 0 8px #ff2200",
+  },
+  bossBarTrack: {
+    width: "100%",
+    height: 14,
+    background: "#1a0010",
+    borderRadius: 7,
+    overflow: "hidden",
+    border: "1px solid #550022",
+  },
+  bossBarFill: {
+    height: "100%",
+    borderRadius: 7,
+    background: "linear-gradient(90deg, #8b0050, #ff0066, #cc0044)",
+    boxShadow: "0 0 10px #ff0066",
+    transition: "width 0.12s ease",
+  },
+  bossBarFooter: {
+    marginTop: 4,
+    textAlign: "center" as const,
+  },
+  bossAnnounce: {
+    position: "absolute",
+    top: "30%",
+    left: "50%",
+    transform: "translateX(-50%)",
+    textAlign: "center" as const,
+    pointerEvents: "none",
+  },
+  bossAnnounceTop: {
+    color: "#ff2244",
+    fontSize: 28,
+    fontWeight: "bold",
+    letterSpacing: 4,
+    textShadow: "0 0 20px #ff0033, 0 0 40px #880000",
+    marginBottom: 8,
+    textTransform: "uppercase" as const,
+  },
+  bossAnnounceBottom: {
+    color: "#ff88bb",
+    fontSize: 18,
+    letterSpacing: 6,
+    textShadow: "0 0 12px #ff0055",
+    textTransform: "uppercase" as const,
   },
 };

@@ -93,9 +93,18 @@ export interface GameUIState {
   // Soul shards (per-run counter — persistent total lives in metaStore)
   shardsThisRun: number;
 
+  // Boss state
+  bossHP: number;
+  bossMaxHP: number;
+  bossName: string;
+  bossAlive: boolean;
+  bossSpecialWarn: boolean;
+
   // Actions
   setPhase: (phase: GamePhase) => void;
   addRunShards: (n: number) => void;
+  setBossState: (hp: number, maxHp: number, name: string, alive: boolean) => void;
+  setBossSpecialWarn: (active: boolean) => void;
   setSelectedClass: (cls: CharacterClass) => void;
   setPlayerHP: (hp: number, maxHp: number) => void;
   setPlayerPos: (x: number, z: number, angle: number) => void;
@@ -143,6 +152,11 @@ const initialState = {
   bestWave: 0,
   selectedClass: "warrior" as CharacterClass,
   shardsThisRun: 0,
+  bossHP: 0,
+  bossMaxHP: 0,
+  bossName: "",
+  bossAlive: false,
+  bossSpecialWarn: false,
 };
 
 export const useGameStore = create<GameUIState>((set) => ({
@@ -151,6 +165,8 @@ export const useGameStore = create<GameUIState>((set) => ({
   setPhase: (phase) => set({ phase }),
   setSelectedClass: (selectedClass) => set({ selectedClass }),
   addRunShards: (n) => set((s) => ({ shardsThisRun: s.shardsThisRun + n })),
+  setBossState: (hp, maxHp, name, alive) => set({ bossHP: hp, bossMaxHP: maxHp, bossName: name, bossAlive: alive }),
+  setBossSpecialWarn: (active) => set({ bossSpecialWarn: active }),
 
   setPlayerHP: (playerHP, playerMaxHP) => set({ playerHP, playerMaxHP }),
 

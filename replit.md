@@ -18,12 +18,16 @@ artifacts/dungeon-requiem/src/
   App.tsx                    # Root component: manages phase transitions
   main.tsx                   # Vite entry point
   
+  audio/
+    SoundData.ts             # DATA-DRIVEN registry: add src URLs here to swap audio files
+    AudioManager.ts          # Singleton Web Audio API engine (procedural synth fallback)
+
   game/
-    GameManager.ts           # Orchestrates all game logic each frame
-    GameScene.tsx            # R3F Canvas + useFrame game loop
+    GameManager.ts           # Orchestrates all game logic each frame (dead code)
+    GameScene.tsx            # R3F Canvas + useFrame game loop (all live logic here)
     InputManager3D.ts        # Keyboard/mouse input (no Phaser)
-    CombatManager3D.ts       # Attack resolution, damage, crits, lifesteal
-    SpawnManager3D.ts        # Enemy wave spawning
+    CombatManager3D.ts       # Attack resolution (dead code, logic moved to GameScene)
+    SpawnManager3D.ts        # Enemy wave spawning (dead code, logic moved to GameScene)
   
   entities/
     Player3D.tsx             # Low-poly warrior mesh + animations

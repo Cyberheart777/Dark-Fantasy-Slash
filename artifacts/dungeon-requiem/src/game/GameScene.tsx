@@ -9,6 +9,7 @@ import { useRef, useEffect, useCallback } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
+import { audioManager } from "../audio/AudioManager";
 import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
 import { GAME_CONFIG } from "../data/GameConfig";
@@ -57,6 +58,10 @@ export interface EnemyRuntime {
   scale: number; color: string; emissive: string;
   vx: number; vz: number;
   phasing: boolean; phaseTimer: number;
+  // Boss-only fields (present but unused on regular enemies)
+  specialTimer: number;
+  specialWarning: boolean;
+  specialWarnTimer: number;
 }
 
 export interface XPOrb {
@@ -91,6 +96,8 @@ interface GameState {
   progression: ProgressionManager;
   input: InputManager3D;
   running: boolean;
+  bossAlive: boolean;
+  bossId: string | null;
 }
 
 // ─── Torch positions ──────────────────────────────────────────────────────────
@@ -182,6 +189,35 @@ function spawnEnemy(wave: number): EnemyRuntime {
     dead: false, hitFlashTimer: 0,
     scale: def.scale, color: def.color, emissive: def.emissive,
     vx: 0, vz: 0, phasing: false, phaseTimer: 0,
+    specialTimer: 0, specialWarning: false, specialWarnTimer: 0,
+  };
+}
+
+function spawnBoss(wave: number): EnemyRuntime {
+  const def = ENEMY_DATA.boss;
+  const half = GAME_CONFIG.ARENA_HALF - 5;
+  const bossCount = Math.floor(wave / GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL);
+  const hpScale = 1 + (bossCount - 1) * GAME_CONFIG.DIFFICULTY.BOSS_HP_SCALE_PER_WAVE;
+  const hp = Math.round(def.health * hpScale);
+  const corners: [number, number][] = [[-half, -half], [half, -half], [-half, half], [half, half]];
+  const [cx, cz] = corners[Math.floor(Math.random() * corners.length)];
+  return {
+    id: enemyId(), type: "boss", x: cx, z: cz,
+    hp, maxHp: hp,
+    damage: Math.round(def.damage * (1 + (bossCount - 1) * 0.15)),
+    moveSpeed: def.moveSpeed,
+    attackRange: def.attackRange,
+    attackInterval: def.attackInterval,
+    attackTimer: def.attackInterval,
+    collisionRadius: def.collisionRadius,
+    xpReward: def.xpReward,
+    scoreValue: def.scoreValue,
+    dead: false, hitFlashTimer: 0,
+    scale: def.scale, color: def.color, emissive: def.emissive,
+    vx: 0, vz: 0, phasing: false, phaseTimer: 0,
+    specialTimer: GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_INTERVAL,
+    specialWarning: false,
+    specialWarnTimer: 0,
   };
 }
 
@@ -294,6 +330,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (input.dash && p.dashCooldown <= 0) {
           g.input.consumeDash();
           p.isDashing = true;
+          audioManager.play("dash");
           p.dashTimer = GAME_CONFIG.PLAYER.DASH_DURATION;
           const dashDir = len > 0
             ? { x: mx, z: mz }
@@ -318,6 +355,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         cleaved.current.clear();
 
         if (g.charClass === "warrior") {
+          audioManager.play("attack_melee");
           // ── Melee arc sweep ────────────────────────────────────────────
           for (const e of g.enemies) {
             if (e.dead) continue;
@@ -352,9 +390,18 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               useGameStore.getState().addRunShards(5);
               const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
               g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2 });
+              if (e.type === "boss") {
+                g.bossAlive = false; g.bossId = null;
+                store.setBossState(0, 0, "", false);
+                store.setBossSpecialWarn(false);
+                audioManager.play("boss_death");
+              } else {
+                audioManager.play("enemy_death");
+              }
             }
           }
         } else {
+          audioManager.play(g.charClass === "mage" ? "attack_orb" : "attack_dagger");
           // ── Projectile attack (Mage / Rogue) ───────────────────────────
           const def = CHARACTER_DATA[g.charClass];
           const count = def.projectileCount;
@@ -432,6 +479,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               if (p.hp <= 0) {
                 p.hp = 0;
                 p.dead = true;
+                audioManager.play("player_death");
+                audioManager.stopMusic();
+                store.setBossState(0, 0, "", false);
+                store.setBossSpecialWarn(false);
                 // Bonus shards for how far they got: waves survived + kills
                 const bonusShards = Math.round(
                   useGameStore.getState().wave * 15 + g.kills,
@@ -440,6 +491,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                   useMetaStore.getState().addShards(bonusShards);
                   useGameStore.getState().addRunShards(bonusShards);
                 }
+              } else {
+                audioManager.play("player_hurt");
               }
             }
           }
@@ -491,6 +544,14 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           useGameStore.getState().addRunShards(5);
           const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
           g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2 });
+          if (e.type === "boss") {
+            g.bossAlive = false; g.bossId = null;
+            store.setBossState(0, 0, "", false);
+            store.setBossSpecialWarn(false);
+            audioManager.play("boss_death");
+          } else {
+            audioManager.play("enemy_death");
+          }
         }
         if (!proj.piercing) break;
       }
@@ -505,10 +566,56 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       const odz = p.z - orb.z;
       if (Math.sqrt(odx * odx + odz * odz) <= pickupR) {
         orb.collected = true;
+        audioManager.play("xp_pickup");
         g.progression.addXp(orb.value); // onLevelUp callback handles phase change
       }
     }
     g.xpOrbs = g.xpOrbs.filter((o) => !o.collected);
+
+    // ── Boss special attack ────────────────────────────────────────────────
+    for (const e of g.enemies) {
+      if (e.dead || e.type !== "boss") continue;
+      if (e.specialWarning) {
+        e.specialWarnTimer -= delta;
+        if (e.specialWarnTimer <= 0) {
+          e.specialWarning = false;
+          store.setBossSpecialWarn(false);
+          // AoE damage lands
+          const dist = Math.sqrt((p.x - e.x) ** 2 + (p.z - e.z) ** 2);
+          if (dist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
+            const rawDmg = e.damage * 1.8;
+            const effective = Math.max(1, rawDmg - stats.armor);
+            p.hp -= effective;
+            p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+            if (p.hp <= 0) {
+              p.hp = 0;
+              p.dead = true;
+              audioManager.play("player_death");
+              audioManager.stopMusic();
+              store.setBossState(0, 0, "", false);
+              const bonusShards = Math.round(store.wave * 15 + g.kills);
+              if (bonusShards > 0) {
+                useMetaStore.getState().addShards(bonusShards);
+                store.addRunShards(bonusShards);
+              }
+            } else {
+              audioManager.play("player_hurt");
+            }
+          }
+        }
+      } else {
+        e.specialTimer -= delta;
+        if (e.specialTimer <= 0) {
+          e.specialTimer = GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_INTERVAL;
+          e.specialWarning = true;
+          e.specialWarnTimer = GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_WARN_TIME;
+          audioManager.play("boss_special");
+          store.setBossSpecialWarn(true);
+        }
+      }
+      // Sync boss HP to HUD each frame
+      store.setBossState(e.hp, e.maxHp, ENEMY_DATA.boss.displayName, true);
+    }
 
     // ── Spawning ──────────────────────────────────────────────────────────
     g.waveTimer += delta;
@@ -520,11 +627,23 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         GAME_CONFIG.DIFFICULTY.MIN_SPAWN_INTERVAL,
         g.spawnInterval - GAME_CONFIG.DIFFICULTY.SPAWN_REDUCTION
       );
+      // Boss wave trigger
+      if (currentWave % GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL === 0 && !g.bossAlive) {
+        const boss = spawnBoss(currentWave);
+        g.enemies.push(boss);
+        g.bossAlive = true;
+        g.bossId = boss.id;
+        store.setBossState(boss.maxHp, boss.maxHp, ENEMY_DATA.boss.displayName, true);
+        audioManager.play("boss_spawn");
+      }
     }
-    g.spawnTimer += delta;
-    if (g.spawnTimer >= g.spawnInterval) {
-      g.spawnTimer = 0;
-      g.enemies.push(spawnEnemy(store.wave));
+    // During boss wave, pause regular spawning while boss is alive
+    if (!g.bossAlive) {
+      g.spawnTimer += delta;
+      if (g.spawnTimer >= g.spawnInterval) {
+        g.spawnTimer = 0;
+        g.enemies.push(spawnEnemy(store.wave));
+      }
     }
 
     // ── Sync to UI store ──────────────────────────────────────────────────
@@ -565,6 +684,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       <AimResolver gs={gs} />
       <Player3D gs={gs} />
       <AttackEffect x={playerX} z={playerZ} angle={playerAngle} active={isAttacking} />
+      <BossAoeRing gs={gs} />
       {gs.current?.enemies.filter((e) => !e.dead).map((e) => (
         <Enemy3D key={e.id} enemy={e} />
       ))}
@@ -575,6 +695,38 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         <Projectile3D key={pr.id} proj={pr} />
       ))}
     </>
+  );
+}
+
+// ─── Boss AoE warning ring ─────────────────────────────────────────────────────
+
+function BossAoeRing({ gs }: { gs: React.RefObject<GameState | null> }) {
+  const bossSpecialWarn = useGameStore((s) => s.bossSpecialWarn);
+  const meshRef = useRef<THREE.Mesh>(null);
+  const t = useRef(0);
+
+  useFrame((_, delta) => {
+    if (!meshRef.current) return;
+    if (!bossSpecialWarn || !gs.current) {
+      meshRef.current.visible = false;
+      return;
+    }
+    const boss = gs.current.enemies.find((e) => e.type === "boss" && !e.dead);
+    if (!boss) { meshRef.current.visible = false; return; }
+
+    t.current += delta;
+    meshRef.current.visible = true;
+    meshRef.current.position.set(boss.x, 0.12, boss.z);
+    const pulse = 0.85 + Math.sin(t.current * 10) * 0.15;
+    meshRef.current.scale.setScalar(pulse);
+  });
+
+  const r = GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS;
+  return (
+    <mesh ref={meshRef} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+      <ringGeometry args={[r - 0.5, r, 48]} />
+      <meshBasicMaterial color="#ff3300" transparent opacity={0.75} side={THREE.DoubleSide} />
+    </mesh>
   );
 }
 
@@ -646,8 +798,11 @@ export function GameScene({ onRestart }: GameSceneProps) {
       progression,
       input,
       running: false,
+      bossAlive: false,
+      bossId: null,
     };
     progression.onLevelUp = (_lvl, choices) => {
+      audioManager.play("level_up");
       useGameStore.getState().setLevelUpChoices(choices);
       useGameStore.getState().setPhase("levelup");
     };
@@ -658,11 +813,15 @@ export function GameScene({ onRestart }: GameSceneProps) {
   useEffect(() => {
     const g = gsRef.current!;
     if (phase === "playing") {
+      audioManager.playMusic();
       // If the player is dead (e.g. restart after game-over), do a full reset
       if (g.player.dead) {
         const cls = useGameStore.getState().selectedClass;
+        useGameStore.getState().setBossState(0, 0, "", false);
+        useGameStore.getState().setBossSpecialWarn(false);
         const { progression: prog, startHp } = makeProgWithMeta(cls);
         prog.onLevelUp = (_lvl, choices) => {
+          audioManager.play("level_up");
           useGameStore.getState().setLevelUpChoices(choices);
           useGameStore.getState().setPhase("levelup");
         };
@@ -678,6 +837,8 @@ export function GameScene({ onRestart }: GameSceneProps) {
           progression: prog,
           input: g.input,
           running: true,
+          bossAlive: false,
+          bossId: null,
         };
         _eid = 1; _oid = 1; _pid = 1;
       } else {
@@ -685,6 +846,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       }
     } else if (phase === "gameover") {
       g.running = false;
+      audioManager.stopMusic();
     }
   }, [phase]);
 
