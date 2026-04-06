@@ -5,7 +5,7 @@
  * Mage + Rogue retain low-poly geometry until their models arrive.
  */
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import * as THREE from "three";
@@ -30,78 +30,70 @@ export function Player3D({ gs }: PlayerProps) {
 // ─── Warrior — real 3D model ───────────────────────────────────────────────────
 
 function WarriorGLB({ gs }: PlayerProps) {
-  const groupRef    = useRef<THREE.Group>(null);
-  const lightRef    = useRef<THREE.PointLight>(null);
-  const lastX       = useRef(0);
-  const lastZ       = useRef(0);
+  const lightRef = useRef<THREE.PointLight>(null);
 
-  // Load the animation GLB — it bundles the full skinned mesh + the slash clip
+  // Load the animation GLB — bundles the full skinned mesh + the slash clip
   const { scene, animations } = useGLTF(
     `${import.meta.env.BASE_URL}models/warrior/Animation_Left_Slash.glb`
   );
 
-  // Clone the scene so multiple instances don't share the same object
-  const clonedScene = useRef<THREE.Group | null>(null);
-  if (!clonedScene.current) {
-    clonedScene.current = scene.clone(true);
-    // Enable shadows on every mesh in the model
-    clonedScene.current.traverse((child) => {
+  // Clone so this instance has its own transform, materials, and skeleton
+  const model = useMemo(() => {
+    const clone = scene.clone(true);
+    clone.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         child.castShadow    = true;
         child.receiveShadow = true;
       }
     });
-  }
+    return clone;
+  }, [scene]);
 
-  const { actions, mixer } = useAnimations(animations, clonedScene.current);
+  // Wire animations to the cloned model
+  const { actions } = useAnimations(animations, model);
 
-  // Detect the animation clip name and start it looping
   useEffect(() => {
     const clipName = animations[0]?.name;
     if (!clipName || !actions[clipName]) return;
-    actions[clipName]!
-      .reset()
-      .setLoop(THREE.LoopRepeat, Infinity)
-      .play();
+    actions[clipName]!.reset().setLoop(THREE.LoopRepeat, Infinity).play();
     return () => { actions[clipName]?.stop(); };
   }, [actions, animations]);
 
+  // Priority 1 runs AFTER drei's useAnimations (priority 0), so our position
+  // always wins over any root-motion baked into the animation clip.
   useFrame((_, delta) => {
-    if (!gs.current || !groupRef.current) return;
+    if (!gs.current) return;
     const p = gs.current.player;
 
-    // Advance the animation mixer
-    mixer.update(delta);
+    // Stamp model to exact player position every frame
+    model.position.set(p.x, 0, p.z);
+    model.rotation.y = p.angle + Math.PI;
 
-    // Track position & facing
-    groupRef.current.position.set(p.x, 0, p.z);
-    groupRef.current.rotation.y = p.angle + Math.PI;
-
-    lastX.current = p.x;
-    lastZ.current = p.z;
-
-    // Aura light follows player
+    // Aura light
     if (lightRef.current) {
       lightRef.current.position.set(p.x, 2, p.z);
       const invPct = Math.max(0, p.invTimer / GAME_CONFIG_INV_TIME);
       lightRef.current.intensity = 1.5 + invPct * 3;
       lightRef.current.color.setRGB(
-        invPct > 0.1 ? 1    : 0.55,
-        invPct > 0.1 ? 0.2  : 0.45,
-        invPct > 0.1 ? 0.1  : 1.0,
+        invPct > 0.1 ? 1   : 0.55,
+        invPct > 0.1 ? 0.2 : 0.45,
+        invPct > 0.1 ? 0.1 : 1.0,
       );
     }
-  });
+
+    // Suppress unused delta warning — animation mixer is handled by useAnimations
+    void delta;
+  }, 1); // <-- higher priority than useAnimations' default 0
 
   return (
     <>
-      <group ref={groupRef}>
-        {/*
-          Scale: Meshy exports in metres. If the model looks giant or tiny,
-          adjust the scale prop below. 0.01 = cm→m, 1 = already in metres.
-        */}
-        <primitive object={clonedScene.current} scale={1} position={[0, 0, 0]} />
-      </group>
+      {/*
+        Render the model directly — no wrapper group needed.
+        Position is driven imperatively in useFrame above.
+        Scale: Meshy exports in metres (1 unit = 1 m).
+        If the character looks giant or tiny, change scale here.
+      */}
+      <primitive object={model} />
       <pointLight ref={lightRef} color="#8070ff" intensity={1.5} distance={10} decay={2} />
     </>
   );
