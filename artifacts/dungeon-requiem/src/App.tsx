@@ -1,6 +1,6 @@
 /**
  * App.tsx — Root component.
- * Simple phase-based state machine. GameScene handles all game logic.
+ * Phase-based state machine. GameScene handles all game logic.
  */
 
 import { useCallback } from "react";
@@ -8,6 +8,7 @@ import { useGameStore } from "./store/gameStore";
 import { GameScene } from "./game/GameScene";
 import { MainMenu } from "./ui/MainMenu";
 import { CharacterSelect } from "./ui/CharacterSelect";
+import { SoulForge } from "./ui/SoulForge";
 import { GameOver } from "./ui/GameOver";
 
 export default function App() {
@@ -23,10 +24,11 @@ export default function App() {
 
   return (
     <div style={styles.root}>
-      {phase === "menu" && <MainMenu />}
+      {phase === "menu"       && <MainMenu />}
       {phase === "charselect" && <CharacterSelect />}
+      {phase === "soulforge"  && <SoulForge />}
 
-      {(phase !== "menu" && phase !== "charselect") && (
+      {(phase !== "menu" && phase !== "charselect" && phase !== "soulforge") && (
         <GameScene onRestart={handleRestart} />
       )}
 

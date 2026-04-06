@@ -4,9 +4,11 @@
  */
 
 import { useGameStore } from "../store/gameStore";
+import { useMetaStore } from "../store/metaStore";
 
 export function MainMenu() {
   const { setPhase, bestScore, bestWave } = useGameStore();
+  const shards = useMetaStore((s) => s.shards);
 
   return (
     <div style={styles.overlay}>
@@ -31,6 +33,17 @@ export function MainMenu() {
           onClick={() => setPhase("charselect")}
         >
           ⚔ BEGIN DESCENT
+        </button>
+
+        <button
+          style={styles.btnForge}
+          onClick={() => setPhase("soulforge")}
+        >
+          <span style={styles.forgeShard}>◈</span>
+          {" "}SOUL FORGE
+          {shards > 0 && (
+            <span style={styles.forgeShardCount}> · {shards.toLocaleString()} shards</span>
+          )}
         </button>
 
         {bestScore > 0 && (
@@ -158,6 +171,27 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "all 0.2s",
     boxShadow: "0 0 20px rgba(100,0,180,0.5)",
     fontFamily: "inherit",
+  },
+  btnForge: {
+    marginTop: 10,
+    padding: "12px 32px",
+    fontSize: 14,
+    fontWeight: "bold",
+    letterSpacing: 2,
+    color: "#c0a0e0",
+    background: "rgba(40,10,70,0.7)",
+    border: "1px solid rgba(120,60,160,0.5)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+  },
+  forgeShard: {
+    color: "#d0a0ff",
+    fontSize: 16,
+  },
+  forgeShardCount: {
+    color: "#9060c0",
+    fontSize: 12,
   },
   bestScore: {
     marginTop: 16,

@@ -11,6 +11,7 @@ import type { CharacterClass } from "../data/CharacterData";
 export type GamePhase =
   | "menu"
   | "charselect"
+  | "soulforge"
   | "playing"
   | "paused"
   | "levelup"
@@ -89,8 +90,12 @@ export interface GameUIState {
   // Character class
   selectedClass: CharacterClass;
 
+  // Soul shards (per-run counter — persistent total lives in metaStore)
+  shardsThisRun: number;
+
   // Actions
   setPhase: (phase: GamePhase) => void;
+  addRunShards: (n: number) => void;
   setSelectedClass: (cls: CharacterClass) => void;
   setPlayerHP: (hp: number, maxHp: number) => void;
   setPlayerPos: (x: number, z: number, angle: number) => void;
@@ -137,6 +142,7 @@ const initialState = {
   bestScore: 0,
   bestWave: 0,
   selectedClass: "warrior" as CharacterClass,
+  shardsThisRun: 0,
 };
 
 export const useGameStore = create<GameUIState>((set) => ({
@@ -144,6 +150,7 @@ export const useGameStore = create<GameUIState>((set) => ({
 
   setPhase: (phase) => set({ phase }),
   setSelectedClass: (selectedClass) => set({ selectedClass }),
+  addRunShards: (n) => set((s) => ({ shardsThisRun: s.shardsThisRun + n })),
 
   setPlayerHP: (playerHP, playerMaxHP) => set({ playerHP, playerMaxHP }),
 

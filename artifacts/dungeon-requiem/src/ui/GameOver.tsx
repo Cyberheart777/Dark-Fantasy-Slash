@@ -1,16 +1,18 @@
 /**
  * GameOver.tsx
- * Game over screen with stats and restart.
+ * Game over screen — shows run stats, shards earned, and Soul Forge shortcut.
  */
 
 import { useGameStore } from "../store/gameStore";
+import { useMetaStore } from "../store/metaStore";
 
 interface GameOverProps {
   onRestart: () => void;
 }
 
 export function GameOver({ onRestart }: GameOverProps) {
-  const { score, kills, wave, survivalTime, level, bestScore, bestWave } = useGameStore();
+  const { score, kills, wave, survivalTime, level, bestScore, bestWave, shardsThisRun } = useGameStore();
+  const shards = useMetaStore((s) => s.shards);
 
   const minutes = Math.floor(survivalTime / 60);
   const seconds = Math.floor(survivalTime % 60);
@@ -27,11 +29,11 @@ export function GameOver({ onRestart }: GameOverProps) {
         </div>
 
         <div style={styles.statGrid}>
-          <StatRow label="Score" value={score.toLocaleString()} highlight />
+          <StatRow label="Score"        value={score.toLocaleString()} highlight />
           <StatRow label="Wave Reached" value={String(wave)} />
-          <StatRow label="Kills" value={String(kills)} />
-          <StatRow label="Level" value={String(level)} />
-          <StatRow label="Survived" value={`${minutes}:${String(seconds).padStart(2, "0")}`} />
+          <StatRow label="Kills"        value={String(kills)} />
+          <StatRow label="Level"        value={String(level)} />
+          <StatRow label="Survived"     value={`${minutes}:${String(seconds).padStart(2, "0")}`} />
         </div>
 
         {bestScore > 0 && (
@@ -42,15 +44,28 @@ export function GameOver({ onRestart }: GameOverProps) {
           </div>
         )}
 
+        {/* Soul Shard summary */}
+        <div style={styles.shardBox}>
+          <div style={styles.shardTitle}>◈ SOUL SHARDS EARNED</div>
+          <div style={styles.shardAmount}>+{shardsThisRun.toLocaleString()}</div>
+          <div style={styles.shardTotal}>Total: {shards.toLocaleString()} shards</div>
+        </div>
+
         <div style={styles.divider} />
 
-        <div style={styles.btnRow}>
-          <button style={styles.btnPrimary} onClick={onRestart}>
-            ↻ DESCEND AGAIN
+        <div style={styles.btnCol}>
+          <button style={styles.btnForge} onClick={() => useGameStore.getState().setPhase("soulforge")}>
+            ◈ SOUL FORGE — Spend {shards.toLocaleString()} Shards
           </button>
-          <button style={styles.btnSecondary} onClick={() => useGameStore.getState().setPhase("menu")}>
-            ⌂ MAIN MENU
-          </button>
+
+          <div style={styles.btnRow}>
+            <button style={styles.btnPrimary} onClick={onRestart}>
+              ↻ DESCEND AGAIN
+            </button>
+            <button style={styles.btnSecondary} onClick={() => useGameStore.getState().setPhase("menu")}>
+              ⌂ MAIN MENU
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -81,21 +96,27 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(0,0,0,0.85)",
     backdropFilter: "blur(6px)",
     fontFamily: "'Segoe UI', monospace",
+    overflowY: "auto",
+    WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
+    padding: "20px 0",
   },
   panel: {
     textAlign: "center",
-    padding: "48px 64px",
-    background: "rgba(8,0,12,0.95)",
+    padding: "40px 48px",
+    background: "rgba(8,0,12,0.97)",
     border: "1px solid rgba(180,0,0,0.4)",
     borderRadius: 16,
     boxShadow: "0 0 60px rgba(180,0,0,0.25)",
-    minWidth: 380,
+    minWidth: 340,
+    maxWidth: 460,
+    width: "90vw",
+    boxSizing: "border-box",
   },
   titleWrapper: {
-    marginBottom: 32,
+    marginBottom: 24,
   },
   titleRed: {
-    fontSize: 56,
+    fontSize: 52,
     fontWeight: "900",
     color: "#cc2222",
     letterSpacing: 8,
@@ -112,27 +133,75 @@ const styles: Record<string, React.CSSProperties> = {
   statGrid: {
     display: "grid",
     gridTemplateColumns: "auto auto",
-    gap: "12px 40px",
+    gap: "10px 32px",
     justifyContent: "center",
-    marginBottom: 20,
+    marginBottom: 16,
   },
   bestRow: {
-    fontSize: 14,
+    fontSize: 13,
     marginBottom: 8,
+  },
+  shardBox: {
+    background: "rgba(60,20,100,0.4)",
+    border: "1px solid rgba(120,60,180,0.5)",
+    borderRadius: 10,
+    padding: "14px",
+    marginTop: 8,
+  },
+  shardTitle: {
+    fontSize: 11,
+    letterSpacing: 3,
+    color: "#9060c0",
+    fontFamily: "monospace",
+  },
+  shardAmount: {
+    fontSize: 32,
+    fontWeight: 900,
+    color: "#d0a0ff",
+    textShadow: "0 0 16px #9030d0",
+    fontFamily: "monospace",
+    lineHeight: 1.3,
+  },
+  shardTotal: {
+    fontSize: 12,
+    color: "#7050a0",
+    fontFamily: "monospace",
+    marginTop: 2,
   },
   divider: {
     height: 1,
     background: "linear-gradient(to right, transparent, rgba(180,0,0,0.4), transparent)",
     margin: "20px 0",
   },
+  btnCol: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+  },
+  btnForge: {
+    width: "100%",
+    padding: "14px",
+    fontSize: 14,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    color: "#d0a0ff",
+    background: "rgba(50,15,90,0.8)",
+    border: "1px solid rgba(140,70,200,0.6)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    boxShadow: "0 0 14px rgba(120,40,180,0.3)",
+    minHeight: 48,
+  },
   btnRow: {
     display: "flex",
-    gap: 16,
+    gap: 12,
     justifyContent: "center",
   },
   btnPrimary: {
-    padding: "14px 32px",
-    fontSize: 16,
+    flex: 1,
+    padding: "14px 20px",
+    fontSize: 14,
     fontWeight: "bold",
     letterSpacing: 2,
     color: "#fff",
@@ -141,11 +210,13 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     cursor: "pointer",
     fontFamily: "inherit",
-    boxShadow: "0 0 20px rgba(180,0,0,0.4)",
+    boxShadow: "0 0 16px rgba(180,0,0,0.4)",
+    minHeight: 48,
   },
   btnSecondary: {
-    padding: "14px 32px",
-    fontSize: 16,
+    flex: 1,
+    padding: "14px 20px",
+    fontSize: 14,
     fontWeight: "bold",
     letterSpacing: 2,
     color: "#bbb",
@@ -154,5 +225,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     cursor: "pointer",
     fontFamily: "inherit",
+    minHeight: 48,
   },
 };

@@ -10,10 +10,14 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
 import { useGameStore } from "../store/gameStore";
+import { useMetaStore } from "../store/metaStore";
 import { GAME_CONFIG } from "../data/GameConfig";
 import { ENEMY_DATA, pickEnemyType } from "../data/EnemyData";
 import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
 import { ProgressionManager } from "../systems/ProgressionManager";
+import { createDefaultStats, type PlayerStats } from "../data/UpgradeData";
+import { buildMetaModifiers } from "../data/MetaUpgradeData";
+import { resolveStats } from "../data/StatModifier";
 import { InputManager3D } from "./InputManager3D";
 import { DungeonRoom } from "../world/DungeonRoom";
 import { Torch3D } from "../world/Torch3D";
@@ -98,6 +102,33 @@ const TORCH_POSITIONS: [number, number, number][] = [
   [-H + 0.2, 2.8, -15], [-H + 0.2, 2.8, 0], [-H + 0.2, 2.8, 15],
   [ H - 0.2, 2.8, -15], [ H - 0.2, 2.8, 0], [ H - 0.2, 2.8, 15],
 ];
+
+// ─── Meta-aware progression factory ──────────────────────────────────────────
+// Builds the starting PlayerStats for a class, bakes in persistent meta bonuses,
+// then wraps it in a ProgressionManager. Per-run upgrades stack on top via ProgressionManager.
+
+function makeProgWithMeta(cls: CharacterClass): { progression: ProgressionManager; startHp: number } {
+  const def = CHARACTER_DATA[cls];
+  // 1. Class base stats (flat, predictable starting point)
+  const classBase: PlayerStats = {
+    ...createDefaultStats(),
+    maxHealth: def.hp, currentHealth: def.hp,
+    damage: def.damage, attackSpeed: def.attackSpeed,
+    moveSpeed: def.moveSpeed, armor: def.armor,
+    dashCooldown: def.dashCooldown, critChance: def.critChance,
+    attackRange: def.attackRange,
+  };
+  // 2. Resolve meta flat bonuses on top (Layer 1 — flat additions only)
+  const metaMods = buildMetaModifiers(useMetaStore.getState().purchased);
+  const resolved = resolveStats(classBase, metaMods);
+  // Round integer stats after resolution to avoid floating-point HP
+  resolved.maxHealth = Math.round(resolved.maxHealth);
+  resolved.currentHealth = resolved.maxHealth;
+  resolved.damage = Math.round(resolved.damage);
+  // 3. Hand off to ProgressionManager — per-run upgrades (additive %) stack on top
+  const progression = new ProgressionManager(resolved);
+  return { progression, startHp: resolved.maxHealth };
+}
 
 // ─── ID generators ────────────────────────────────────────────────────────────
 
@@ -317,6 +348,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               e.dead = true;
               g.kills++;
               g.score += e.scoreValue;
+              useMetaStore.getState().addShards(5);
+              useGameStore.getState().addRunShards(5);
               const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
               g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2 });
             }
@@ -399,6 +432,14 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               if (p.hp <= 0) {
                 p.hp = 0;
                 p.dead = true;
+                // Bonus shards for how far they got: waves survived + kills
+                const bonusShards = Math.round(
+                  useGameStore.getState().wave * 15 + g.kills,
+                );
+                if (bonusShards > 0) {
+                  useMetaStore.getState().addShards(bonusShards);
+                  useGameStore.getState().addRunShards(bonusShards);
+                }
               }
             }
           }
@@ -446,6 +487,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           e.dead = true;
           g.kills++;
           g.score += e.scoreValue;
+          useMetaStore.getState().addShards(5);
+          useGameStore.getState().addRunShards(5);
           const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
           g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2 });
         }
@@ -589,17 +632,10 @@ export function GameScene({ onRestart }: GameSceneProps) {
   // Initialize game state once
   if (!gsRef.current) {
     const cls = useGameStore.getState().selectedClass;
-    const def = CHARACTER_DATA[cls];
-    const progression = new ProgressionManager({
-      maxHealth: def.hp, currentHealth: def.hp,
-      damage: def.damage, attackSpeed: def.attackSpeed,
-      moveSpeed: def.moveSpeed, armor: def.armor,
-      dashCooldown: def.dashCooldown, critChance: def.critChance,
-      attackRange: def.attackRange,
-    });
+    const { progression, startHp } = makeProgWithMeta(cls);
     const input = new InputManager3D();
     const gs0: GameState = {
-      player: makePlayer(def.hp),
+      player: makePlayer(startHp),
       enemies: [],
       xpOrbs: [],
       projectiles: [],
@@ -625,20 +661,13 @@ export function GameScene({ onRestart }: GameSceneProps) {
       // If the player is dead (e.g. restart after game-over), do a full reset
       if (g.player.dead) {
         const cls = useGameStore.getState().selectedClass;
-        const def = CHARACTER_DATA[cls];
-        const prog = new ProgressionManager({
-          maxHealth: def.hp, currentHealth: def.hp,
-          damage: def.damage, attackSpeed: def.attackSpeed,
-          moveSpeed: def.moveSpeed, armor: def.armor,
-          dashCooldown: def.dashCooldown, critChance: def.critChance,
-          attackRange: def.attackRange,
-        });
+        const { progression: prog, startHp } = makeProgWithMeta(cls);
         prog.onLevelUp = (_lvl, choices) => {
           useGameStore.getState().setLevelUpChoices(choices);
           useGameStore.getState().setPhase("levelup");
         };
         gsRef.current = {
-          player: makePlayer(def.hp),
+          player: makePlayer(startHp),
           enemies: [],
           xpOrbs: [],
           projectiles: [],
