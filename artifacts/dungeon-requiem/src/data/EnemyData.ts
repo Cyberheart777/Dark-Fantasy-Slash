@@ -1,9 +1,16 @@
 /**
  * EnemyData.ts
  * Data-driven enemy definitions — 3D units.
+ *
+ * XP crystal tiers (multipliers of the base green crystal value):
+ *   green = 1×  (scuttler)
+ *   blue  = 10× (wraith, brute)
+ *   purple= 30× (elite)
+ *   orange= 50× (boss)
  */
 
 export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss";
+export type CrystalTier = "green" | "blue" | "purple" | "orange";
 
 export interface EnemyDef {
   type: EnemyType;
@@ -12,6 +19,7 @@ export interface EnemyDef {
   damage: number;
   moveSpeed: number;       // units/second
   xpReward: number;
+  crystalTier: CrystalTier;
   attackRange: number;     // units
   attackInterval: number;  // seconds
   collisionRadius: number; // units
@@ -21,6 +29,8 @@ export interface EnemyDef {
   scale: number;           // mesh scale factor
 }
 
+const GREEN_XP = 10;
+
 export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
   scuttler: {
     type: "scuttler",
@@ -28,7 +38,8 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     health: 30,
     damage: 8,
     moveSpeed: 6.0,
-    xpReward: 12,
+    xpReward: GREEN_XP,          // 1× — green crystal
+    crystalTier: "green",
     attackRange: 1.8,
     attackInterval: 1.2,
     collisionRadius: 0.7,
@@ -43,7 +54,8 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     health: 140,
     damage: 22,
     moveSpeed: 2.5,
-    xpReward: 35,
+    xpReward: GREEN_XP * 10,     // 10× — blue crystal
+    crystalTier: "blue",
     attackRange: 2.4,
     attackInterval: 2.0,
     collisionRadius: 1.2,
@@ -58,7 +70,8 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     health: 55,
     damage: 14,
     moveSpeed: 4.5,
-    xpReward: 22,
+    xpReward: GREEN_XP * 10,     // 10× — blue crystal
+    crystalTier: "blue",
     attackRange: 2.0,
     attackInterval: 0.9,
     collisionRadius: 0.8,
@@ -73,7 +86,8 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     health: 420,
     damage: 36,
     moveSpeed: 3.5,
-    xpReward: 120,
+    xpReward: GREEN_XP * 30,     // 30× — purple crystal
+    crystalTier: "purple",
     attackRange: 2.6,
     attackInterval: 1.6,
     collisionRadius: 1.3,
@@ -88,7 +102,8 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     health: 1800,
     damage: 55,
     moveSpeed: 3.0,
-    xpReward: 600,
+    xpReward: GREEN_XP * 50,     // 50× — orange crystal
+    crystalTier: "orange",
     attackRange: 3.5,
     attackInterval: 1.4,
     collisionRadius: 2.0,

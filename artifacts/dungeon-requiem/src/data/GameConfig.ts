@@ -37,9 +37,9 @@ export const GAME_CONFIG = {
 
   DIFFICULTY: {
     WAVE_DURATION: 30,          // seconds between intensity bumps
-    BASE_SPAWN_INTERVAL: 2.2,   // seconds between spawns at start
-    MIN_SPAWN_INTERVAL: 0.28,
-    SPAWN_REDUCTION: 0.12,      // seconds removed per wave
+    BASE_SPAWN_INTERVAL: 1.1,   // seconds between spawns at start (doubled mob rate)
+    MIN_SPAWN_INTERVAL: 0.18,
+    SPAWN_REDUCTION: 0.07,      // seconds removed per wave
     ELITE_SPAWN_START_WAVE: 4,
     BOSS_WAVE_INTERVAL: 5,      // boss spawns every N waves (wave 5, 10, 15…)
     BOSS_HP_SCALE_PER_WAVE: 0.2,// boss HP multiplier per appearance

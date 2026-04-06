@@ -64,9 +64,21 @@ export interface EnemyRuntime {
   specialWarnTimer: number;
 }
 
+export type CrystalTier = "green" | "blue" | "purple" | "orange";
+
 export interface XPOrb {
   id: string; x: number; z: number;
   value: number; collected: boolean; floatOffset: number;
+  crystalTier: CrystalTier;
+}
+
+export interface EnemyProjectile {
+  id: string;
+  x: number; z: number;
+  vx: number; vz: number;
+  damage: number;
+  lifetime: number;
+  dead: boolean;
 }
 
 export interface Projectile {
@@ -89,6 +101,7 @@ interface GameState {
   enemies: EnemyRuntime[];
   xpOrbs: XPOrb[];
   projectiles: Projectile[];
+  enemyProjectiles: EnemyProjectile[];
   score: number; kills: number; survivalTime: number;
   wave: number;
   spawnTimer: number; waveTimer: number;
@@ -143,9 +156,19 @@ function makeProgWithMeta(cls: CharacterClass): { progression: ProgressionManage
 let _eid = 1;
 let _oid = 1;
 let _pid = 1;
+let _epid = 1;
 function enemyId() { return `e${_eid++}`; }
 function orbId()   { return `o${_oid++}`; }
 function projId()  { return `p${_pid++}`; }
+function eprojId() { return `ep${_epid++}`; }
+
+const CRYSTAL_TIER: Record<string, CrystalTier> = {
+  scuttler: "green",
+  wraith:   "blue",
+  brute:    "blue",
+  elite:    "purple",
+  boss:     "orange",
+};
 
 // ─── Factory helpers ──────────────────────────────────────────────────────────
 
@@ -190,7 +213,8 @@ function spawnEnemy(wave: number): EnemyRuntime {
     dead: false, hitFlashTimer: 0,
     scale: def.scale, color: def.color, emissive: def.emissive,
     vx: 0, vz: 0, phasing: false, phaseTimer: 0,
-    specialTimer: 0, specialWarning: false, specialWarnTimer: 0,
+    specialTimer: type === "wraith" ? 2.0 + Math.random() * 2.0 : 0,
+    specialWarning: false, specialWarnTimer: 0,
   };
 }
 
@@ -386,7 +410,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               useMetaStore.getState().addShards(5);
               useGameStore.getState().addRunShards(5);
               const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
-              g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2 });
+              g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
               if (e.type === "boss") {
                 g.bossAlive = false; g.bossId = null;
                 store.setBossState(0, 0, "", false);
@@ -443,12 +467,23 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       const edz = p.z - e.z;
       const dist = Math.sqrt(edx * edx + edz * edz);
 
-      // Wraith phasing
+      // Wraith phasing + ranged shot
       if (e.type === "wraith") {
         e.phaseTimer -= delta;
         if (e.phaseTimer <= 0) {
           e.phasing = !e.phasing;
           e.phaseTimer = e.phasing ? 1.5 : 3.5;
+        }
+        e.specialTimer -= delta;
+        if (e.specialTimer <= 0 && dist > e.attackRange) {
+          e.specialTimer = 3.0 + Math.random() * 1.5;
+          const dn = dist > 0 ? dist : 1;
+          g.enemyProjectiles.push({
+            id: eprojId(), x: e.x, z: e.z,
+            vx: (edx / dn) * 9, vz: (edz / dn) * 9,
+            damage: e.damage * 0.9,
+            lifetime: 4.5, dead: false,
+          });
         }
       }
 
@@ -540,7 +575,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           useMetaStore.getState().addShards(5);
           useGameStore.getState().addRunShards(5);
           const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
-          g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2 });
+          g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
           if (e.type === "boss") {
             g.bossAlive = false; g.bossId = null;
             store.setBossState(0, 0, "", false);
@@ -554,6 +589,47 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       }
     }
     g.projectiles = g.projectiles.filter((pr) => !pr.dead);
+
+    // ── Enemy projectiles (wraith shots) ──────────────────────────────────
+    for (const ep of g.enemyProjectiles) {
+      if (ep.dead) continue;
+      ep.lifetime -= delta;
+      if (ep.lifetime <= 0) { ep.dead = true; continue; }
+      ep.x += ep.vx * delta;
+      ep.z += ep.vz * delta;
+      if (Math.abs(ep.x) > GAME_CONFIG.ARENA_HALF || Math.abs(ep.z) > GAME_CONFIG.ARENA_HALF) {
+        ep.dead = true; continue;
+      }
+      if (!p.dead && p.invTimer <= 0 && !p.isDashing) {
+        const hdx = p.x - ep.x;
+        const hdz = p.z - ep.z;
+        if (Math.sqrt(hdx * hdx + hdz * hdz) < 0.9) {
+          ep.dead = true;
+          const rawDmg = ep.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
+          const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
+          if (!isDodged) {
+            const effective = Math.max(1, rawDmg - stats.armor);
+            p.hp -= effective;
+            p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.6;
+            if (p.hp <= 0) {
+              p.hp = 0;
+              p.dead = true;
+              audioManager.play("player_death");
+              audioManager.stopMusic();
+              store.setBossState(0, 0, "", false);
+              const bonusShards = Math.round(g.wave * 15 + g.kills);
+              if (bonusShards > 0) {
+                useMetaStore.getState().addShards(bonusShards);
+                store.addRunShards(bonusShards);
+              }
+            } else {
+              audioManager.play("player_hurt");
+            }
+          }
+        }
+      }
+    }
+    g.enemyProjectiles = g.enemyProjectiles.filter((ep) => !ep.dead);
 
     // ── XP Orbs ───────────────────────────────────────────────────────────
     const pickupR = GAME_CONFIG.PLAYER.PICKUP_RADIUS;
@@ -690,7 +766,31 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       {gs.current?.projectiles.filter((pr) => !pr.dead).map((pr) => (
         <Projectile3D key={pr.id} proj={pr} />
       ))}
+      {gs.current?.enemyProjectiles.map((ep) => (
+        <EnemyProjectile3D key={ep.id} ep={ep} />
+      ))}
     </>
+  );
+}
+
+function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
+  const ref = useRef<THREE.Group>(null);
+  const t   = useRef(Math.random() * 100);
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (ref.current) {
+      ref.current.position.set(ep.x, 0.9 + Math.sin(t.current * 8) * 0.08, ep.z);
+      ref.current.rotation.y = t.current * 6;
+    }
+  });
+  return (
+    <group ref={ref}>
+      <mesh castShadow>
+        <octahedronGeometry args={[0.22, 0]} />
+        <meshStandardMaterial color="#1a0030" emissive="#8800ff" emissiveIntensity={4} roughness={0.1} metalness={0.2} />
+      </mesh>
+      <pointLight color="#6600cc" intensity={1.8} distance={4} decay={2} />
+    </group>
   );
 }
 
@@ -796,6 +896,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       running: false,
       bossAlive: false,
       bossId: null,
+      enemyProjectiles: [],
     };
     progression.onLevelUp = (_lvl, choices) => {
       audioManager.play("level_up");
@@ -835,8 +936,9 @@ export function GameScene({ onRestart }: GameSceneProps) {
           running: true,
           bossAlive: false,
           bossId: null,
+          enemyProjectiles: [],
         };
-        _eid = 1; _oid = 1; _pid = 1;
+        _eid = 1; _oid = 1; _pid = 1; _epid = 1;
       } else {
         g.running = true;
       }
