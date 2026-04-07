@@ -43,6 +43,12 @@ export function CharacterSelect() {
   const confirmClass = (c: CharacterClass) => {
     if (!isClassUnlocked(c)) return;
     if (cls === c) {
+      // Reset all run state (shardsThisRun, extraction fields, etc.) before a new run
+      const store = useGameStore.getState();
+      const prevBest = store.bestScore;
+      const prevWave = store.bestWave;
+      store.resetGame();
+      store.setBestScore(prevBest, prevWave);
       setSelectedRace(race);
       setSelectedClass(c);
       setDifficultyTier(difficulty);
