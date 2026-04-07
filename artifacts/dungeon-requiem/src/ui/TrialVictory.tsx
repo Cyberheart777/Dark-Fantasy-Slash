@@ -14,9 +14,9 @@ interface TrialVictoryProps {
 }
 
 const CHAMPION_LORE: Record<string, string> = {
-  warrior: "The Iron Warden falls — his oaths of blood silenced at last.",
-  mage:    "The Arcane Revenant unravels, its stolen spells returning to void.",
-  rogue:   "The Shadow Asp's last venom drips into the dark. You outlasted the hunter.",
+  warrior: "He conquered the Vault once. The dungeon consumed what victory left behind. What you destroyed was not a warrior — it was a warning the dungeon kept to itself.",
+  mage:    "She found what she sought: the source of all magic. It found her first. What you faced was not her — it was the hunger that wore her knowledge like a skin.",
+  rogue:   "She escaped the Vault. Or thought she did. The dungeon keeps its debts. She became what she owed. You paid it in her place.",
 };
 
 const CLASS_ICONS: Record<string, string> = {

@@ -33,6 +33,7 @@ export function GameOver({ onRestart }: GameOverProps) {
       <div style={styles.panel}>
         <div style={styles.titleWrapper}>
           <div style={styles.titleRed}>{trialMode ? "TRIAL FAILED" : "YOU FELL"}</div>
+          <div style={styles.loreSubtitle}>Every death feeds the dungeon.</div>
           {isNewBest && !trialMode && (
             <div style={styles.newBest}>✦ NEW BEST ✦</div>
           )}
@@ -59,6 +60,7 @@ export function GameOver({ onRestart }: GameOverProps) {
           <div style={styles.shardTitle}>◈ SOUL SHARDS EARNED</div>
           <div style={styles.shardAmount}>+{shardsThisRun.toLocaleString()}</div>
           <div style={styles.shardTotal}>Total: {shards.toLocaleString()} shards</div>
+          <div style={styles.shardLore}>Every Shard you carry back brings you closer to becoming part of it.</div>
         </div>
 
         <div style={styles.divider} />
@@ -134,6 +136,14 @@ const styles: Record<string, React.CSSProperties> = {
   titleWrapper: {
     marginBottom: 24,
   },
+  loreSubtitle: {
+    fontSize: 13,
+    color: "rgba(180,100,120,0.7)",
+    fontStyle: "italic",
+    letterSpacing: 1,
+    marginTop: 8,
+    fontFamily: "monospace",
+  },
   titleRed: {
     fontSize: 52,
     fontWeight: "900",
@@ -186,6 +196,14 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#7050a0",
     fontFamily: "monospace",
     marginTop: 2,
+  },
+  shardLore: {
+    fontSize: 10,
+    color: "rgba(160,120,200,0.45)",
+    fontStyle: "italic",
+    fontFamily: "monospace",
+    marginTop: 6,
+    lineHeight: 1.5,
   },
   divider: {
     height: 1,

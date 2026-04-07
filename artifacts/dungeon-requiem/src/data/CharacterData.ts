@@ -11,6 +11,7 @@ export interface CharacterDef {
   title: string;
   description: string;
   lore: string;
+  story: string;
   // Base stats
   hp: number;
   damage: number;
@@ -41,7 +42,8 @@ export const CHARACTER_DATA: Record<CharacterClass, CharacterDef> = {
     name: "WARRIOR",
     title: "Iron Vanguard",
     description: "Heavy armour. Wide sword sweeps. Built to endure the undying tide.",
-    lore: "Last guardian of a shattered kingdom. Death has no meaning left to him.",
+    lore: "You refused to fall. Your blade is not for glory — it is a promise.",
+    story: "When the Vault opened, your order was sent to seal it. None returned. Not even their bodies — only their armor, bent inward from the inside. You are the last. You stayed not out of courage, but out of refusal. The dungeon has not broken you yet.",
     hp: 120,
     damage: 18,
     attackSpeed: 1.0,
@@ -67,7 +69,8 @@ export const CHARACTER_DATA: Record<CharacterClass, CharacterDef> = {
     name: "MAGE",
     title: "Void Arcanist",
     description: "Fires piercing arcane orbs that pass through all enemies in their path.",
-    lore: "She traded half her soul for knowledge of the void. A fair price.",
+    lore: "Magic is dying everywhere. Except down here.",
+    story: "Every spell you cast in this place feels wrong — stronger than it should be, alive in ways it was never meant to be. The Vault is not consuming your power. It is feeding it. What you discover here, you were never meant to survive knowing.",
     hp: 80,
     damage: 30,
     attackSpeed: 0.85,
@@ -93,7 +96,8 @@ export const CHARACTER_DATA: Record<CharacterClass, CharacterDef> = {
     name: "ROGUE",
     title: "Shadow Blade",
     description: "Hurls twin daggers at blinding speed. Fragile but relentless.",
-    lore: "Every dungeon has a fee. She collects it.",
+    lore: "You escaped once. Now something is coming to collect.",
+    story: "You crawled out of the Vault once — pockets full of Soul Shards and something else you can't quite name. A memory you can't place. A debt you don't remember signing. The whispers have returned. They aren't threatening you. They're reminding you.",
     hp: 90,
     damage: 13,
     attackSpeed: 2.2,

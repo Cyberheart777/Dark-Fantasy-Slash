@@ -253,6 +253,11 @@ export function CharacterSelect() {
                         <div style={{ ...S.attackBadge, color: def.accentColor, borderColor: def.color + "50" }}>
                           {c === "warrior" ? "⚔ MELEE SWEEP" : c === "mage" ? "✦ PIERCING ORB" : "◆ TWIN DAGGERS"}
                         </div>
+                        {isSelected && (
+                          <div style={{ ...S.storyBlurb, borderColor: def.color + "40" }}>
+                            {def.story}
+                          </div>
+                        )}
                       </>
                     )}
 
@@ -363,6 +368,12 @@ const S: Record<string, React.CSSProperties> = {
   attackBadge: {
     fontSize: 9, letterSpacing: 2, textAlign: "center", border: "1px solid",
     borderRadius: 4, padding: "5px 8px", fontFamily: "monospace",
+  },
+  storyBlurb: {
+    fontSize: 11, color: "rgba(200,180,220,0.65)", fontStyle: "italic",
+    fontFamily: "monospace", lineHeight: 1.65, padding: "10px 12px",
+    borderLeft: "2px solid", background: "rgba(80,40,120,0.12)",
+    borderRadius: "0 6px 6px 0",
   },
   enterBtn: {
     width: "100%", padding: "13px 0", borderRadius: 8, color: "#fff",

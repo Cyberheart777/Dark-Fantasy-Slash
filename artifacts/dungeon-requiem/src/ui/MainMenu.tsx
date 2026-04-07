@@ -42,7 +42,7 @@ export function MainMenu() {
           <div style={styles.subtitle}>REQUIEM</div>
         </div>
 
-        <div style={styles.tagline}>A dark descent awaits. Survive the undying.</div>
+        <div style={styles.tagline}>The world did not end in fire… it rotted.</div>
 
         <div style={styles.divider} />
 
@@ -101,7 +101,7 @@ export function MainMenu() {
         </div>
       </div>
 
-      <div style={styles.footer}>Low-poly 3D dungeon crawler · Survive endless waves</div>
+      <div style={styles.footer}>It calls. Not with words — but with hunger.</div>
     </div>
   );
 }

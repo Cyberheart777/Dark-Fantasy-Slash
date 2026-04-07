@@ -46,6 +46,10 @@ export function SoulForge() {
           Shards drop from kills · bonus shards awarded on death based on waves survived.
         </div>
 
+        <div style={styles.vaultQuote}>
+          "The dungeon does not forget those who survive it. Every Shard you carry back… is a thread binding you to what waits below."
+        </div>
+
         {/* Trial of Champions trophies */}
         <div style={styles.trialBox}>
           <div style={styles.trialTitle}>🏆 TRIAL OF CHAMPIONS</div>
@@ -265,6 +269,17 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: 1,
     borderLeft: "2px solid #3a1a50",
     paddingLeft: 10,
+  },
+  vaultQuote: {
+    fontSize: 11,
+    color: "rgba(180,140,220,0.5)",
+    fontStyle: "italic",
+    fontFamily: "monospace",
+    lineHeight: 1.7,
+    textAlign: "center",
+    padding: "8px 16px",
+    borderTop: "1px solid #1e1230",
+    borderBottom: "1px solid #1e1230",
   },
   grid: {
     display: "flex",
