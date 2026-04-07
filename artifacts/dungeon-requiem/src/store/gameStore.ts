@@ -195,7 +195,7 @@ export const useGameStore = create<GameUIState>((set) => ({
   addRunShards: (n) => set((s) => ({ shardsThisRun: s.shardsThisRun + n })),
   setBossState: (hp, maxHp, name, alive) => set({ bossHP: hp, bossMaxHP: maxHp, bossName: name, bossAlive: alive }),
   setBossSpecialWarn: (active) => set({ bossSpecialWarn: active }),
-  setHighestBossWaveCleared: (wave) => set((s) => ({ highestBossWaveCleared: Math.max(s.highestBossWaveCleared, wave) })),
+  setHighestBossWaveCleared: (wave) => set({ highestBossWaveCleared: wave }),
   setRunExtracted: (extracted) => set({ runExtracted: extracted }),
   setExtractedBonusShards: (n) => set({ extractedBonusShards: n }),
 

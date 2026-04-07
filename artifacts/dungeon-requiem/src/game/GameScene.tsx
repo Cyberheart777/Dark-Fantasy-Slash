@@ -1061,7 +1061,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         g.stormCallTimer = stats.stormCallInterval;
         const targets = g.enemies.filter((e) => !e.dead).slice(0, 10);
         for (const t of targets) {
-          const stormDmg = Math.round(stats.damage * 3.0);
+          const stormDmg = Math.round(stats.damage * 1.8);
           t.hp -= stormDmg; t.hitFlashTimer = 0.3;
           if (t.hp <= 0 && !t.dead) {
             t.dead = true; g.kills++; g.score += t.scoreValue;
@@ -1462,7 +1462,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
 
       {(phase === "playing" || phase === "paused" || phase === "levelup") && <HUD onExtract={handleExtract} />}
       {phase === "playing" && <MobileControls gsRef={gsRef} />}
-      {phase === "paused" && <PauseMenu />}
+      {phase === "paused" && <PauseMenu onExtract={handleExtract} />}
       {phase === "levelup" && <LevelUp onChoice={handleUpgrade} />}
     </div>
   );

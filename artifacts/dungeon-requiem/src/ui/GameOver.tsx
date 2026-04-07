@@ -117,8 +117,12 @@ export function GameOver({ onRestart }: GameOverProps) {
               </button>
             )}
             <button style={styles.btnSecondary} onClick={() => {
-              useGameStore.getState().setTrialMode(false);
-              useGameStore.getState().setPhase("menu");
+              const s = useGameStore.getState();
+              const prevBest = s.bestScore;
+              const prevWave = s.bestWave;
+              s.resetGame();
+              s.setBestScore(prevBest, prevWave);
+              s.setPhase("menu");
             }}>
               ⌂ MAIN MENU
             </button>

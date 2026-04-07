@@ -1,12 +1,32 @@
 /**
  * PauseMenu.tsx
- * Pause overlay with resume and quit options.
+ * Pause overlay with resume, extract, and quit options.
  */
 
 import { useGameStore } from "../store/gameStore";
 
-export function PauseMenu() {
-  const { setPhase } = useGameStore();
+interface PauseMenuProps {
+  onExtract?: () => void;
+}
+
+export function PauseMenu({ onExtract }: PauseMenuProps) {
+  const { setPhase, highestBossWaveCleared, trialMode } = useGameStore();
+
+  const showExtract = !trialMode && highestBossWaveCleared > 0 && onExtract != null;
+  const extractLabel =
+    highestBossWaveCleared >= 20 ? "100%" :
+    highestBossWaveCleared >= 15 ? "75%" :
+    highestBossWaveCleared >= 10 ? "50%" :
+    "25%";
+
+  const handleMainMenu = () => {
+    const s = useGameStore.getState();
+    const prevBest = s.bestScore;
+    const prevWave = s.bestWave;
+    s.resetGame();
+    s.setBestScore(prevBest, prevWave);
+    s.setPhase("menu");
+  };
 
   return (
     <div style={styles.overlay}>
@@ -20,7 +40,14 @@ export function PauseMenu() {
           <button style={styles.btnPrimary} onClick={() => setPhase("playing")}>
             ▶ RESUME
           </button>
-          <button style={styles.btnSecondary} onClick={() => setPhase("menu")}>
+
+          {showExtract && (
+            <button style={styles.btnExtract} onClick={onExtract}>
+              ↑ EXTRACT RUN — Keep {extractLabel} of shards
+            </button>
+          )}
+
+          <button style={styles.btnSecondary} onClick={handleMainMenu}>
             ⌂ MAIN MENU
           </button>
         </div>
@@ -80,7 +107,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
   },
   btnPrimary: {
-    width: 200,
+    width: 260,
     padding: "14px",
     fontSize: 16,
     fontWeight: "bold",
@@ -93,8 +120,22 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "inherit",
     boxShadow: "0 0 20px rgba(80,0,180,0.4)",
   },
+  btnExtract: {
+    width: 260,
+    padding: "13px",
+    fontSize: 13,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    color: "#88ffcc",
+    background: "rgba(10,50,30,0.85)",
+    border: "1px solid rgba(40,180,90,0.6)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    boxShadow: "0 0 14px rgba(0,160,70,0.25)",
+  },
   btnSecondary: {
-    width: 200,
+    width: 260,
     padding: "12px",
     fontSize: 15,
     fontWeight: "bold",
