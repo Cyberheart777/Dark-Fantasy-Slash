@@ -125,6 +125,7 @@ interface GameState {
   stormCallTimer: number;
   // Trial & Difficulty
   trialMode: boolean;
+  trialChampionDefeated: boolean;
   difficultyHpMult: number;
   difficultyDmgMult: number;
   difficultySpeedMult: number;
@@ -537,6 +538,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               e.dead = true;
               g.kills++;
               g.score += e.scoreValue;
+              if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
               useMetaStore.getState().addShards(5);
               useGameStore.getState().addRunShards(5);
               if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
@@ -572,6 +574,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 e.hp -= echoDmg; e.hitFlashTimer = 0.12;
                 if (e.hp <= 0 && !e.dead) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
+                  if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
                   if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
                   if (stats.soulfireChance > 0) triggerSoulfire(e, g);
                   const xg = Math.round(e.xpReward * stats.xpMultiplier);
@@ -770,6 +773,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           e.dead = true;
           g.kills++;
           g.score += e.scoreValue;
+          if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
           useMetaStore.getState().addShards(5);
           useGameStore.getState().addRunShards(5);
           if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
@@ -1055,6 +1059,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           t.hp -= stormDmg; t.hitFlashTimer = 0.3;
           if (t.hp <= 0 && !t.dead) {
             t.dead = true; g.kills++; g.score += t.scoreValue;
+            if (g.trialMode && t.type.endsWith("_champion")) g.trialChampionDefeated = true;
             if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
             if (stats.soulfireChance > 0) triggerSoulfire(t, g);
             const xg = Math.round(t.xpReward * stats.xpMultiplier);
@@ -1066,19 +1071,17 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     }
 
     // ── Trial victory check ───────────────────────────────────────────────
-    if (g.trialMode) {
-      const champ = g.enemies.find((e) => e.type.endsWith("_champion"));
-      if (champ && champ.dead) {
-        const meta = useMetaStore.getState();
-        meta.completeTrial(g.charClass);
-        const shardReward = Math.round(500 * g.difficultyShardMult);
-        meta.addShards(shardReward);
-        store.addRunShards(shardReward);
-        store.setBossState(0, 0, "", false);
-        audioManager.stopMusic();
-        g.running = false;
-        store.setPhase("trialvictory");
-      }
+    if (g.trialMode && g.trialChampionDefeated) {
+      g.trialChampionDefeated = false;
+      const meta = useMetaStore.getState();
+      meta.completeTrial(g.charClass);
+      const shardReward = Math.round(500 * g.difficultyShardMult);
+      meta.addShards(shardReward);
+      store.addRunShards(shardReward);
+      store.setBossState(0, 0, "", false);
+      audioManager.stopMusic();
+      g.running = false;
+      store.setPhase("trialvictory");
     }
 
     // ── Spawning (normal mode only) ───────────────────────────────────────
@@ -1309,6 +1312,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       goblinWaveSpawned: 0,
       stormCallTimer: 0,
       trialMode,
+      trialChampionDefeated: false,
       difficultyHpMult: diff.enemyHpMult,
       difficultyDmgMult: diff.enemyDamageMult,
       difficultySpeedMult: diff.enemySpeedMult,
@@ -1363,6 +1367,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           goblinWaveSpawned: 0,
           stormCallTimer: 0,
           trialMode: resetTrialMode,
+          trialChampionDefeated: false,
           difficultyHpMult: resetDiff.enemyHpMult,
           difficultyDmgMult: resetDiff.enemyDamageMult,
           difficultySpeedMult: resetDiff.enemySpeedMult,
