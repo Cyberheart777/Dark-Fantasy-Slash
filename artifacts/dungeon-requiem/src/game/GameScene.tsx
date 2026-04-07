@@ -32,6 +32,7 @@ import { Projectile3D } from "../entities/Projectile3D";
 import { HUD } from "../ui/HUD";
 import { LevelUp } from "../ui/LevelUp";
 import { PauseMenu } from "../ui/PauseMenu";
+import { MobileControls } from "../ui/MobileControls";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,7 +106,7 @@ export interface Projectile {
   dead: boolean;
 }
 
-interface GameState {
+export interface GameState {
   player: PlayerRuntime;
   enemies: EnemyRuntime[];
   xpOrbs: XPOrb[];
@@ -1424,6 +1425,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       </Canvas>
 
       {(phase === "playing" || phase === "paused" || phase === "levelup") && <HUD />}
+      {phase === "playing" && <MobileControls gsRef={gsRef} />}
       {phase === "paused" && <PauseMenu />}
       {phase === "levelup" && <LevelUp onChoice={handleUpgrade} />}
     </div>

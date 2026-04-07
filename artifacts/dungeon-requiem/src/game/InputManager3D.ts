@@ -2,6 +2,7 @@
  * InputManager3D.ts
  * Pure TypeScript keyboard + mouse input — no Phaser dependency.
  * Designed to be polled each frame by GameManager.
+ * Mobile overrides are written by MobileControls.tsx via setMobile* methods.
  */
 
 export interface InputState {
@@ -31,6 +32,13 @@ export class InputManager3D {
   private _attackConsumed = false;
   private _dashConsumed = false;
   private _pauseConsumed = false;
+
+  // ── Mobile overrides ────────────────────────────────────────────────────
+  private _mUp = false;
+  private _mDown = false;
+  private _mLeft = false;
+  private _mRight = false;
+  private _mAttack = false;
 
   constructor() {
     window.addEventListener("keydown", this.onKeyDown);
@@ -67,15 +75,44 @@ export class InputManager3D {
     if (e.button === 0) this._attackConsumed = false;
   };
 
+  // ── Mobile setters ──────────────────────────────────────────────────────
+
+  setMobileMovement(up: boolean, down: boolean, left: boolean, right: boolean) {
+    this._mUp = up; this._mDown = down;
+    this._mLeft = left; this._mRight = right;
+  }
+
+  setMobileAim(mx: number, my: number) {
+    this._mouseX = mx;
+    this._mouseY = my;
+  }
+
+  setMobileAttack(on: boolean) {
+    if (on) {
+      this._mAttack = true;
+      this._attackConsumed = false;
+    } else {
+      this._mAttack = false;
+    }
+  }
+
+  triggerMobileDash() {
+    this._dash = true;
+    this._dashConsumed = false;
+  }
+
+  // ── State getter ────────────────────────────────────────────────────────
+
   get state(): InputState {
+    const attack = (this._attack && !this._attackConsumed) || (this._mAttack && !this._attackConsumed);
     return {
-      up: this.keys.has("KeyW") || this.keys.has("ArrowUp"),
-      down: this.keys.has("KeyS") || this.keys.has("ArrowDown"),
-      left: this.keys.has("KeyA") || this.keys.has("ArrowLeft"),
-      right: this.keys.has("KeyD") || this.keys.has("ArrowRight"),
-      attack: this._attack && !this._attackConsumed,
-      dash: this._dash && !this._dashConsumed,
-      pause: this._pause && !this._pauseConsumed,
+      up:     this.keys.has("KeyW") || this.keys.has("ArrowUp")    || this._mUp,
+      down:   this.keys.has("KeyS") || this.keys.has("ArrowDown")  || this._mDown,
+      left:   this.keys.has("KeyA") || this.keys.has("ArrowLeft")  || this._mLeft,
+      right:  this.keys.has("KeyD") || this.keys.has("ArrowRight") || this._mRight,
+      attack,
+      dash:   this._dash && !this._dashConsumed,
+      pause:  this._pause && !this._pauseConsumed,
       mouseX: this._mouseX,
       mouseY: this._mouseY,
       worldAimX: this.worldAimX,
@@ -83,7 +120,11 @@ export class InputManager3D {
     };
   }
 
-  consumeAttack() { this._attackConsumed = true; this._attack = false; }
+  consumeAttack() {
+    this._attackConsumed = true;
+    this._attack = false;
+    this._mAttack = false;
+  }
   consumeDash()   { this._dashConsumed = true;   this._dash = false; }
   consumePause()  { this._pauseConsumed = true;  this._pause = false; }
 
