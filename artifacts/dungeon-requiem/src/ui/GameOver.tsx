@@ -91,10 +91,10 @@ export function GameOver({ onRestart }: GameOverProps) {
             </>
           ) : (
             <>
-              <div style={styles.shardTitle}>◈ SOUL SHARDS EARNED</div>
-              <div style={styles.shardAmount}>+{shardsThisRun.toLocaleString()}</div>
-              <div style={styles.shardTotal}>Total: {shards.toLocaleString()} shards</div>
-              <div style={styles.shardLore}>Every Shard you carry back brings you closer to becoming part of it.</div>
+              <div style={styles.shardTitle}>◈ SHARDS LOST TO THE DUNGEON</div>
+              <div style={styles.shardAmountLost}>{shardsThisRun.toLocaleString()}</div>
+              <div style={styles.shardLore}>Extract your run next time to carry shards back.</div>
+              <div style={styles.shardTotal}>Banked: {shards.toLocaleString()} shards</div>
             </>
           )}
         </div>
@@ -260,6 +260,16 @@ const styles: Record<string, React.CSSProperties> = {
     textShadow: "0 0 16px #00aa66",
     fontFamily: "monospace",
     lineHeight: 1.3,
+  },
+  shardAmountLost: {
+    fontSize: 32,
+    fontWeight: 900,
+    color: "#cc4444",
+    textShadow: "0 0 16px #aa0000",
+    fontFamily: "monospace",
+    lineHeight: 1.3,
+    textDecoration: "line-through",
+    opacity: 0.8,
   },
   shardMeta: {
     fontSize: 11,

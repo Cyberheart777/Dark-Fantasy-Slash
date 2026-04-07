@@ -261,11 +261,7 @@ function handlePlayerFatalDmg(p: PlayerRuntime, g: GameState): boolean {
   store.setBossState(0, 0, "", false);
   store.setBossSpecialWarn(false);
   { const meta = useMetaStore.getState(); meta.addTotalKills(g.kills); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
-  const bonusShards = Math.round(g.wave * 15 + g.kills);
-  if (bonusShards > 0) {
-    useMetaStore.getState().addShards(bonusShards);
-    store.addRunShards(bonusShards);
-  }
+  // Run shards are forfeited on death — only extraction guarantees a payout
   return true; // died
 }
 
@@ -542,7 +538,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               g.kills++;
               g.score += e.scoreValue;
               if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
-              useMetaStore.getState().addShards(5);
               useGameStore.getState().addRunShards(5);
               if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
               if (stats.soulfireChance > 0) triggerSoulfire(e, g);
@@ -779,7 +774,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           g.kills++;
           g.score += e.scoreValue;
           if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
-          useMetaStore.getState().addShards(5);
           useGameStore.getState().addRunShards(5);
           if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
           if (stats.soulfireChance > 0) triggerSoulfire(e, g);

@@ -337,7 +337,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   relic_storm_heart: {
     id: "relic_storm_heart",
     name: "Storm Heart",
-    description: "Every 16 seconds, a lightning storm strikes up to 10 enemies for 3× your damage.",
+    description: "Every 16 seconds, a lightning storm strikes up to 10 enemies for 1.8× your damage.",
     icon: "⚡",
     maxStacks: 1,
     isRelic: true,
