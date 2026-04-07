@@ -111,6 +111,7 @@ export interface GameUIState {
   // Extraction system
   highestBossWaveCleared: number;
   runExtracted: boolean;
+  extractedBonusShards: number;
 
   // Actions
   setPhase: (phase: GamePhase) => void;
@@ -136,6 +137,7 @@ export interface GameUIState {
   setBestScore: (score: number, wave: number) => void;
   setHighestBossWaveCleared: (wave: number) => void;
   setRunExtracted: (extracted: boolean) => void;
+  setExtractedBonusShards: (n: number) => void;
   resetGame: () => void;
 }
 
@@ -179,6 +181,7 @@ const initialState = {
   bossSpecialWarn: false,
   highestBossWaveCleared: 0,
   runExtracted: false,
+  extractedBonusShards: 0,
 };
 
 export const useGameStore = create<GameUIState>((set) => ({
@@ -194,6 +197,7 @@ export const useGameStore = create<GameUIState>((set) => ({
   setBossSpecialWarn: (active) => set({ bossSpecialWarn: active }),
   setHighestBossWaveCleared: (wave) => set((s) => ({ highestBossWaveCleared: Math.max(s.highestBossWaveCleared, wave) })),
   setRunExtracted: (extracted) => set({ runExtracted: extracted }),
+  setExtractedBonusShards: (n) => set({ extractedBonusShards: n }),
 
   setPlayerHP: (playerHP, playerMaxHP) => set({ playerHP, playerMaxHP }),
 

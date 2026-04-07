@@ -15,7 +15,7 @@ export function GameOver({ onRestart }: GameOverProps) {
   const {
     score, kills, wave, survivalTime, level,
     bestScore, bestWave, shardsThisRun, trialMode,
-    runExtracted, highestBossWaveCleared,
+    runExtracted, highestBossWaveCleared, extractedBonusShards,
   } = useGameStore();
   const shards = useMetaStore((s) => s.shards);
 
@@ -23,17 +23,12 @@ export function GameOver({ onRestart }: GameOverProps) {
   const seconds = Math.floor(survivalTime % 60);
   const isNewBest = score >= bestScore && score > 0;
 
-  const extractFraction =
-    highestBossWaveCleared >= 20 ? 1.0 :
-    highestBossWaveCleared >= 15 ? 0.75 :
-    highestBossWaveCleared >= 10 ? 0.50 :
-    0.25;
   const extractLabel =
     highestBossWaveCleared >= 20 ? "100%" :
     highestBossWaveCleared >= 15 ? "75%" :
     highestBossWaveCleared >= 10 ? "50%" :
     "25%";
-  const extractBonus = runExtracted ? Math.round(extractFraction * (shardsThisRun)) : 0;
+  const extractBonus = runExtracted ? extractedBonusShards : 0;
 
   const handleRetryTrial = () => {
     const store = useGameStore.getState();
@@ -51,7 +46,7 @@ export function GameOver({ onRestart }: GameOverProps) {
         <div style={styles.titleWrapper}>
           {runExtracted ? (
             <>
-              <div style={styles.titleExtract}>EXTRACTED</div>
+              <div style={styles.titleExtract}>RUN EXTRACTED</div>
               <div style={styles.loreSubtitleExtract}>
                 You carry the dungeon's essence back with you.
               </div>

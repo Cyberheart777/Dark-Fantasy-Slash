@@ -1405,9 +1405,9 @@ export function GameScene({ onRestart }: GameSceneProps) {
       0.25;
     const runShards = useGameStore.getState().shardsThisRun;
     const bonus = Math.round(fraction * runShards);
+    useGameStore.getState().setExtractedBonusShards(bonus);
     if (bonus > 0) {
       useMetaStore.getState().addShards(bonus);
-      useGameStore.getState().addRunShards(bonus);
     }
     useGameStore.getState().setRunExtracted(true);
     // Mark player as dead so the restart useEffect triggers a full reset
