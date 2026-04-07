@@ -8,6 +8,7 @@ import { create } from "zustand";
 import type { UpgradeDef } from "../data/UpgradeData";
 import type { CharacterClass } from "../data/CharacterData";
 import type { RaceType } from "../data/RaceData";
+import type { DifficultyTier } from "../data/DifficultyData";
 
 export type GamePhase =
   | "menu"
@@ -16,7 +17,8 @@ export type GamePhase =
   | "playing"
   | "paused"
   | "levelup"
-  | "gameover";
+  | "gameover"
+  | "trialvictory";
 
 export interface EnemyUIState {
   id: string;
@@ -92,6 +94,10 @@ export interface GameUIState {
   selectedClass: CharacterClass;
   selectedRace: RaceType;
 
+  // Difficulty & mode
+  difficultyTier: DifficultyTier;
+  trialMode: boolean;
+
   // Soul shards (per-run counter — persistent total lives in metaStore)
   shardsThisRun: number;
 
@@ -109,6 +115,8 @@ export interface GameUIState {
   setBossSpecialWarn: (active: boolean) => void;
   setSelectedClass: (cls: CharacterClass) => void;
   setSelectedRace: (race: RaceType) => void;
+  setDifficultyTier: (tier: DifficultyTier) => void;
+  setTrialMode: (trial: boolean) => void;
   setPlayerHP: (hp: number, maxHp: number) => void;
   setPlayerPos: (x: number, z: number, angle: number) => void;
   setProgression: (level: number, xp: number, xpToNext: number) => void;
@@ -155,6 +163,8 @@ const initialState = {
   bestWave: 0,
   selectedClass: "warrior" as CharacterClass,
   selectedRace: "human" as RaceType,
+  difficultyTier: "normal" as DifficultyTier,
+  trialMode: false,
   shardsThisRun: 0,
   bossHP: 0,
   bossMaxHP: 0,
@@ -169,6 +179,8 @@ export const useGameStore = create<GameUIState>((set) => ({
   setPhase: (phase) => set({ phase }),
   setSelectedClass: (selectedClass) => set({ selectedClass }),
   setSelectedRace: (selectedRace) => set({ selectedRace }),
+  setDifficultyTier: (difficultyTier) => set({ difficultyTier }),
+  setTrialMode: (trialMode) => set({ trialMode }),
   addRunShards: (n) => set((s) => ({ shardsThisRun: s.shardsThisRun + n })),
   setBossState: (hp, maxHp, name, alive) => set({ bossHP: hp, bossMaxHP: maxHp, bossName: name, bossAlive: alive }),
   setBossSpecialWarn: (active) => set({ bossSpecialWarn: active }),

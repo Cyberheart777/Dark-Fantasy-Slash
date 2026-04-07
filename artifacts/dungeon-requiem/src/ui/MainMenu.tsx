@@ -7,16 +7,22 @@ import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
 
 export function MainMenu() {
-  const { setPhase, bestScore, bestWave } = useGameStore();
-  const shards = useMetaStore((s) => s.shards);
+  const { setPhase, setTrialMode, bestScore, bestWave } = useGameStore();
+  const { shards, milestones, trialWins } = useMetaStore();
+
+  const bossKilled = milestones["boss_kill"] ?? false;
+  const anyTrialWin = Object.values(trialWins).some(Boolean);
+
+  const handleTrial = () => {
+    setTrialMode(true);
+    setPhase("charselect");
+  };
 
   return (
     <div style={styles.overlay}>
-      {/* Background vignette */}
       <div style={styles.vignette} />
 
       <div style={styles.panel}>
-        {/* Title */}
         <div style={styles.titleWrapper}>
           <div style={styles.titleGlow}>DUNGEON</div>
           <div style={styles.titleMain}>DUNGEON</div>
@@ -28,17 +34,25 @@ export function MainMenu() {
 
         <div style={styles.divider} />
 
-        <button
-          style={styles.btnPrimary}
-          onClick={() => setPhase("charselect")}
-        >
+        <button style={styles.btnPrimary} onClick={() => { setTrialMode(false); setPhase("charselect"); }}>
           ⚔ BEGIN DESCENT
         </button>
 
-        <button
-          style={styles.btnForge}
-          onClick={() => setPhase("soulforge")}
-        >
+        {bossKilled ? (
+          <button style={styles.btnTrial} onClick={handleTrial}>
+            <span style={{ color: "#ffd700", fontSize: 16 }}>🏆</span>
+            {" "}TRIAL OF CHAMPIONS
+            {anyTrialWin && <span style={{ color: "#aa8000", fontSize: 11 }}> · {Object.values(trialWins).filter(Boolean).length}/3 cleared</span>}
+          </button>
+        ) : (
+          <div style={styles.trialLocked}>
+            <span style={{ color: "#4a3030" }}>🔒</span>
+            {" "}TRIAL OF CHAMPIONS
+            <div style={styles.trialLockNote}>Defeat The Warden to unlock</div>
+          </div>
+        )}
+
+        <button style={styles.btnForge} onClick={() => setPhase("soulforge")}>
           <span style={styles.forgeShard}>◈</span>
           {" "}SOUL FORGE
           {shards > 0 && (
@@ -170,6 +184,44 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "all 0.2s",
     boxShadow: "0 0 20px rgba(100,0,180,0.5)",
     fontFamily: "inherit",
+    width: "100%",
+  },
+  btnTrial: {
+    marginTop: 10,
+    padding: "13px 32px",
+    fontSize: 14,
+    fontWeight: "bold",
+    letterSpacing: 2,
+    color: "#ffd700",
+    background: "rgba(40,25,5,0.8)",
+    border: "1px solid rgba(200,140,0,0.5)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    width: "100%",
+    boxShadow: "0 0 14px rgba(200,140,0,0.2)",
+  },
+  trialLocked: {
+    marginTop: 10,
+    padding: "13px 32px",
+    fontSize: 14,
+    fontWeight: "bold",
+    letterSpacing: 2,
+    color: "#4a3030",
+    background: "rgba(20,10,10,0.5)",
+    border: "1px solid rgba(80,40,40,0.3)",
+    borderRadius: 8,
+    fontFamily: "inherit",
+    width: "100%",
+    cursor: "default",
+    boxSizing: "border-box",
+  },
+  trialLockNote: {
+    fontSize: 10,
+    letterSpacing: 1,
+    color: "#3a2020",
+    marginTop: 4,
+    fontFamily: "monospace",
   },
   btnForge: {
     marginTop: 10,
@@ -183,6 +235,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     cursor: "pointer",
     fontFamily: "inherit",
+    width: "100%",
   },
   forgeShard: {
     color: "#d0a0ff",

@@ -11,19 +11,29 @@ interface GameOverProps {
 }
 
 export function GameOver({ onRestart }: GameOverProps) {
-  const { score, kills, wave, survivalTime, level, bestScore, bestWave, shardsThisRun } = useGameStore();
+  const { score, kills, wave, survivalTime, level, bestScore, bestWave, shardsThisRun, trialMode } = useGameStore();
   const shards = useMetaStore((s) => s.shards);
 
   const minutes = Math.floor(survivalTime / 60);
   const seconds = Math.floor(survivalTime % 60);
   const isNewBest = score >= bestScore && score > 0;
 
+  const handleRetryTrial = () => {
+    const store = useGameStore.getState();
+    const prevBest = store.bestScore;
+    const prevWave = store.bestWave;
+    store.resetGame();
+    store.setBestScore(prevBest, prevWave);
+    store.setTrialMode(true);
+    store.setPhase("charselect");
+  };
+
   return (
     <div style={styles.overlay}>
       <div style={styles.panel}>
         <div style={styles.titleWrapper}>
-          <div style={styles.titleRed}>YOU FELL</div>
-          {isNewBest && (
+          <div style={styles.titleRed}>{trialMode ? "TRIAL FAILED" : "YOU FELL"}</div>
+          {isNewBest && !trialMode && (
             <div style={styles.newBest}>✦ NEW BEST ✦</div>
           )}
         </div>
@@ -36,7 +46,7 @@ export function GameOver({ onRestart }: GameOverProps) {
           <StatRow label="Survived"     value={`${minutes}:${String(seconds).padStart(2, "0")}`} />
         </div>
 
-        {bestScore > 0 && (
+        {bestScore > 0 && !trialMode && (
           <div style={styles.bestRow}>
             <span style={{ color: "#888" }}>Best: </span>
             <span style={{ color: "#ffcc00" }}>{bestScore.toLocaleString()}</span>
@@ -59,10 +69,19 @@ export function GameOver({ onRestart }: GameOverProps) {
           </button>
 
           <div style={styles.btnRow}>
-            <button style={styles.btnPrimary} onClick={onRestart}>
-              ↻ DESCEND AGAIN
-            </button>
-            <button style={styles.btnSecondary} onClick={() => useGameStore.getState().setPhase("menu")}>
+            {trialMode ? (
+              <button style={styles.btnTrial} onClick={handleRetryTrial}>
+                🏆 RETRY TRIAL
+              </button>
+            ) : (
+              <button style={styles.btnPrimary} onClick={onRestart}>
+                ↻ DESCEND AGAIN
+              </button>
+            )}
+            <button style={styles.btnSecondary} onClick={() => {
+              useGameStore.getState().setTrialMode(false);
+              useGameStore.getState().setPhase("menu");
+            }}>
               ⌂ MAIN MENU
             </button>
           </div>
@@ -211,6 +230,21 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontFamily: "inherit",
     boxShadow: "0 0 16px rgba(180,0,0,0.4)",
+    minHeight: 48,
+  },
+  btnTrial: {
+    flex: 1,
+    padding: "14px 20px",
+    fontSize: 14,
+    fontWeight: "bold",
+    letterSpacing: 2,
+    color: "#ffd700",
+    background: "linear-gradient(135deg, #aa6600, #885000)",
+    border: "1px solid #cc8800",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    boxShadow: "0 0 16px rgba(200,130,0,0.4)",
     minHeight: 48,
   },
   btnSecondary: {

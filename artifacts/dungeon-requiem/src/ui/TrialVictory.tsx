@@ -1,0 +1,279 @@
+/**
+ * TrialVictory.tsx
+ * Full-screen overlay shown when the player defeats a Trial of Champions champion.
+ */
+
+import { useGameStore } from "../store/gameStore";
+import { useMetaStore } from "../store/metaStore";
+import { CHARACTER_DATA } from "../data/CharacterData";
+import { DIFFICULTY_DATA } from "../data/DifficultyData";
+
+interface TrialVictoryProps {
+  onRetry: () => void;
+}
+
+const CHAMPION_LORE: Record<string, string> = {
+  warrior: "The Iron Warden falls — his oaths of blood silenced at last.",
+  mage:    "The Arcane Revenant unravels, its stolen spells returning to void.",
+  rogue:   "The Shadow Asp's last venom drips into the dark. You outlasted the hunter.",
+};
+
+const CLASS_ICONS: Record<string, string> = {
+  warrior: "⚔",
+  mage:    "✦",
+  rogue:   "◆",
+};
+
+export function TrialVictory({ onRetry }: TrialVictoryProps) {
+  const { selectedClass, difficultyTier, shardsThisRun, kills, score } = useGameStore();
+  const { shards } = useMetaStore();
+  const def = CHARACTER_DATA[selectedClass];
+  const diff = DIFFICULTY_DATA[difficultyTier];
+  const lore = CHAMPION_LORE[selectedClass] ?? "The champion lies defeated.";
+  const icon = CLASS_ICONS[selectedClass] ?? "◈";
+
+  return (
+    <div style={styles.overlay}>
+      <div style={styles.panel}>
+        <div style={styles.trophyRow}>
+          <div style={styles.trophyIcon}>🏆</div>
+        </div>
+
+        <div style={styles.victoryTitle}>TRIAL COMPLETE</div>
+
+        <div style={{ ...styles.diffBadge, color: diff.accentColor, borderColor: diff.color + "80" }}>
+          {diff.label} DIFFICULTY
+        </div>
+
+        <div style={styles.champLine}>
+          <span style={{ ...styles.champIcon, color: def.accentColor }}>{icon}</span>
+          <span style={{ ...styles.champName, color: def.accentColor }}>
+            {selectedClass.toUpperCase()} CHAMPION SLAIN
+          </span>
+        </div>
+
+        <div style={styles.lore}>{lore}</div>
+
+        <div style={styles.divider} />
+
+        <div style={styles.statRow}>
+          <div style={styles.stat}>
+            <div style={styles.statVal}>{score.toLocaleString()}</div>
+            <div style={styles.statLbl}>SCORE</div>
+          </div>
+          <div style={styles.stat}>
+            <div style={styles.statVal}>{kills}</div>
+            <div style={styles.statLbl}>KILLS</div>
+          </div>
+        </div>
+
+        <div style={styles.shardBox}>
+          <div style={styles.shardTitle}>◈ SOUL SHARDS EARNED</div>
+          <div style={styles.shardAmount}>+{shardsThisRun.toLocaleString()}</div>
+          <div style={styles.shardTotal}>Total: {shards.toLocaleString()} shards</div>
+        </div>
+
+        <div style={styles.divider} />
+
+        <div style={styles.btnCol}>
+          <button style={styles.btnRetry} onClick={onRetry}>
+            ↺ RETRY TRIAL
+          </button>
+          <button style={styles.btnForge} onClick={() => useGameStore.getState().setPhase("soulforge")}>
+            ◈ SOUL FORGE
+          </button>
+          <button style={styles.btnMenu} onClick={() => {
+            useGameStore.getState().setTrialMode(false);
+            useGameStore.getState().setPhase("menu");
+          }}>
+            ⌂ MAIN MENU
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  overlay: {
+    position: "absolute",
+    inset: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(0,0,0,0.92)",
+    backdropFilter: "blur(8px)",
+    fontFamily: "'Segoe UI', monospace",
+    overflowY: "auto",
+    padding: "20px 0",
+    zIndex: 100,
+  },
+  panel: {
+    textAlign: "center",
+    padding: "40px 48px",
+    background: "rgba(6,2,14,0.98)",
+    border: "1.5px solid rgba(255,180,0,0.45)",
+    borderRadius: 18,
+    boxShadow: "0 0 60px rgba(200,140,0,0.3), 0 0 120px rgba(100,60,0,0.2)",
+    minWidth: 340,
+    maxWidth: 460,
+    width: "90vw",
+    boxSizing: "border-box",
+  },
+  trophyRow: {
+    marginBottom: 8,
+  },
+  trophyIcon: {
+    fontSize: 60,
+    filter: "drop-shadow(0 0 20px #ffaa00)",
+    lineHeight: 1,
+  },
+  victoryTitle: {
+    fontSize: 46,
+    fontWeight: 900,
+    color: "#ffcc00",
+    letterSpacing: 6,
+    textShadow: "0 0 30px #ffaa00, 0 0 60px #ff8800",
+    marginBottom: 10,
+    lineHeight: 1,
+  },
+  diffBadge: {
+    display: "inline-block",
+    fontSize: 11,
+    letterSpacing: 3,
+    border: "1px solid",
+    borderRadius: 4,
+    padding: "4px 12px",
+    marginBottom: 16,
+    fontFamily: "monospace",
+  },
+  champLine: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginBottom: 10,
+  },
+  champIcon: {
+    fontSize: 28,
+    filter: "drop-shadow(0 0 8px currentColor)",
+  },
+  champName: {
+    fontSize: 18,
+    fontWeight: 900,
+    letterSpacing: 3,
+    fontFamily: "monospace",
+  },
+  lore: {
+    fontSize: 13,
+    color: "rgba(200,180,220,0.7)",
+    fontStyle: "italic",
+    lineHeight: 1.6,
+    marginBottom: 16,
+    padding: "0 10px",
+  },
+  divider: {
+    height: 1,
+    background: "linear-gradient(to right, transparent, rgba(255,180,0,0.35), transparent)",
+    margin: "16px 0",
+  },
+  statRow: {
+    display: "flex",
+    justifyContent: "center",
+    gap: 40,
+    marginBottom: 12,
+  },
+  stat: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 4,
+  },
+  statVal: {
+    fontSize: 28,
+    fontWeight: 900,
+    color: "#ddd",
+    fontFamily: "monospace",
+  },
+  statLbl: {
+    fontSize: 10,
+    letterSpacing: 3,
+    color: "#7060a0",
+    fontFamily: "monospace",
+  },
+  shardBox: {
+    background: "rgba(60,20,100,0.4)",
+    border: "1px solid rgba(120,60,180,0.5)",
+    borderRadius: 10,
+    padding: "14px",
+    marginTop: 4,
+  },
+  shardTitle: {
+    fontSize: 11,
+    letterSpacing: 3,
+    color: "#9060c0",
+    fontFamily: "monospace",
+  },
+  shardAmount: {
+    fontSize: 34,
+    fontWeight: 900,
+    color: "#d0a0ff",
+    textShadow: "0 0 16px #9030d0",
+    fontFamily: "monospace",
+    lineHeight: 1.3,
+  },
+  shardTotal: {
+    fontSize: 12,
+    color: "#7050a0",
+    fontFamily: "monospace",
+    marginTop: 2,
+  },
+  btnCol: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  btnRetry: {
+    width: "100%",
+    padding: "15px",
+    fontSize: 15,
+    fontWeight: 900,
+    letterSpacing: 2,
+    color: "#fff",
+    background: "linear-gradient(135deg, #aa6600, #cc8800)",
+    border: "1px solid #ffaa00",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    boxShadow: "0 0 18px rgba(200,130,0,0.4)",
+    minHeight: 50,
+  },
+  btnForge: {
+    width: "100%",
+    padding: "13px",
+    fontSize: 13,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    color: "#d0a0ff",
+    background: "rgba(50,15,90,0.8)",
+    border: "1px solid rgba(140,70,200,0.6)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    minHeight: 46,
+  },
+  btnMenu: {
+    width: "100%",
+    padding: "13px",
+    fontSize: 13,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    color: "#bbb",
+    background: "rgba(30,15,50,0.8)",
+    border: "1px solid rgba(90,60,120,0.4)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    minHeight: 46,
+  },
+};

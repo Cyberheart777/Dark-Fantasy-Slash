@@ -9,7 +9,7 @@
  *   orange= 50× (boss)
  */
 
-export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss" | "xp_goblin";
+export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss" | "xp_goblin" | "warrior_champion" | "mage_champion" | "rogue_champion";
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
 
 export interface EnemyDef {
@@ -127,6 +127,58 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     color: "#ffcc00",
     emissive: "#aa6600",
     scale: 0.65,
+  },
+
+  // ── Trial of Champions: mirror-class champions ────────────────────────────
+  warrior_champion: {
+    type: "warrior_champion",
+    displayName: "The Iron Vanguard",
+    health: 2200,
+    damage: 60,
+    moveSpeed: 4.5,
+    xpReward: 0,
+    crystalTier: "orange",
+    attackRange: 5.0,
+    attackInterval: 1.4,
+    collisionRadius: 1.8,
+    scoreValue: 0,
+    color: "#4a80c0",
+    emissive: "#1a3060",
+    scale: 1.8,
+  },
+
+  mage_champion: {
+    type: "mage_champion",
+    displayName: "The Void Arcanist",
+    health: 1600,
+    damage: 40,
+    moveSpeed: 3.5,
+    xpReward: 0,
+    crystalTier: "orange",
+    attackRange: 25.0,
+    attackInterval: 2.2,
+    collisionRadius: 1.6,
+    scoreValue: 0,
+    color: "#9030d0",
+    emissive: "#3a0060",
+    scale: 1.8,
+  },
+
+  rogue_champion: {
+    type: "rogue_champion",
+    displayName: "The Shadow Blade",
+    health: 1800,
+    damage: 28,
+    moveSpeed: 7.5,
+    xpReward: 0,
+    crystalTier: "orange",
+    attackRange: 18.0,
+    attackInterval: 0.75,
+    collisionRadius: 1.5,
+    scoreValue: 0,
+    color: "#18b870",
+    emissive: "#0a4020",
+    scale: 1.8,
   },
 };
 

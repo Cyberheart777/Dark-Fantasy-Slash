@@ -41,7 +41,7 @@ export const MILESTONE_DEFS: MilestoneDef[] = [
     label: "Warden's Fall",
     description: "Defeat The Warden Reborn",
     icon: "👑",
-    unlocks: "Unlocks: Dwarf race",
+    unlocks: "Unlocks: Dwarf race & Trial of Champions",
   },
   {
     id: "wave10",
@@ -56,6 +56,27 @@ export const MILESTONE_DEFS: MilestoneDef[] = [
     description: "Slay 500 enemies across all runs",
     icon: "⚰️",
     unlocks: "Bonus Soul Forge slot",
+  },
+  {
+    id: "trial_warrior",
+    label: "Iron Vanguard Slain",
+    description: "Defeat the Warrior Champion in Trial of Champions",
+    icon: "⚔️",
+    unlocks: "Trophy: Warrior Champion",
+  },
+  {
+    id: "trial_mage",
+    label: "Void Arcanist Slain",
+    description: "Defeat the Mage Champion in Trial of Champions",
+    icon: "✦",
+    unlocks: "Trophy: Mage Champion",
+  },
+  {
+    id: "trial_rogue",
+    label: "Shadow Blade Slain",
+    description: "Defeat the Rogue Champion in Trial of Champions",
+    icon: "◆",
+    unlocks: "Trophy: Rogue Champion",
   },
 ];
 
@@ -73,6 +94,9 @@ export interface MetaState {
   unlockedClasses: string[];
   unlockedRaces: string[];
 
+  // Trial of Champions wins per class
+  trialWins: Record<string, boolean>;
+
   // Actions
   addShards: (amount: number) => void;
   spendShards: (amount: number) => boolean;
@@ -85,6 +109,7 @@ export interface MetaState {
   addTotalKills: (n: number) => void;
   updateBestWave: (wave: number) => void;
   checkUnlocks: () => void;
+  completeTrial: (cls: string) => void;
 }
 
 const DEFAULT_STATE = {
@@ -96,6 +121,7 @@ const DEFAULT_STATE = {
   bestWaveEver: 0,
   unlockedClasses: ["warrior"] as string[],
   unlockedRaces: ["human"] as string[],
+  trialWins: {} as Record<string, boolean>,
 };
 
 export const useMetaStore = create<MetaState>()(
@@ -170,6 +196,14 @@ export const useMetaStore = create<MetaState>()(
         if (s.milestones["wave10"]) races.push("elf");
 
         set({ unlockedClasses: classes, unlockedRaces: races });
+      },
+
+      completeTrial: (cls: string) => {
+        const milestoneId = `trial_${cls}`;
+        set((s) => ({
+          trialWins: { ...s.trialWins, [cls]: true },
+          milestones: { ...s.milestones, [milestoneId]: true },
+        }));
       },
     }),
     {

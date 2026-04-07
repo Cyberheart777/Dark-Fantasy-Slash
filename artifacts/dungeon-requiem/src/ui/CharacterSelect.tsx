@@ -2,6 +2,7 @@
  * CharacterSelect.tsx
  * Two-step character creation: Race → Class.
  * Race and class have locked items shown with unlock conditions.
+ * Step 2 includes a difficulty tier selector and trial mode indicator.
  */
 
 import { useState } from "react";
@@ -9,6 +10,7 @@ import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
 import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
 import { RACE_DATA, RACES, type RaceType } from "../data/RaceData";
+import { DIFFICULTY_DATA, DIFFICULTIES, type DifficultyTier } from "../data/DifficultyData";
 
 const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue"];
 
@@ -21,12 +23,13 @@ const CLASS_UNLOCK_CONDITION: Record<CharacterClass, string | null> = {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function CharacterSelect() {
-  const { setPhase, setSelectedClass, setSelectedRace, selectedClass } = useGameStore();
+  const { setPhase, setSelectedClass, setSelectedRace, setDifficultyTier, setTrialMode, selectedClass, trialMode } = useGameStore();
   const { unlockedClasses, unlockedRaces, milestones, totalKills, bestWaveEver } = useMetaStore();
 
   const [step, setStep] = useState<"race" | "class">("race");
   const [race, setRace] = useState<RaceType>("human");
   const [cls, setCls] = useState<CharacterClass>(selectedClass);
+  const [difficulty, setDifficulty] = useState<DifficultyTier>("normal");
 
   const isClassUnlocked = (c: CharacterClass) => unlockedClasses.includes(c);
   const isRaceUnlocked  = (r: RaceType)       => unlockedRaces.includes(r);
@@ -42,6 +45,8 @@ export function CharacterSelect() {
     if (cls === c) {
       setSelectedRace(race);
       setSelectedClass(c);
+      setDifficultyTier(difficulty);
+      setTrialMode(trialMode);
       setPhase("playing");
     } else {
       setCls(c);
@@ -69,6 +74,11 @@ export function CharacterSelect() {
           <button style={S.backBtn} onClick={() => step === "class" ? setStep("race") : setPhase("menu")}>
             ← BACK
           </button>
+          {trialMode && (
+            <div style={S.trialBanner}>
+              🏆 TRIAL OF CHAMPIONS — Defeat the Champion to claim victory
+            </div>
+          )}
           <div style={S.title}>
             {step === "race" ? "CHOOSE YOUR RACE" : "CHOOSE YOUR CLASS"}
           </div>
@@ -160,6 +170,42 @@ export function CharacterSelect() {
               {RACE_DATA[race].icon} {RACE_DATA[race].name} — {RACE_DATA[race].description}
             </div>
 
+            {/* Difficulty selector */}
+            <div style={S.diffBox}>
+              <div style={S.diffTitle}>DIFFICULTY</div>
+              <div style={S.diffRow}>
+                {DIFFICULTIES.map((tier) => {
+                  const d = DIFFICULTY_DATA[tier];
+                  const active = difficulty === tier;
+                  return (
+                    <button
+                      key={tier}
+                      style={{
+                        ...S.diffBtn,
+                        borderColor: active ? d.accentColor : "#2a1f3d",
+                        color: active ? d.accentColor : "#504060",
+                        background: active ? `${d.color}18` : "#0a0614",
+                        boxShadow: active ? `0 0 12px ${d.color}44` : "none",
+                      }}
+                      onClick={() => setDifficulty(tier)}
+                    >
+                      <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, fontFamily: "monospace" }}>
+                        {d.label}
+                      </div>
+                      <div style={{ fontSize: 9, letterSpacing: 1, fontFamily: "monospace", opacity: 0.8, marginTop: 2 }}>
+                        {d.description}
+                      </div>
+                      {tier !== "normal" && (
+                        <div style={{ fontSize: 9, color: d.color, fontFamily: "monospace", marginTop: 2 }}>
+                          ×{d.shardBonusMult} shards
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div style={S.cards}>
               {CLASSES.map((c) => {
                 const def = CHARACTER_DATA[c];
@@ -214,11 +260,17 @@ export function CharacterSelect() {
                       <div
                         style={{
                           ...S.enterBtn,
-                          background: `linear-gradient(135deg, ${def.color}cc 0%, ${def.accentColor} 100%)`,
-                          boxShadow: `0 4px 20px ${def.color}80`,
+                          background: trialMode
+                            ? "linear-gradient(135deg, #aa6600cc 0%, #ffaa00 100%)"
+                            : `linear-gradient(135deg, ${def.color}cc 0%, ${def.accentColor} 100%)`,
+                          boxShadow: trialMode
+                            ? "0 4px 20px #cc880080"
+                            : `0 4px 20px ${def.color}80`,
                         }}
                       >
-                        ▶ ENTER AS {RACE_DATA[race].name} {def.name}
+                        {trialMode
+                          ? `🏆 CHALLENGE AS ${RACE_DATA[race].name} ${def.name}`
+                          : `▶ ENTER AS ${RACE_DATA[race].name} ${def.name}`}
                       </div>
                     )}
                   </button>
@@ -264,6 +316,17 @@ const S: Record<string, React.CSSProperties> = {
     alignSelf: "flex-start", background: "none", border: "1px solid #3a2a50",
     color: "#806090", padding: "10px 18px", borderRadius: 8, cursor: "pointer",
     fontFamily: "monospace", fontSize: 13, letterSpacing: 1, minHeight: 44, marginBottom: 4,
+  },
+  trialBanner: {
+    background: "rgba(60,30,0,0.7)",
+    border: "1px solid rgba(200,140,0,0.5)",
+    borderRadius: 8,
+    padding: "8px 14px",
+    fontSize: 12,
+    color: "#ffd700",
+    fontFamily: "monospace",
+    letterSpacing: 1,
+    textAlign: "center",
   },
   title: {
     fontSize: 20, fontWeight: 900, letterSpacing: 5, color: "#d0a0ff",
@@ -324,5 +387,37 @@ const S: Record<string, React.CSSProperties> = {
   },
   milestoneRow: {
     display: "flex", alignItems: "center", gap: 4,
+  },
+  diffBox: {
+    background: "#080612",
+    border: "1px solid #1e1230",
+    borderRadius: 8,
+    padding: "12px 14px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  },
+  diffTitle: {
+    fontSize: 9, letterSpacing: 3, color: "#4a3060",
+    fontFamily: "monospace",
+  },
+  diffRow: {
+    display: "flex",
+    gap: 8,
+  },
+  diffBtn: {
+    flex: 1,
+    border: "1.5px solid #2a1f3d",
+    borderRadius: 8,
+    padding: "10px 6px",
+    cursor: "pointer",
+    background: "#0a0614",
+    textAlign: "center",
+    transition: "all 0.15s",
+    minHeight: 60,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
   },
 };

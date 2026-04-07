@@ -10,6 +10,7 @@ import { MainMenu } from "./ui/MainMenu";
 import { CharacterSelect } from "./ui/CharacterSelect";
 import { SoulForge } from "./ui/SoulForge";
 import { GameOver } from "./ui/GameOver";
+import { TrialVictory } from "./ui/TrialVictory";
 
 export default function App() {
   const phase = useGameStore((s) => s.phase);
@@ -20,6 +21,16 @@ export default function App() {
     const prevWave = store.bestWave;
     store.resetGame();
     store.setBestScore(prevBest, prevWave);
+  }, []);
+
+  const handleTrialRetry = useCallback(() => {
+    const store = useGameStore.getState();
+    const prevBest = store.bestScore;
+    const prevWave = store.bestWave;
+    store.resetGame();
+    store.setBestScore(prevBest, prevWave);
+    store.setTrialMode(true);
+    store.setPhase("charselect");
   }, []);
 
   return (
@@ -34,6 +45,10 @@ export default function App() {
 
       {phase === "gameover" && (
         <GameOver onRestart={handleRestart} />
+      )}
+
+      {phase === "trialvictory" && (
+        <TrialVictory onRetry={handleTrialRetry} />
       )}
     </div>
   );

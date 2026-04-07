@@ -15,6 +15,7 @@ import { useMetaStore } from "../store/metaStore";
 import { GAME_CONFIG } from "../data/GameConfig";
 import { ENEMY_DATA, pickEnemyType } from "../data/EnemyData";
 import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
+import { DIFFICULTY_DATA } from "../data/DifficultyData";
 import { RACE_DATA, type RaceType } from "../data/RaceData";
 import { ProgressionManager } from "../systems/ProgressionManager";
 import { createDefaultStats, type PlayerStats } from "../data/UpgradeData";
@@ -60,12 +61,16 @@ export interface EnemyRuntime {
   scale: number; color: string; emissive: string;
   vx: number; vz: number;
   phasing: boolean; phaseTimer: number;
-  // Boss/elite extended fields
+  // Boss/elite/champion extended fields
   specialTimer: number;
   specialWarning: boolean;
   specialWarnTimer: number;
   minionTimer: number;
   radialTimer: number;
+  // Champion enrage tracking
+  enragePhase: number; // 0=none, 1=75%, 2=50%, 3=25%
+  baseMoveSpeed: number;
+  baseDamage: number;
 }
 
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
@@ -118,6 +123,12 @@ interface GameState {
   bossId: string | null;
   goblinWaveSpawned: number;
   stormCallTimer: number;
+  // Trial & Difficulty
+  trialMode: boolean;
+  difficultyHpMult: number;
+  difficultyDmgMult: number;
+  difficultySpeedMult: number;
+  difficultyShardMult: number;
 }
 
 // ─── Torch positions ──────────────────────────────────────────────────────────
@@ -173,12 +184,15 @@ function projId()  { return `p${_pid++}`; }
 function eprojId() { return `ep${_epid++}`; }
 
 const CRYSTAL_TIER: Record<string, CrystalTier> = {
-  scuttler:  "green",
-  wraith:    "blue",
-  brute:     "blue",
-  elite:     "purple",
-  boss:      "orange",
-  xp_goblin: "orange",
+  scuttler:         "green",
+  wraith:           "blue",
+  brute:            "blue",
+  elite:            "purple",
+  boss:             "orange",
+  xp_goblin:        "orange",
+  warrior_champion: "orange",
+  mage_champion:    "orange",
+  rogue_champion:   "orange",
 };
 
 // ─── Factory helpers ──────────────────────────────────────────────────────────
@@ -220,6 +234,7 @@ function spawnGoblin(): EnemyRuntime {
     specialTimer: 15.0, // despawn countdown
     specialWarning: false, specialWarnTimer: 0,
     minionTimer: 0, radialTimer: 0,
+    enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: 0,
   };
 }
 
@@ -266,7 +281,7 @@ function triggerSoulfire(deadEnemy: EnemyRuntime, g: GameState): void {
   }
 }
 
-function spawnEnemy(wave: number): EnemyRuntime {
+function spawnEnemy(wave: number, hpMult = 1, dmgMult = 1, speedMult = 1): EnemyRuntime {
   const type = pickEnemyType(wave) as keyof typeof ENEMY_DATA;
   const def = ENEMY_DATA[type];
   const half = GAME_CONFIG.ARENA_HALF - 3;
@@ -278,13 +293,14 @@ function spawnEnemy(wave: number): EnemyRuntime {
     case 2: x = -half; z = Math.random() * half * 2 - half; break;
     case 3: x =  half; z = Math.random() * half * 2 - half; break;
   }
-  const hpScale = 1 + wave * GAME_CONFIG.DIFFICULTY.HP_SCALE_PER_WAVE;
+  const hpScale = (1 + wave * GAME_CONFIG.DIFFICULTY.HP_SCALE_PER_WAVE) * hpMult;
+  const finalDmg = Math.round(def.damage * dmgMult);
+  const finalSpd = def.moveSpeed * speedMult;
   return {
     id: enemyId(), type, x, z,
     hp: Math.round(def.health * hpScale),
     maxHp: Math.round(def.health * hpScale),
-    damage: def.damage,
-    moveSpeed: def.moveSpeed,
+    damage: finalDmg, moveSpeed: finalSpd,
     attackRange: def.attackRange,
     attackInterval: def.attackInterval,
     attackTimer: def.attackInterval * 0.5,
@@ -299,6 +315,7 @@ function spawnEnemy(wave: number): EnemyRuntime {
                 : 0,
     specialWarning: false, specialWarnTimer: 0,
     minionTimer: 0, radialTimer: 0,
+    enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
   };
 }
 
@@ -329,6 +346,33 @@ function spawnBoss(wave: number): EnemyRuntime {
     specialWarnTimer: 0,
     minionTimer: 10,
     radialTimer: 5,
+    enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: Math.round(def.damage * (1 + (bossCount - 1) * 0.15)),
+  };
+}
+
+function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult = 1): EnemyRuntime {
+  const type = `${cls}_champion` as "warrior_champion" | "mage_champion" | "rogue_champion";
+  const def = ENEMY_DATA[type];
+  const hp = Math.round(def.health * hpMult);
+  const finalDmg = Math.round(def.damage * dmgMult);
+  const finalSpd = def.moveSpeed * speedMult;
+  return {
+    id: enemyId(), type, x: 0, z: -20,
+    hp, maxHp: hp,
+    damage: finalDmg, moveSpeed: finalSpd,
+    attackRange: def.attackRange,
+    attackInterval: def.attackInterval,
+    attackTimer: 2.0,
+    collisionRadius: def.collisionRadius,
+    xpReward: 0, scoreValue: 0,
+    dead: false, hitFlashTimer: 0,
+    scale: def.scale, color: def.color, emissive: def.emissive,
+    vx: 0, vz: 0, phasing: false, phaseTimer: 0,
+    specialTimer: 4.0,
+    specialWarning: false, specialWarnTimer: 0,
+    minionTimer: 3.0,
+    radialTimer: cls === "mage" ? 2.2 : cls === "rogue" ? 0.75 : 5.0,
+    enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
   };
 }
 
@@ -844,12 +888,163 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         e.minionTimer = 10.0;
         const count = 1 + Math.floor(Math.random() * 2);
         for (let i = 0; i < count; i++) {
-          g.enemies.push(spawnEnemy(g.wave));
+          g.enemies.push(spawnEnemy(g.wave, g.difficultyHpMult, g.difficultyDmgMult, g.difficultySpeedMult));
         }
       }
 
       // Sync boss HP to HUD each frame
       store.setBossState(e.hp, e.maxHp, ENEMY_DATA.boss.displayName, true);
+    }
+
+    // ── Champion AI (Trial of Champions) ──────────────────────────────────
+    for (const e of g.enemies) {
+      if (e.dead) continue;
+      const isChamp = e.type === "warrior_champion" || e.type === "mage_champion" || e.type === "rogue_champion";
+      if (!isChamp) continue;
+
+      // ── Enrage phases at 75/50/25% HP ─────────────────────────────────
+      const hpPct = e.hp / e.maxHp;
+      const newEnrage = hpPct <= 0.25 ? 3 : hpPct <= 0.50 ? 2 : hpPct <= 0.75 ? 1 : 0;
+      if (newEnrage > e.enragePhase) {
+        const gain = newEnrage - e.enragePhase;
+        e.enragePhase = newEnrage;
+        e.moveSpeed = e.baseMoveSpeed * (1 + newEnrage * 0.25);
+        e.damage = Math.round(e.baseDamage * (1 + newEnrage * 0.18));
+        e.hitFlashTimer = 0.6 * gain;
+        // Color shift toward red as enrage deepens
+        if (newEnrage === 1) { e.emissive = "#330000"; }
+        if (newEnrage === 2) { e.emissive = "#660000"; }
+        if (newEnrage === 3) { e.emissive = "#aa0000"; store.setBossSpecialWarn(true); setTimeout(() => store.setBossSpecialWarn(false), 1000); }
+        audioManager.play("boss_special");
+      }
+
+      // Sync champion to boss HP bar
+      store.setBossState(e.hp, e.maxHp, ENEMY_DATA[e.type as keyof typeof ENEMY_DATA].displayName, true);
+
+      const cdx = p.x - e.x;
+      const cdz = p.z - e.z;
+      const cDist = Math.sqrt(cdx * cdx + cdz * cdz);
+
+      if (e.type === "warrior_champion") {
+        // ── Warrior Champion: charges + melee AoE ─────────────────────
+        const cx = p.x - e.x, cz = p.z - e.z;
+        const clen = Math.sqrt(cx * cx + cz * cz) || 1;
+        e.x += (cx / clen) * e.moveSpeed * delta;
+        e.z += (cz / clen) * e.moveSpeed * delta;
+        e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
+        e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
+
+        // Melee AoE attack
+        e.attackTimer -= delta;
+        if (e.attackTimer <= 0) {
+          e.attackTimer = e.attackInterval;
+          if (cDist <= e.attackRange && p.invTimer <= 0 && !p.dead) {
+            const rawDmg = e.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
+            const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
+            p.hp -= effective;
+            p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+            if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
+          }
+        }
+
+        // Charge special every 4s — AoE slam at current position
+        e.specialTimer -= delta;
+        if (e.specialTimer <= 0) {
+          e.specialTimer = 4.0;
+          if (cDist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
+            const slamDmg = Math.max(1, (e.damage * 2.0 - stats.armor) * stats.incomingDamageMult);
+            p.hp -= slamDmg;
+            p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+            if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
+          }
+          audioManager.play("boss_special");
+        }
+
+      } else if (e.type === "mage_champion") {
+        // ── Mage Champion: keeps distance, fires piercing orbs ────────
+        const keepDist = 14;
+        const cx = p.x - e.x, cz = p.z - e.z;
+        const clen = Math.sqrt(cx * cx + cz * cz) || 1;
+        if (cDist < keepDist) {
+          // Retreat
+          e.x -= (cx / clen) * e.moveSpeed * delta;
+          e.z -= (cz / clen) * e.moveSpeed * delta;
+        } else if (cDist > keepDist + 4) {
+          // Advance to preferred range
+          e.x += (cx / clen) * e.moveSpeed * 0.6 * delta;
+          e.z += (cz / clen) * e.moveSpeed * 0.6 * delta;
+        }
+        e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
+        e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
+
+        // Orb burst (reuse radialTimer)
+        const burstCount = e.enragePhase >= 2 ? 5 : 3;
+        e.radialTimer -= delta;
+        if (e.radialTimer <= 0) {
+          e.radialTimer = e.attackInterval;
+          const spread = (burstCount - 1) * 0.22;
+          for (let k = 0; k < burstCount; k++) {
+            const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
+            const shotAngle = baseAngle + (k - (burstCount - 1) / 2) * 0.22;
+            const speed = 11;
+            g.enemyProjectiles.push({
+              id: eprojId(), x: e.x, z: e.z,
+              vx: Math.sin(shotAngle) * speed,
+              vz: Math.cos(shotAngle) * speed,
+              damage: e.damage, lifetime: 3.5, dead: false,
+            });
+          }
+          void spread;
+          audioManager.play("boss_special");
+        }
+
+      } else if (e.type === "rogue_champion") {
+        // ── Rogue Champion: fast, rapid twin shots, periodic dash ─────
+        const cx = p.x - e.x, cz = p.z - e.z;
+        const clen = Math.sqrt(cx * cx + cz * cz) || 1;
+        // Circle-strafe around player at ~8 units distance
+        const strafeAngle = Math.atan2(cx, cz) + 0.015 * e.moveSpeed;
+        const targetX = p.x - Math.sin(strafeAngle) * 8;
+        const targetZ = p.z - Math.cos(strafeAngle) * 8;
+        const toX = targetX - e.x, toZ = targetZ - e.z;
+        const toLen = Math.sqrt(toX * toX + toZ * toZ) || 1;
+        e.x += (toX / toLen) * e.moveSpeed * delta;
+        e.z += (toZ / toLen) * e.moveSpeed * delta;
+        e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
+        e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
+
+        // Twin rapid shots
+        e.radialTimer -= delta;
+        if (e.radialTimer <= 0) {
+          e.radialTimer = e.attackInterval;
+          const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
+          const spreadAmt = 0.18;
+          for (let k = -1; k <= 1; k += 2) {
+            const shotAngle = baseAngle + k * spreadAmt;
+            const speed = 20;
+            g.enemyProjectiles.push({
+              id: eprojId(), x: e.x, z: e.z,
+              vx: Math.sin(shotAngle) * speed,
+              vz: Math.cos(shotAngle) * speed,
+              damage: e.damage, lifetime: 1.5, dead: false,
+            });
+          }
+        }
+
+        // Teleport dash every 3s (minionTimer)
+        e.minionTimer -= delta;
+        if (e.minionTimer <= 0) {
+          e.minionTimer = 3.0 - e.enragePhase * 0.5;
+          const dashAngle = Math.random() * Math.PI * 2;
+          const dashDist = 6 + Math.random() * 6;
+          e.x = Math.max(-ARENA, Math.min(ARENA, p.x + Math.sin(dashAngle) * dashDist));
+          e.z = Math.max(-ARENA, Math.min(ARENA, p.z + Math.cos(dashAngle) * dashDist));
+          e.hitFlashTimer = 0.2;
+          audioManager.play("dash");
+        }
+
+        void cx; void cz; void clen;
+      }
     }
 
     // ── Storm Heart relic: auto-lightning every N seconds ────────────────
@@ -873,40 +1068,58 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       }
     }
 
-    // ── Spawning ──────────────────────────────────────────────────────────
-    g.waveTimer += delta;
-    if (g.waveTimer >= GAME_CONFIG.DIFFICULTY.WAVE_DURATION) {
-      g.waveTimer = 0;
-      g.wave += 1;
-      { const meta = useMetaStore.getState(); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
-      g.spawnInterval = Math.max(
-        GAME_CONFIG.DIFFICULTY.MIN_SPAWN_INTERVAL,
-        g.spawnInterval - GAME_CONFIG.DIFFICULTY.SPAWN_REDUCTION
-      );
-      // Guaranteed goblin every 7 waves
-      if (g.wave % 7 === 0 && g.goblinWaveSpawned !== g.wave) {
-        g.goblinWaveSpawned = g.wave;
-        g.enemies.push(spawnGoblin());
-      }
-      // Boss wave trigger
-      if (g.wave % GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL === 0 && !g.bossAlive) {
-        const boss = spawnBoss(g.wave);
-        g.enemies.push(boss);
-        g.bossAlive = true;
-        g.bossId = boss.id;
-        store.setBossState(boss.maxHp, boss.maxHp, ENEMY_DATA.boss.displayName, true);
-        audioManager.play("boss_spawn");
+    // ── Trial victory check ───────────────────────────────────────────────
+    if (g.trialMode) {
+      const champ = g.enemies.find((e) => e.type.endsWith("_champion"));
+      if (champ && champ.dead) {
+        const meta = useMetaStore.getState();
+        meta.completeTrial(g.charClass);
+        const shardReward = Math.round(500 * g.difficultyShardMult);
+        meta.addShards(shardReward);
+        store.addRunShards(shardReward);
+        store.setBossState(0, 0, "", false);
+        audioManager.stopMusic();
+        g.running = false;
+        store.setPhase("trialvictory");
       }
     }
-    // During boss wave, pause regular spawning while boss is alive
-    if (!g.bossAlive) {
-      g.spawnTimer += delta;
-      if (g.spawnTimer >= g.spawnInterval) {
-        g.spawnTimer = 0;
-        g.enemies.push(spawnEnemy(g.wave));
-        // 8% random chance to also spawn a goblin (max 1 goblin at a time)
-        if (Math.random() < 0.08 && !g.enemies.some((e) => e.type === "xp_goblin" && !e.dead)) {
+
+    // ── Spawning (normal mode only) ───────────────────────────────────────
+    if (!g.trialMode) {
+      g.waveTimer += delta;
+      if (g.waveTimer >= GAME_CONFIG.DIFFICULTY.WAVE_DURATION) {
+        g.waveTimer = 0;
+        g.wave += 1;
+        { const meta = useMetaStore.getState(); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
+        g.spawnInterval = Math.max(
+          GAME_CONFIG.DIFFICULTY.MIN_SPAWN_INTERVAL,
+          g.spawnInterval - GAME_CONFIG.DIFFICULTY.SPAWN_REDUCTION
+        );
+        // Guaranteed goblin every 7 waves
+        if (g.wave % 7 === 0 && g.goblinWaveSpawned !== g.wave) {
+          g.goblinWaveSpawned = g.wave;
           g.enemies.push(spawnGoblin());
+        }
+        // Boss wave trigger
+        if (g.wave % GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL === 0 && !g.bossAlive) {
+          const boss = spawnBoss(g.wave);
+          g.enemies.push(boss);
+          g.bossAlive = true;
+          g.bossId = boss.id;
+          store.setBossState(boss.maxHp, boss.maxHp, ENEMY_DATA.boss.displayName, true);
+          audioManager.play("boss_spawn");
+        }
+      }
+      // During boss wave, pause regular spawning while boss is alive
+      if (!g.bossAlive) {
+        g.spawnTimer += delta;
+        if (g.spawnTimer >= g.spawnInterval) {
+          g.spawnTimer = 0;
+          g.enemies.push(spawnEnemy(g.wave, g.difficultyHpMult, g.difficultyDmgMult, g.difficultySpeedMult));
+          // 8% random chance to also spawn a goblin (max 1 goblin at a time)
+          if (Math.random() < 0.08 && !g.enemies.some((e) => e.type === "xp_goblin" && !e.dead)) {
+            g.enemies.push(spawnGoblin());
+          }
         }
       }
     }
@@ -1075,9 +1288,15 @@ export function GameScene({ onRestart }: GameSceneProps) {
     const race = useGameStore.getState().selectedRace;
     const { progression, startHp } = makeProgWithMeta(cls, race);
     const input = new InputManager3D();
+    const trialMode = useGameStore.getState().trialMode;
+    const diffTier = useGameStore.getState().difficultyTier;
+    const diff = DIFFICULTY_DATA[diffTier];
+    const initEnemies: EnemyRuntime[] = trialMode
+      ? [spawnChampion(cls, diff.enemyHpMult, diff.enemyDamageMult, diff.enemySpeedMult)]
+      : [];
     const gs0: GameState = {
       player: makePlayer(startHp),
-      enemies: [],
+      enemies: initEnemies,
       xpOrbs: [],
       projectiles: [],
       score: 0, kills: 0, survivalTime: 0, wave: 1,
@@ -1092,6 +1311,11 @@ export function GameScene({ onRestart }: GameSceneProps) {
       enemyProjectiles: [],
       goblinWaveSpawned: 0,
       stormCallTimer: 0,
+      trialMode,
+      difficultyHpMult: diff.enemyHpMult,
+      difficultyDmgMult: diff.enemyDamageMult,
+      difficultySpeedMult: diff.enemySpeedMult,
+      difficultyShardMult: diff.shardBonusMult,
     };
     progression.onLevelUp = (_lvl, choices) => {
       audioManager.play("level_up");
@@ -1118,9 +1342,15 @@ export function GameScene({ onRestart }: GameSceneProps) {
           useGameStore.getState().setLevelUpChoices(choices);
           useGameStore.getState().setPhase("levelup");
         };
+        const resetTrialMode = useGameStore.getState().trialMode;
+        const resetDiffTier = useGameStore.getState().difficultyTier;
+        const resetDiff = DIFFICULTY_DATA[resetDiffTier];
+        const resetInitEnemies: EnemyRuntime[] = resetTrialMode
+          ? [spawnChampion(cls, resetDiff.enemyHpMult, resetDiff.enemyDamageMult, resetDiff.enemySpeedMult)]
+          : [];
         gsRef.current = {
           player: makePlayer(startHp),
-          enemies: [],
+          enemies: resetInitEnemies,
           xpOrbs: [],
           projectiles: [],
           score: 0, kills: 0, survivalTime: 0, wave: 1,
@@ -1135,6 +1365,11 @@ export function GameScene({ onRestart }: GameSceneProps) {
           enemyProjectiles: [],
           goblinWaveSpawned: 0,
           stormCallTimer: 0,
+          trialMode: resetTrialMode,
+          difficultyHpMult: resetDiff.enemyHpMult,
+          difficultyDmgMult: resetDiff.enemyDamageMult,
+          difficultySpeedMult: resetDiff.enemySpeedMult,
+          difficultyShardMult: resetDiff.shardBonusMult,
         };
         _eid = 1; _oid = 1; _pid = 1; _epid = 1;
       } else {

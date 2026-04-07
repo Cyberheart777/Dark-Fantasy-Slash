@@ -10,7 +10,7 @@ import { META_UPGRADES, nextRankCost, nextRankLine } from "../data/MetaUpgradeDa
 import { useGameStore } from "../store/gameStore";
 
 export function SoulForge() {
-  const { shards, totalShardsEarned, purchased, purchaseRank } = useMetaStore();
+  const { shards, totalShardsEarned, purchased, purchaseRank, trialWins } = useMetaStore();
   const setPhase = useGameStore((s) => s.setPhase);
   const [flash, setFlash] = useState<string | null>(null);
 
@@ -44,6 +44,32 @@ export function SoulForge() {
 
         <div style={styles.howTo}>
           Shards drop from kills · bonus shards awarded on death based on waves survived.
+        </div>
+
+        {/* Trial of Champions trophies */}
+        <div style={styles.trialBox}>
+          <div style={styles.trialTitle}>🏆 TRIAL OF CHAMPIONS</div>
+          <div style={styles.trialRow}>
+            {([["warrior", "⚔", "#e06020"], ["mage", "✦", "#6020e0"], ["rogue", "◆", "#20a0e0"]] as [string, string, string][]).map(([cls, icon, color]) => {
+              const won = trialWins?.[cls] ?? false;
+              return (
+                <div key={cls} style={{
+                  ...styles.trialCard,
+                  borderColor: won ? color + "88" : "#1a1228",
+                  boxShadow: won ? `0 0 14px ${color}44` : "none",
+                  opacity: won ? 1 : 0.45,
+                }}>
+                  <div style={{ fontSize: 22, filter: won ? `drop-shadow(0 0 6px ${color})` : "none" }}>{icon}</div>
+                  <div style={{ fontSize: 9, letterSpacing: 2, color: won ? color : "#4a3060", fontFamily: "monospace", marginTop: 4 }}>
+                    {cls.toUpperCase()}
+                  </div>
+                  <div style={{ fontSize: 10, color: won ? "#60ff40" : "#3a2050", marginTop: 2 }}>
+                    {won ? "✔ CLEARED" : "○ LOCKED"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Upgrade grid */}
@@ -347,6 +373,37 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ffd700",
     fontFamily: "monospace",
     padding: "8px 0 4px",
+  },
+  trialBox: {
+    background: "#080612",
+    border: "1px solid rgba(180,130,0,0.25)",
+    borderRadius: 10,
+    padding: "14px 16px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  trialTitle: {
+    fontSize: 11,
+    letterSpacing: 3,
+    color: "#8a6010",
+    fontFamily: "monospace",
+  },
+  trialRow: {
+    display: "flex",
+    gap: 10,
+  },
+  trialCard: {
+    flex: 1,
+    border: "1.5px solid #1a1228",
+    borderRadius: 8,
+    padding: "12px 8px",
+    textAlign: "center" as const,
+    background: "#0a0610",
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    transition: "all 0.2s",
   },
   footer: {
     fontSize: 10,
