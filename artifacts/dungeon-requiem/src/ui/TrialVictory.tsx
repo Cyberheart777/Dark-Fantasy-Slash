@@ -83,14 +83,11 @@ export function TrialVictory({ onRetry }: TrialVictoryProps) {
           <button style={styles.btnRetry} onClick={onRetry}>
             ↺ RETRY TRIAL
           </button>
-          <button style={styles.btnForge} onClick={() => useGameStore.getState().setPhase("soulforge")}>
-            ◈ SOUL FORGE
-          </button>
           <button style={styles.btnMenu} onClick={() => {
             useGameStore.getState().setTrialMode(false);
             useGameStore.getState().setPhase("menu");
           }}>
-            ⌂ MAIN MENU
+            ⌂ RETURN TO MENU
           </button>
         </div>
       </div>
@@ -251,20 +248,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "inherit",
     boxShadow: "0 0 18px rgba(200,130,0,0.4)",
     minHeight: 50,
-  },
-  btnForge: {
-    width: "100%",
-    padding: "13px",
-    fontSize: 13,
-    fontWeight: "bold",
-    letterSpacing: 1,
-    color: "#d0a0ff",
-    background: "rgba(50,15,90,0.8)",
-    border: "1px solid rgba(140,70,200,0.6)",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontFamily: "inherit",
-    minHeight: 46,
   },
   btnMenu: {
     width: "100%",
