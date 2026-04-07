@@ -1,10 +1,10 @@
 /**
  * Enemy3D.tsx
  * Renders each enemy based on its type.
- * Low-poly distinct silhouettes for each of the 5 enemy types.
+ * Low-poly distinct silhouettes for each enemy type including champions.
  */
 
-import { useRef, useMemo } from "react";
+import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { EnemyRuntime } from "../game/GameScene";
@@ -377,6 +377,352 @@ function BossMesh({ color, emissive, flash }: { color: string; emissive: string;
   );
 }
 
+function XPGoblinMesh({ color, emissive, flash }: { color: string; emissive: string; flash: boolean }) {
+  const t = useRef(Math.random() * 100);
+  const groupRef = useRef<THREE.Group>(null);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (groupRef.current) {
+      groupRef.current.position.y = Math.abs(Math.sin(t.current * 8)) * 0.15;
+    }
+  });
+
+  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 4 : 1.5, roughness: 0.3, metalness: 0.6 };
+
+  return (
+    <group ref={groupRef}>
+      {/* Chubby round body */}
+      <mesh castShadow position={[0, 0.38, 0]}>
+        <sphereGeometry args={[0.38, 8, 8]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Head */}
+      <mesh castShadow position={[0, 0.85, 0]}>
+        <sphereGeometry args={[0.3, 8, 8]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Big round ears */}
+      <mesh castShadow position={[-0.3, 0.9, 0]}>
+        <sphereGeometry args={[0.12, 6, 6]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      <mesh castShadow position={[0.3, 0.9, 0]}>
+        <sphereGeometry args={[0.12, 6, 6]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Greedy eyes — coin-shaped */}
+      <mesh position={[-0.1, 0.9, 0.28]}>
+        <circleGeometry args={[0.07, 8]} />
+        <meshStandardMaterial color="#ff8800" emissive="#ff5500" emissiveIntensity={5} />
+      </mesh>
+      <mesh position={[0.1, 0.9, 0.28]}>
+        <circleGeometry args={[0.07, 8]} />
+        <meshStandardMaterial color="#ff8800" emissive="#ff5500" emissiveIntensity={5} />
+      </mesh>
+      {/* Gold coin bag strapped to back */}
+      <mesh castShadow position={[0, 0.5, -0.35]}>
+        <sphereGeometry args={[0.22, 6, 6]} />
+        <meshStandardMaterial color="#ffcc00" emissive="#aa6600" emissiveIntensity={2} roughness={0.2} metalness={0.8} />
+      </mesh>
+      {/* Stubby legs */}
+      <mesh castShadow position={[-0.15, 0.1, 0]}>
+        <boxGeometry args={[0.16, 0.2, 0.16]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      <mesh castShadow position={[0.15, 0.1, 0]}>
+        <boxGeometry args={[0.16, 0.2, 0.16]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Glow ring underfoot */}
+      <pointLight color="#ffaa00" intensity={2} distance={4} decay={2} position={[0, 0.2, 0]} />
+    </group>
+  );
+}
+
+function WarriorChampionMesh({ color, emissive, flash }: { color: string; emissive: string; flash: boolean }) {
+  const t = useRef(Math.random() * 100);
+  const auraRef = useRef<THREE.Mesh>(null);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (auraRef.current) {
+      auraRef.current.rotation.y = t.current * 0.6;
+    }
+  });
+
+  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 5 : 1.2, roughness: 0.25, metalness: 0.85 };
+  const goldMat = { color: "#c8a000", emissive: "#5a4000", emissiveIntensity: flash ? 5 : 0.8, roughness: 0.2, metalness: 0.9 };
+
+  return (
+    <group>
+      {/* Blue steel aura ring */}
+      <mesh ref={auraRef} position={[0, 0.15, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[1.4, 0.06, 8, 32]} />
+        <meshStandardMaterial color="#4488ff" emissive="#2244cc" emissiveIntensity={3} transparent opacity={0.8} />
+      </mesh>
+
+      {/* Thick armored legs */}
+      <mesh castShadow position={[-0.42, 0.65, 0]}>
+        <boxGeometry args={[0.48, 1.3, 0.48]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      <mesh castShadow position={[0.42, 0.65, 0]}>
+        <boxGeometry args={[0.48, 1.3, 0.48]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Broad torso */}
+      <mesh castShadow position={[0, 1.65, 0]}>
+        <boxGeometry args={[1.35, 1.05, 0.75]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Gold chest emblem */}
+      <mesh castShadow position={[0, 1.72, 0.38]}>
+        <boxGeometry args={[0.55, 0.45, 0.05]} />
+        <meshStandardMaterial {...goldMat} />
+      </mesh>
+      {/* Massive pauldrons */}
+      <mesh castShadow position={[-0.9, 1.85, 0]}>
+        <boxGeometry args={[0.45, 0.35, 0.65]} />
+        <meshStandardMaterial color="#2255aa" roughness={0.3} metalness={0.8} />
+      </mesh>
+      <mesh castShadow position={[0.9, 1.85, 0]}>
+        <boxGeometry args={[0.45, 0.35, 0.65]} />
+        <meshStandardMaterial color="#2255aa" roughness={0.3} metalness={0.8} />
+      </mesh>
+      {/* Arms */}
+      <mesh castShadow position={[-0.88, 1.45, 0.1]}>
+        <boxGeometry args={[0.36, 1.0, 0.36]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      <mesh castShadow position={[0.88, 1.45, 0.1]}>
+        <boxGeometry args={[0.36, 1.0, 0.36]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Shield in left hand */}
+      <mesh castShadow position={[-1.0, 1.2, 0.3]}>
+        <boxGeometry args={[0.12, 0.9, 0.75]} />
+        <meshStandardMaterial color="#1a3a88" roughness={0.2} metalness={0.9} emissive="#0a1844" emissiveIntensity={0.6} />
+      </mesh>
+      {/* Shield boss */}
+      <mesh castShadow position={[-1.06, 1.2, 0.3]}>
+        <sphereGeometry args={[0.14, 6, 6]} />
+        <meshStandardMaterial {...goldMat} />
+      </mesh>
+      {/* Great sword in right hand */}
+      <mesh castShadow position={[1.1, 1.0, 0.2]} rotation={[0.15, 0, 0.25]}>
+        <boxGeometry args={[0.12, 2.0, 0.07]} />
+        <meshStandardMaterial color="#88aaff" roughness={0.1} metalness={1.0} emissive="#2244ff" emissiveIntensity={1.5} />
+      </mesh>
+      {/* Head with full helmet */}
+      <mesh castShadow position={[0, 2.55, 0]}>
+        <boxGeometry args={[0.72, 0.72, 0.65]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Helmet visor — glowing blue */}
+      <mesh position={[0, 2.58, 0.34]}>
+        <boxGeometry args={[0.55, 0.14, 0.03]} />
+        <meshStandardMaterial color="#88bbff" emissive="#4488ff" emissiveIntensity={6} />
+      </mesh>
+      {/* Crown/crest */}
+      {[-0.2, 0, 0.2].map((x, i) => (
+        <mesh key={i} castShadow position={[x, 3.0, 0]}>
+          <coneGeometry args={[0.06, 0.35, 5]} />
+          <meshStandardMaterial {...goldMat} />
+        </mesh>
+      ))}
+      {/* Champion aura light */}
+      <pointLight color="#4488ff" intensity={4} distance={12} decay={2} />
+    </group>
+  );
+}
+
+function MageChampionMesh({ color, emissive, flash }: { color: string; emissive: string; flash: boolean }) {
+  const t = useRef(Math.random() * 100);
+  const orb1Ref = useRef<THREE.Group>(null);
+  const orb2Ref = useRef<THREE.Group>(null);
+  const orb3Ref = useRef<THREE.Group>(null);
+  const groupRef = useRef<THREE.Group>(null);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (groupRef.current) {
+      groupRef.current.position.y = Math.sin(t.current * 1.8) * 0.18;
+    }
+    const orbs = [orb1Ref.current, orb2Ref.current, orb3Ref.current];
+    orbs.forEach((orb, i) => {
+      if (!orb) return;
+      const a = t.current * 1.4 + (i * Math.PI * 2) / 3;
+      orb.position.set(Math.sin(a) * 1.1, 1.5 + Math.sin(t.current * 2 + i) * 0.2, Math.cos(a) * 1.1);
+    });
+  });
+
+  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 5 : 1.5, roughness: 0.6, metalness: 0.1 };
+
+  return (
+    <group ref={groupRef}>
+      {/* Floating arcane orbs */}
+      {[orb1Ref, orb2Ref, orb3Ref].map((ref, i) => (
+        <group key={i} ref={ref}>
+          <mesh>
+            <sphereGeometry args={[0.14, 8, 8]} />
+            <meshStandardMaterial color="#cc66ff" emissive="#9900cc" emissiveIntensity={flash ? 6 : 4} roughness={0.1} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Wide flowing robes bottom */}
+      <mesh castShadow position={[0, 0.55, 0]}>
+        <coneGeometry args={[0.75, 1.1, 10]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Upper robe */}
+      <mesh castShadow position={[0, 1.35, 0]}>
+        <boxGeometry args={[0.75, 0.85, 0.5]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Void energy chest gem */}
+      <mesh position={[0, 1.45, 0.26]}>
+        <octahedronGeometry args={[0.18, 0]} />
+        <meshStandardMaterial color="#ee88ff" emissive="#cc00ff" emissiveIntensity={flash ? 8 : 5} roughness={0.05} />
+      </mesh>
+      {/* Robe shoulders */}
+      <mesh castShadow position={[-0.55, 1.55, 0]}>
+        <sphereGeometry args={[0.25, 6, 6]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      <mesh castShadow position={[0.55, 1.55, 0]}>
+        <sphereGeometry args={[0.25, 6, 6]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Long sleeves */}
+      <mesh castShadow position={[-0.58, 1.2, 0]} rotation={[0, 0, 0.4]}>
+        <boxGeometry args={[0.22, 0.85, 0.22]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      <mesh castShadow position={[0.58, 1.2, 0]} rotation={[0, 0, -0.4]}>
+        <boxGeometry args={[0.22, 0.85, 0.22]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Void staff */}
+      <mesh castShadow position={[0.85, 1.4, 0.1]} rotation={[0.2, 0, 0.1]}>
+        <boxGeometry args={[0.08, 2.0, 0.08]} />
+        <meshStandardMaterial color="#2a0044" roughness={0.5} metalness={0.4} emissive="#5500aa" emissiveIntensity={0.8} />
+      </mesh>
+      {/* Staff crystal top */}
+      <mesh position={[0.87, 2.42, 0.14]}>
+        <octahedronGeometry args={[0.24, 0]} />
+        <meshStandardMaterial color="#dd88ff" emissive="#cc00ff" emissiveIntensity={flash ? 8 : 6} roughness={0.05} />
+      </mesh>
+      {/* Head: tall pointed hood */}
+      <mesh castShadow position={[0, 2.1, 0]}>
+        <boxGeometry args={[0.55, 0.6, 0.48]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      <mesh castShadow position={[0, 2.65, 0]}>
+        <coneGeometry args={[0.3, 0.7, 8]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Glowing void eyes */}
+      <mesh position={[-0.14, 2.17, 0.25]}>
+        <sphereGeometry args={[0.07, 6, 6]} />
+        <meshStandardMaterial color="#ee00ff" emissive="#cc00ff" emissiveIntensity={8} />
+      </mesh>
+      <mesh position={[0.14, 2.17, 0.25]}>
+        <sphereGeometry args={[0.07, 6, 6]} />
+        <meshStandardMaterial color="#ee00ff" emissive="#cc00ff" emissiveIntensity={8} />
+      </mesh>
+      {/* Champion aura light */}
+      <pointLight color="#9900ff" intensity={5} distance={14} decay={2} />
+    </group>
+  );
+}
+
+function RogueChampionMesh({ color, emissive, flash }: { color: string; emissive: string; flash: boolean }) {
+  const t = useRef(Math.random() * 100);
+  const shadowMatRef = useRef<THREE.MeshStandardMaterial>(null);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (shadowMatRef.current) {
+      shadowMatRef.current.emissiveIntensity = 1.5 + Math.sin(t.current * 4) * 1.0;
+    }
+  });
+
+  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 5 : 1.0, roughness: 0.45, metalness: 0.55 };
+  const bladeMat = { color: "#88ffcc", emissive: "#00dd88", emissiveIntensity: flash ? 6 : 2.5, roughness: 0.05, metalness: 1.0 };
+
+  return (
+    <group>
+      {/* Shadow echo trail */}
+      <mesh position={[0, 1.0, -0.3]} scale={[0.85, 0.85, 0.85]}>
+        <boxGeometry args={[0.6, 1.8, 0.1]} />
+        <meshStandardMaterial ref={shadowMatRef} color="#00ff88" emissive="#00cc44" emissiveIntensity={2} transparent opacity={0.4} />
+      </mesh>
+
+      {/* Lithe legs */}
+      <mesh castShadow position={[-0.24, 0.52, 0]}>
+        <boxGeometry args={[0.26, 1.04, 0.26]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      <mesh castShadow position={[0.24, 0.52, 0]}>
+        <boxGeometry args={[0.26, 1.04, 0.26]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Torso — lean */}
+      <mesh castShadow position={[0, 1.38, 0]}>
+        <boxGeometry args={[0.7, 0.8, 0.45]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Hood/cloak over torso */}
+      <mesh castShadow position={[0, 1.6, -0.05]}>
+        <boxGeometry args={[0.82, 0.45, 0.55]} />
+        <meshStandardMaterial color={flash ? "#ffffff" : "#0a3020"} emissive="#003315" emissiveIntensity={flash ? 4 : 0.5} roughness={0.8} />
+      </mesh>
+      {/* Arms */}
+      <mesh castShadow position={[-0.54, 1.22, 0.1]}>
+        <boxGeometry args={[0.22, 0.78, 0.22]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      <mesh castShadow position={[0.54, 1.22, 0.1]}>
+        <boxGeometry args={[0.22, 0.78, 0.22]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Left dagger */}
+      <mesh castShadow position={[-0.68, 0.9, 0.22]} rotation={[0.4, 0, -0.3]}>
+        <boxGeometry args={[0.06, 0.72, 0.04]} />
+        <meshStandardMaterial {...bladeMat} />
+      </mesh>
+      {/* Right dagger */}
+      <mesh castShadow position={[0.68, 0.9, 0.22]} rotation={[0.4, 0, 0.3]}>
+        <boxGeometry args={[0.06, 0.72, 0.04]} />
+        <meshStandardMaterial {...bladeMat} />
+      </mesh>
+      {/* Head */}
+      <mesh castShadow position={[0, 2.06, 0]}>
+        <boxGeometry args={[0.5, 0.5, 0.45]} />
+        <meshStandardMaterial {...mat} />
+      </mesh>
+      {/* Hood peak */}
+      <mesh castShadow position={[0, 2.42, -0.1]} rotation={[-0.3, 0, 0]}>
+        <coneGeometry args={[0.22, 0.5, 8]} />
+        <meshStandardMaterial color={flash ? "#ffffff" : "#0a3020"} emissive="#003315" emissiveIntensity={flash ? 4 : 0.5} roughness={0.8} />
+      </mesh>
+      {/* Slit eyes — green */}
+      <mesh position={[-0.12, 2.1, 0.23]}>
+        <boxGeometry args={[0.12, 0.05, 0.02]} />
+        <meshStandardMaterial color="#00ff88" emissive="#00dd66" emissiveIntensity={8} />
+      </mesh>
+      <mesh position={[0.12, 2.1, 0.23]}>
+        <boxGeometry args={[0.12, 0.05, 0.02]} />
+        <meshStandardMaterial color="#00ff88" emissive="#00dd66" emissiveIntensity={8} />
+      </mesh>
+      {/* Champion aura light */}
+      <pointLight color="#00ff88" intensity={4} distance={12} decay={2} />
+    </group>
+  );
+}
+
 export function Enemy3D({ enemy }: EnemyProps) {
   const groupRef = useRef<THREE.Group>(null);
   const healthBarGroupRef = useRef<THREE.Group>(null);
@@ -412,6 +758,10 @@ export function Enemy3D({ enemy }: EnemyProps) {
         {enemy.type === "wraith" && <WraithMesh {...meshProps} />}
         {enemy.type === "elite" && <EliteMesh {...meshProps} />}
         {enemy.type === "boss" && <BossMesh {...meshProps} />}
+        {enemy.type === "xp_goblin" && <XPGoblinMesh {...meshProps} />}
+        {enemy.type === "warrior_champion" && <WarriorChampionMesh {...meshProps} />}
+        {enemy.type === "mage_champion" && <MageChampionMesh {...meshProps} />}
+        {enemy.type === "rogue_champion" && <RogueChampionMesh {...meshProps} />}
       </group>
 
       {/* Health bar */}

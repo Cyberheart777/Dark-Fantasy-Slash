@@ -285,11 +285,11 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   relic_vampiric: {
     id: "relic_vampiric",
     name: "Vampiric Shroud",
-    description: "+18% lifesteal. Every kill fully refreshes your invincibility window.",
+    description: "+12% lifesteal. Every kill fully refreshes your invincibility window.",
     icon: "🧛",
     maxStacks: 1,
     isRelic: true,
-    apply: (s) => { s.lifesteal += 0.18; s.onKillHeal += 5; },
+    apply: (s) => { s.lifesteal += 0.12; s.onKillHeal += 5; },
   },
   relic_phantom_echo: {
     id: "relic_phantom_echo",
@@ -312,24 +312,24 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   relic_abyss_crown: {
     id: "relic_abyss_crown",
     name: "Abyss Crown",
-    description: "+100% XP gain. Cursed: you take 25% more damage from all sources.",
+    description: "+60% XP gain. Cursed: you take 25% more damage from all sources.",
     icon: "👑",
     maxStacks: 1,
     isRelic: true,
     apply: (s) => {
-      s.xpMultiplier = parseFloat((s.xpMultiplier * 2.0).toFixed(3));
+      s.xpMultiplier = parseFloat((s.xpMultiplier * 1.6).toFixed(3));
       s.incomingDamageMult = parseFloat((s.incomingDamageMult * 1.25).toFixed(3));
     },
   },
   relic_blood_covenant: {
     id: "relic_blood_covenant",
     name: "Blood Covenant",
-    description: "Sacrifice 30% of your max HP. In return, deal +70% more damage permanently.",
+    description: "Sacrifice 30% of your max HP. In return, deal +45% more damage permanently.",
     icon: "🩸",
     maxStacks: 1,
     isRelic: true,
     apply: (s) => {
-      s.damage = Math.round(s.damage * 1.70);
+      s.damage = Math.round(s.damage * 1.45);
       s.maxHealth = Math.max(1, Math.round(s.maxHealth * 0.70));
       s.currentHealth = Math.min(s.currentHealth, s.maxHealth);
     },
@@ -337,11 +337,11 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   relic_storm_heart: {
     id: "relic_storm_heart",
     name: "Storm Heart",
-    description: "Every 12 seconds, a lightning storm strikes up to 10 enemies for 3× your damage.",
+    description: "Every 16 seconds, a lightning storm strikes up to 10 enemies for 3× your damage.",
     icon: "⚡",
     maxStacks: 1,
     isRelic: true,
-    apply: (s) => { s.stormCallInterval = 12; },
+    apply: (s) => { s.stormCallInterval = 16; },
   },
   relic_iron_oath: {
     id: "relic_iron_oath",

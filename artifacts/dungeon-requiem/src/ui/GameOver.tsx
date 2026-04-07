@@ -1,6 +1,7 @@
 /**
  * GameOver.tsx
  * Game over screen — shows run stats, shards earned, and Soul Forge shortcut.
+ * Also handles the "RUN EXTRACTED" state for voluntary extraction.
  */
 
 import { useGameStore } from "../store/gameStore";
@@ -11,12 +12,28 @@ interface GameOverProps {
 }
 
 export function GameOver({ onRestart }: GameOverProps) {
-  const { score, kills, wave, survivalTime, level, bestScore, bestWave, shardsThisRun, trialMode } = useGameStore();
+  const {
+    score, kills, wave, survivalTime, level,
+    bestScore, bestWave, shardsThisRun, trialMode,
+    runExtracted, highestBossWaveCleared,
+  } = useGameStore();
   const shards = useMetaStore((s) => s.shards);
 
   const minutes = Math.floor(survivalTime / 60);
   const seconds = Math.floor(survivalTime % 60);
   const isNewBest = score >= bestScore && score > 0;
+
+  const extractFraction =
+    highestBossWaveCleared >= 20 ? 1.0 :
+    highestBossWaveCleared >= 15 ? 0.75 :
+    highestBossWaveCleared >= 10 ? 0.50 :
+    0.25;
+  const extractLabel =
+    highestBossWaveCleared >= 20 ? "100%" :
+    highestBossWaveCleared >= 15 ? "75%" :
+    highestBossWaveCleared >= 10 ? "50%" :
+    "25%";
+  const extractBonus = runExtracted ? Math.round(extractFraction * (shardsThisRun)) : 0;
 
   const handleRetryTrial = () => {
     const store = useGameStore.getState();
@@ -32,9 +49,20 @@ export function GameOver({ onRestart }: GameOverProps) {
     <div style={styles.overlay}>
       <div style={styles.panel}>
         <div style={styles.titleWrapper}>
-          <div style={styles.titleRed}>{trialMode ? "TRIAL FAILED" : "YOU FELL"}</div>
-          <div style={styles.loreSubtitle}>Every death feeds the dungeon.</div>
-          {isNewBest && !trialMode && (
+          {runExtracted ? (
+            <>
+              <div style={styles.titleExtract}>EXTRACTED</div>
+              <div style={styles.loreSubtitleExtract}>
+                You carry the dungeon's essence back with you.
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={styles.titleRed}>{trialMode ? "TRIAL FAILED" : "YOU FELL"}</div>
+              <div style={styles.loreSubtitle}>Every death feeds the dungeon.</div>
+            </>
+          )}
+          {isNewBest && !trialMode && !runExtracted && (
             <div style={styles.newBest}>✦ NEW BEST ✦</div>
           )}
         </div>
@@ -56,11 +84,24 @@ export function GameOver({ onRestart }: GameOverProps) {
         )}
 
         {/* Soul Shard summary */}
-        <div style={styles.shardBox}>
-          <div style={styles.shardTitle}>◈ SOUL SHARDS EARNED</div>
-          <div style={styles.shardAmount}>+{shardsThisRun.toLocaleString()}</div>
-          <div style={styles.shardTotal}>Total: {shards.toLocaleString()} shards</div>
-          <div style={styles.shardLore}>Every Shard you carry back brings you closer to becoming part of it.</div>
+        <div style={runExtracted ? styles.shardBoxExtract : styles.shardBox}>
+          {runExtracted ? (
+            <>
+              <div style={styles.shardTitle}>◈ EXTRACTION BONUS</div>
+              <div style={styles.shardAmountExtract}>+{extractBonus.toLocaleString()}</div>
+              <div style={styles.shardMeta}>
+                {extractLabel} of {shardsThisRun.toLocaleString()} run shards · Wave {highestBossWaveCleared} boss cleared
+              </div>
+              <div style={styles.shardTotal}>Total: {shards.toLocaleString()} shards</div>
+            </>
+          ) : (
+            <>
+              <div style={styles.shardTitle}>◈ SOUL SHARDS EARNED</div>
+              <div style={styles.shardAmount}>+{shardsThisRun.toLocaleString()}</div>
+              <div style={styles.shardTotal}>Total: {shards.toLocaleString()} shards</div>
+              <div style={styles.shardLore}>Every Shard you carry back brings you closer to becoming part of it.</div>
+            </>
+          )}
         </div>
 
         <div style={styles.divider} />
@@ -144,12 +185,27 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 8,
     fontFamily: "monospace",
   },
+  loreSubtitleExtract: {
+    fontSize: 13,
+    color: "rgba(100,200,120,0.7)",
+    fontStyle: "italic",
+    letterSpacing: 1,
+    marginTop: 8,
+    fontFamily: "monospace",
+  },
   titleRed: {
     fontSize: 52,
     fontWeight: "900",
     color: "#cc2222",
     letterSpacing: 8,
     textShadow: "0 0 30px #aa0000",
+  },
+  titleExtract: {
+    fontSize: 48,
+    fontWeight: "900",
+    color: "#44cc88",
+    letterSpacing: 6,
+    textShadow: "0 0 30px #00aa44",
   },
   newBest: {
     color: "#ffcc00",
@@ -177,6 +233,13 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "14px",
     marginTop: 8,
   },
+  shardBoxExtract: {
+    background: "rgba(10,60,30,0.5)",
+    border: "1px solid rgba(40,160,80,0.6)",
+    borderRadius: 10,
+    padding: "14px",
+    marginTop: 8,
+  },
   shardTitle: {
     fontSize: 11,
     letterSpacing: 3,
@@ -190,6 +253,20 @@ const styles: Record<string, React.CSSProperties> = {
     textShadow: "0 0 16px #9030d0",
     fontFamily: "monospace",
     lineHeight: 1.3,
+  },
+  shardAmountExtract: {
+    fontSize: 32,
+    fontWeight: 900,
+    color: "#88ffcc",
+    textShadow: "0 0 16px #00aa66",
+    fontFamily: "monospace",
+    lineHeight: 1.3,
+  },
+  shardMeta: {
+    fontSize: 11,
+    color: "rgba(100,220,140,0.65)",
+    fontFamily: "monospace",
+    marginTop: 4,
   },
   shardTotal: {
     fontSize: 12,

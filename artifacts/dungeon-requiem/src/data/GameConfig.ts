@@ -32,22 +32,22 @@ export const GAME_CONFIG = {
   XP: {
     BASE: 60,
     EXPONENT: 1.4,
-    MAX_LEVEL: 40,
+    MAX_LEVEL: 50,
   },
 
   DIFFICULTY: {
     WAVE_DURATION: 30,          // seconds between intensity bumps
-    BASE_SPAWN_INTERVAL: 1.1,   // seconds between spawns at start (doubled mob rate)
-    MIN_SPAWN_INTERVAL: 0.18,
-    SPAWN_REDUCTION: 0.07,      // seconds removed per wave
+    BASE_SPAWN_INTERVAL: 0.85,  // seconds between spawns at start
+    MIN_SPAWN_INTERVAL: 0.10,
+    SPAWN_REDUCTION: 0.09,      // seconds removed per wave
     ELITE_SPAWN_START_WAVE: 4,
     BOSS_WAVE_INTERVAL: 5,      // boss spawns every N waves (wave 5, 10, 15…)
     BOSS_HP_SCALE_PER_WAVE: 0.2,// boss HP multiplier per appearance
     BOSS_SPECIAL_INTERVAL: 5.0, // seconds between boss AoE attacks
     BOSS_SPECIAL_WARN_TIME: 1.4,// warning duration before AoE damage lands
     BOSS_SPECIAL_RADIUS: 9,     // AoE radius in world units
-    HP_SCALE_PER_WAVE: 0.12,
-    DAMAGE_SCALE_PER_WAVE: 0.08,
+    HP_SCALE_PER_WAVE: 0.15,
+    DAMAGE_SCALE_PER_WAVE: 0.11,
   },
 
   AUDIO: {

@@ -1,7 +1,7 @@
 /**
  * HUD.tsx
  * React DOM overlay rendered on top of the R3F canvas.
- * Shows HP bar, XP bar, wave info, and upgrades.
+ * Shows HP bar, XP bar, wave info, upgrades, and the Extract Run button.
  */
 
 import { useGameStore } from "../store/gameStore";
@@ -17,13 +17,18 @@ function useIsMobile() {
   return mob;
 }
 
-export function HUD() {
+interface HUDProps {
+  onExtract?: () => void;
+}
+
+export function HUD({ onExtract }: HUDProps) {
   const isMobile = useIsMobile();
   const {
     playerHP, playerMaxHP, xp, xpToNext, level,
     wave, score, kills, survivalTime,
     acquiredUpgrades, isDashing,
     bossHP, bossMaxHP, bossName, bossAlive, bossSpecialWarn,
+    highestBossWaveCleared, trialMode,
   } = useGameStore();
 
   // Boss arrival announcement
@@ -49,6 +54,13 @@ export function HUD() {
   const hpColor = hpPct > 50 ? "#22cc55" : hpPct > 25 ? "#ff8800" : "#cc2222";
 
   const upgradeEntries = Object.entries(acquiredUpgrades).filter(([, v]) => v > 0);
+
+  const showExtract = !trialMode && highestBossWaveCleared > 0 && onExtract != null;
+  const extractFraction =
+    highestBossWaveCleared >= 20 ? "100%" :
+    highestBossWaveCleared >= 15 ? "75%" :
+    highestBossWaveCleared >= 10 ? "50%" :
+    "25%";
 
   return (
     <div style={styles.hud}>
@@ -114,6 +126,16 @@ export function HUD() {
       <div style={{ ...styles.actionIndicator, opacity: isDashing ? 1 : 0.3 }}>
         <span style={{ color: isDashing ? "#88aaff" : "#666" }}>◈ DASH</span>
       </div>
+
+      {/* Extract Run button — shown only after first boss kill, normal mode */}
+      {showExtract && (
+        <div style={styles.extractWrapper}>
+          <button style={styles.extractBtn} onClick={onExtract}>
+            ↑ EXTRACT RUN
+            <span style={styles.extractSub}>Keep {extractFraction} of run shards</span>
+          </button>
+        </div>
+      )}
 
       {/* Boss HP bar — full width, center-bottom, shown only when boss is alive */}
       {bossAlive && bossMaxHP > 0 && (
@@ -266,6 +288,36 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     letterSpacing: 2,
     transition: "opacity 0.2s",
+  },
+  extractWrapper: {
+    position: "absolute",
+    top: 20,
+    right: 20,
+    pointerEvents: "auto",
+  },
+  extractBtn: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    padding: "10px 18px",
+    fontSize: 13,
+    fontWeight: "bold",
+    letterSpacing: 2,
+    color: "#aaff88",
+    background: "rgba(10,40,10,0.88)",
+    border: "1px solid #44aa22",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "'Segoe UI', monospace",
+    boxShadow: "0 0 16px rgba(60,200,40,0.35)",
+    backdropFilter: "blur(4px)",
+    gap: 4,
+  },
+  extractSub: {
+    fontSize: 10,
+    color: "rgba(160,255,120,0.65)",
+    letterSpacing: 1,
+    fontWeight: "normal",
   },
   bossBar: {
     position: "absolute",

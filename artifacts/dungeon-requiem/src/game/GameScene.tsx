@@ -131,6 +131,8 @@ export interface GameState {
   difficultyDmgMult: number;
   difficultySpeedMult: number;
   difficultyShardMult: number;
+  // Extraction
+  highestBossWaveCleared: number;
 }
 
 // ─── Torch positions ──────────────────────────────────────────────────────────
@@ -548,6 +550,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
               if (e.type === "boss") {
                 g.bossAlive = false; g.bossId = null;
+                g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
                 store.setBossState(0, 0, "", false);
                 store.setBossSpecialWarn(false);
                 audioManager.play("boss_death");
@@ -783,6 +786,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
           if (e.type === "boss") {
             g.bossAlive = false; g.bossId = null;
+            g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
             store.setBossState(0, 0, "", false);
             store.setBossSpecialWarn(false);
             audioManager.play("boss_death");
@@ -1065,7 +1069,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (stats.soulfireChance > 0) triggerSoulfire(t, g);
             const xg = Math.round(t.xpReward * stats.xpMultiplier);
             g.xpOrbs.push({ id: orbId(), x: t.x, z: t.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[t.type] ?? "green" });
-            if (t.type === "boss") { g.bossAlive = false; g.bossId = null; store.setBossState(0, 0, "", false); }
+            if (t.type === "boss") { g.bossAlive = false; g.bossId = null; g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave); store.setBossState(0, 0, "", false); }
           }
         }
       }
@@ -1148,6 +1152,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       }))
     );
     store.setWaveInfo(g.wave, g.score, g.kills, g.survivalTime);
+    store.setHighestBossWaveCleared(g.highestBossWaveCleared);
 
     // ── Game over ─────────────────────────────────────────────────────────
     if (p.dead) {
@@ -1318,6 +1323,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       difficultyDmgMult: diff.enemyDamageMult,
       difficultySpeedMult: diff.enemySpeedMult,
       difficultyShardMult: diff.shardBonusMult,
+      highestBossWaveCleared: 0,
     };
     progression.onLevelUp = (_lvl, choices) => {
       audioManager.play("level_up");
@@ -1373,6 +1379,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           difficultyDmgMult: resetDiff.enemyDamageMult,
           difficultySpeedMult: resetDiff.enemySpeedMult,
           difficultyShardMult: resetDiff.shardBonusMult,
+          highestBossWaveCleared: 0,
         };
         _eid = 1; _oid = 1; _pid = 1; _epid = 1;
       } else {
@@ -1383,6 +1390,34 @@ export function GameScene({ onRestart }: GameSceneProps) {
       audioManager.stopMusic();
     }
   }, [phase]);
+
+  // Extract run — awards a milestone-based shard bonus and ends the run voluntarily
+  const handleExtract = useCallback(() => {
+    const g = gsRef.current!;
+    if (!g || g.player.dead) return;
+    const cleared = g.highestBossWaveCleared;
+    if (cleared <= 0) return;
+    const fraction =
+      cleared >= 20 ? 1.0 :
+      cleared >= 15 ? 0.75 :
+      cleared >= 10 ? 0.50 :
+      0.25;
+    const runShards = useGameStore.getState().shardsThisRun;
+    const bonus = Math.round(fraction * runShards);
+    if (bonus > 0) {
+      useMetaStore.getState().addShards(bonus);
+      useGameStore.getState().addRunShards(bonus);
+    }
+    useGameStore.getState().setRunExtracted(true);
+    // Mark player as dead so the restart useEffect triggers a full reset
+    g.player.dead = true;
+    g.running = false;
+    audioManager.stopMusic();
+    if (g.score > useGameStore.getState().bestScore) {
+      useGameStore.getState().setBestScore(g.score, g.wave);
+    }
+    useGameStore.getState().setPhase("gameover");
+  }, []);
 
   // Apply upgrade from level-up screen
   const handleUpgrade = useCallback((id: string) => {
@@ -1424,7 +1459,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
         <SceneContent gs={gsRef} />
       </Canvas>
 
-      {(phase === "playing" || phase === "paused" || phase === "levelup") && <HUD />}
+      {(phase === "playing" || phase === "paused" || phase === "levelup") && <HUD onExtract={handleExtract} />}
       {phase === "playing" && <MobileControls gsRef={gsRef} />}
       {phase === "paused" && <PauseMenu />}
       {phase === "levelup" && <LevelUp onChoice={handleUpgrade} />}

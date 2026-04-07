@@ -35,8 +35,8 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
   scuttler: {
     type: "scuttler",
     displayName: "Bone Scuttler",
-    health: 30,
-    damage: 8,
+    health: 38,
+    damage: 10,
     moveSpeed: 6.0,
     xpReward: GREEN_XP,          // 1× — green crystal
     crystalTier: "green",
@@ -51,8 +51,8 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
   brute: {
     type: "brute",
     displayName: "Iron Brute",
-    health: 140,
-    damage: 22,
+    health: 175,
+    damage: 28,
     moveSpeed: 2.5,
     xpReward: GREEN_XP * 10,     // 10× — blue crystal
     crystalTier: "blue",
@@ -67,8 +67,8 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
   wraith: {
     type: "wraith",
     displayName: "Shadow Wraith",
-    health: 55,
-    damage: 14,
+    health: 69,
+    damage: 18,
     moveSpeed: 4.5,
     xpReward: GREEN_XP * 10,     // 10× — blue crystal
     crystalTier: "blue",
@@ -83,8 +83,8 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
   elite: {
     type: "elite",
     displayName: "Voidclaw Champion",
-    health: 420,
-    damage: 36,
+    health: 525,
+    damage: 45,
     moveSpeed: 3.5,
     xpReward: GREEN_XP * 30,     // 30× — purple crystal
     crystalTier: "purple",
@@ -99,8 +99,8 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
   boss: {
     type: "boss",
     displayName: "The Warden Reborn",
-    health: 1800,
-    damage: 55,
+    health: 2250,
+    damage: 69,
     moveSpeed: 3.0,
     xpReward: GREEN_XP * 50,     // 50× — orange crystal
     crystalTier: "orange",
