@@ -3,10 +3,22 @@
  * Dark fantasy main menu overlay.
  */
 
+import { useEffect, useState } from "react";
 import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
 
+function useIsMobile() {
+  const [mob, setMob] = useState(() => window.innerWidth < 900);
+  useEffect(() => {
+    const fn = () => setMob(window.innerWidth < 900);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return mob;
+}
+
 export function MainMenu() {
+  const isMobile = useIsMobile();
   const { setPhase, setTrialMode, bestScore, bestWave } = useGameStore();
   const { shards, milestones, trialWins } = useMetaStore();
 
@@ -72,12 +84,20 @@ export function MainMenu() {
 
         <div style={styles.controlsList}>
           <div style={styles.controlsTitle}>CONTROLS</div>
-          <div style={styles.controlsGrid}>
-            <span style={styles.key}>W A S D</span><span style={styles.action}>Move</span>
-            <span style={styles.key}>Mouse</span><span style={styles.action}>Aim &amp; auto-attack</span>
-            <span style={styles.key}>Shift</span><span style={styles.action}>Dash (invincible)</span>
-            <span style={styles.key}>ESC</span><span style={styles.action}>Pause</span>
-          </div>
+          {isMobile ? (
+            <div style={styles.controlsGrid}>
+              <span style={styles.key}>Left</span><span style={styles.action}>Joystick — Move</span>
+              <span style={styles.key}>Right</span><span style={styles.action}>Hold — Aim &amp; attack</span>
+              <span style={styles.key}>⚡</span><span style={styles.action}>Dash button</span>
+            </div>
+          ) : (
+            <div style={styles.controlsGrid}>
+              <span style={styles.key}>W A S D</span><span style={styles.action}>Move</span>
+              <span style={styles.key}>Mouse</span><span style={styles.action}>Aim &amp; auto-attack</span>
+              <span style={styles.key}>Shift</span><span style={styles.action}>Dash (invincible)</span>
+              <span style={styles.key}>ESC</span><span style={styles.action}>Pause</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -104,13 +124,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   panel: {
     textAlign: "center",
-    padding: "48px 56px",
+    padding: "clamp(24px, 5vw, 48px) clamp(20px, 6vw, 56px)",
     background: "rgba(0,0,0,0.7)",
     border: "1px solid rgba(120,40,180,0.4)",
     borderRadius: 16,
     backdropFilter: "blur(8px)",
     boxShadow: "0 0 60px rgba(100,0,160,0.3), inset 0 0 30px rgba(80,0,120,0.1)",
-    minWidth: 400,
+    width: "min(460px, 94vw)",
+    maxHeight: "96vh",
+    overflowY: "auto",
     position: "relative",
     zIndex: 1,
   },
@@ -119,40 +141,40 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 8,
   },
   titleMain: {
-    fontSize: 62,
+    fontSize: "clamp(36px, 14vw, 62px)",
     fontWeight: "900",
     color: "#cc88ff",
-    letterSpacing: 12,
+    letterSpacing: "clamp(6px, 3vw, 12px)",
     lineHeight: 1.1,
     position: "relative",
     zIndex: 2,
   },
   titleGlow: {
     position: "absolute",
-    fontSize: 62,
+    fontSize: "clamp(36px, 14vw, 62px)",
     fontWeight: "900",
     color: "transparent",
-    letterSpacing: 12,
+    letterSpacing: "clamp(6px, 3vw, 12px)",
     lineHeight: 1.1,
     width: "100%",
     textShadow: "0 0 30px #aa00ff, 0 0 60px #8800cc",
     zIndex: 1,
   },
   subtitle: {
-    fontSize: 44,
+    fontSize: "clamp(28px, 10vw, 44px)",
     fontWeight: "900",
     color: "#ff4444",
-    letterSpacing: 14,
+    letterSpacing: "clamp(6px, 3.5vw, 14px)",
     lineHeight: 1.0,
     position: "relative",
     zIndex: 2,
   },
   subtitleGlow: {
     position: "absolute",
-    fontSize: 44,
+    fontSize: "clamp(28px, 10vw, 44px)",
     fontWeight: "900",
     color: "transparent",
-    letterSpacing: 14,
+    letterSpacing: "clamp(6px, 3.5vw, 14px)",
     lineHeight: 1.0,
     width: "100%",
     textShadow: "0 0 25px #ff0000, 0 0 50px #cc0000",

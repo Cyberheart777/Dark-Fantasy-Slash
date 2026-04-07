@@ -7,7 +7,18 @@
 import { useGameStore } from "../store/gameStore";
 import { useEffect, useRef, useState } from "react";
 
+function useIsMobile() {
+  const [mob, setMob] = useState(() => window.innerWidth < 900);
+  useEffect(() => {
+    const fn = () => setMob(window.innerWidth < 900);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return mob;
+}
+
 export function HUD() {
+  const isMobile = useIsMobile();
   const {
     playerHP, playerMaxHP, xp, xpToNext, level,
     wave, score, kills, survivalTime,
@@ -42,7 +53,7 @@ export function HUD() {
   return (
     <div style={styles.hud}>
       {/* Top-left: player vitals */}
-      <div style={styles.vitals}>
+      <div style={{ ...styles.vitals, width: isMobile ? 160 : 220 }}>
         {/* HP bar */}
         <div style={styles.barLabel}>
           <span style={{ color: "#ff6666", fontWeight: "bold" }}>HP</span>
@@ -72,16 +83,18 @@ export function HUD() {
         </div>
       </div>
 
-      {/* Controls hint */}
-      <div style={styles.controls}>
-        <span>WASD Move</span>
-        <span>Mouse Aim &amp; auto-attack</span>
-        <span>Shift Dash</span>
-        <span>ESC Pause</span>
-      </div>
+      {/* Controls hint — desktop only */}
+      {!isMobile && (
+        <div style={styles.controls}>
+          <span>WASD Move</span>
+          <span>Mouse Aim &amp; auto-attack</span>
+          <span>Shift Dash</span>
+          <span>ESC Pause</span>
+        </div>
+      )}
 
-      {/* Bottom-left: upgrades */}
-      {upgradeEntries.length > 0 && (
+      {/* Bottom-left: upgrades (hidden on mobile to keep joystick area clear) */}
+      {upgradeEntries.length > 0 && !isMobile && (
         <div style={styles.upgradePanel}>
           <div style={styles.upgradeTitle}>UPGRADES</div>
           <div style={styles.upgradeGrid}>

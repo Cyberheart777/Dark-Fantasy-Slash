@@ -1,7 +1,8 @@
 /**
  * MobileControls.tsx
  * On-screen virtual joystick + attack/aim zone + dash button.
- * Only renders on touch devices. Writes into InputManager3D via setMobile* methods.
+ * Renders on touch devices or any screen narrower than 900px.
+ * Writes into InputManager3D via setMobile* methods.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -11,25 +12,22 @@ interface Props {
   gsRef: React.RefObject<GameState | null>;
 }
 
-const JOYSTICK_RADIUS = 56;
-const KNOB_RADIUS = 24;
+const JOYSTICK_RADIUS = 52;
+const KNOB_RADIUS = 22;
 const DEAD_ZONE = 0.15;
 
-function isTouchDevice() {
-  return "ontouchstart" in window || navigator.maxTouchPoints > 0;
+function checkMobile() {
+  return "ontouchstart" in window || navigator.maxTouchPoints > 0 || window.innerWidth < 900;
 }
 
 export function MobileControls({ gsRef }: Props) {
-  const [visible] = useState(isTouchDevice);
-  const joystickBase = useRef<HTMLDivElement>(null);
-  const joystickActive = useRef(false);
-  const joystickId = useRef<number | null>(null);
-  const joystickOrigin = useRef({ x: 0, y: 0 });
-  const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
-  const [joystickDown, setJoystickDown] = useState(false);
-  const [attackDown, setAttackDown] = useState(false);
-  const [dashFlash, setDashFlash] = useState(false);
-  const attackId = useRef<number | null>(null);
+  const [visible, setVisible] = useState(checkMobile);
+
+  useEffect(() => {
+    const onResize = () => setVisible(checkMobile());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     if (!visible) return;
@@ -39,20 +37,25 @@ export function MobileControls({ gsRef }: Props) {
     };
   }, [visible, gsRef]);
 
+  const joystickBase = useRef<HTMLDivElement>(null);
+  const joystickId = useRef<number | null>(null);
+  const joystickOrigin = useRef({ x: 0, y: 0 });
+  const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
+  const [joystickDown, setJoystickDown] = useState(false);
+  const [attackDown, setAttackDown] = useState(false);
+  const [dashFlash, setDashFlash] = useState(false);
+  const attackId = useRef<number | null>(null);
+
   if (!visible) return null;
 
-  // ── Joystick handlers ────────────────────────────────────────────────────
+  // ── Joystick ──────────────────────────────────────────────────────────────
 
   function onJoystickStart(e: React.TouchEvent) {
     e.preventDefault();
     const t = e.changedTouches[0];
     joystickId.current = t.identifier;
     const rect = joystickBase.current!.getBoundingClientRect();
-    joystickOrigin.current = {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
-    };
-    joystickActive.current = true;
+    joystickOrigin.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     setJoystickDown(true);
     updateJoystick(t.clientX, t.clientY);
   }
@@ -70,7 +73,6 @@ export function MobileControls({ gsRef }: Props) {
     e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
       if (e.changedTouches[i].identifier === joystickId.current) {
-        joystickActive.current = false;
         joystickId.current = null;
         setJoystickDown(false);
         setKnobPos({ x: 0, y: 0 });
@@ -87,25 +89,19 @@ export function MobileControls({ gsRef }: Props) {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const clamped = Math.min(dist, JOYSTICK_RADIUS);
     const angle = Math.atan2(dy, dx);
-    const kx = Math.cos(angle) * clamped;
-    const ky = Math.sin(angle) * clamped;
-    setKnobPos({ x: kx, y: ky });
+    setKnobPos({ x: Math.cos(angle) * clamped, y: Math.sin(angle) * clamped });
 
-    const nx = dx / Math.max(dist, 1);
-    const ny = dy / Math.max(dist, 1);
     const t = clamped / JOYSTICK_RADIUS;
     if (t < DEAD_ZONE) {
       gsRef.current?.input.setMobileMovement(false, false, false, false);
       return;
     }
-    const up    = ny < -0.4;
-    const down  = ny >  0.4;
-    const left  = nx < -0.4;
-    const right = nx >  0.4;
-    gsRef.current?.input.setMobileMovement(up, down, left, right);
+    const nx = dx / Math.max(dist, 1);
+    const ny = dy / Math.max(dist, 1);
+    gsRef.current?.input.setMobileMovement(ny < -0.4, ny > 0.4, nx < -0.4, nx > 0.4);
   }
 
-  // ── Attack/aim zone handlers ─────────────────────────────────────────────
+  // ── Attack / Aim zone ─────────────────────────────────────────────────────
 
   function onAttackStart(e: React.TouchEvent) {
     e.preventDefault();
@@ -137,12 +133,13 @@ export function MobileControls({ gsRef }: Props) {
   }
 
   function updateAim(cx: number, cy: number) {
-    const mx = (cx / window.innerWidth) * 2 - 1;
-    const my = -(cy / window.innerHeight) * 2 + 1;
-    gsRef.current?.input.setMobileAim(mx, my);
+    gsRef.current?.input.setMobileAim(
+      (cx / window.innerWidth) * 2 - 1,
+      -(cy / window.innerHeight) * 2 + 1,
+    );
   }
 
-  // ── Dash handler ─────────────────────────────────────────────────────────
+  // ── Dash ─────────────────────────────────────────────────────────────────
 
   function onDash(e: React.TouchEvent) {
     e.preventDefault();
@@ -152,14 +149,14 @@ export function MobileControls({ gsRef }: Props) {
     setTimeout(() => setDashFlash(false), 200);
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div style={styles.wrapper}>
-      {/* Left side — joystick */}
+      {/* Left — joystick */}
       <div
         ref={joystickBase}
-        style={{ ...styles.joystickBase, opacity: joystickDown ? 0.9 : 0.55 }}
+        style={{ ...styles.joystickBase, opacity: joystickDown ? 0.92 : 0.6 }}
         onTouchStart={onJoystickStart}
         onTouchMove={onJoystickMove}
         onTouchEnd={onJoystickEnd}
@@ -173,19 +170,29 @@ export function MobileControls({ gsRef }: Props) {
         />
       </div>
 
-      {/* Right side — attack / aim zone */}
+      {/* Right — attack/aim zone */}
       <div
-        style={{ ...styles.attackZone, background: attackDown ? "rgba(255,60,60,0.12)" : "transparent" }}
+        style={{
+          ...styles.attackZone,
+          background: attackDown ? "rgba(255,60,60,0.1)" : "transparent",
+        }}
         onTouchStart={onAttackStart}
         onTouchMove={onAttackMove}
         onTouchEnd={onAttackEnd}
         onTouchCancel={onAttackEnd}
       >
-        <div style={styles.attackHint}>HOLD TO<br />ATTACK</div>
+        {!attackDown && (
+          <div style={styles.attackHint}>HOLD<br />ATTACK</div>
+        )}
 
-        {/* Dash button sits inside the attack zone, bottom-right corner */}
+        {/* Dash button */}
         <div
-          style={{ ...styles.dashBtn, background: dashFlash ? "rgba(80,160,255,0.85)" : "rgba(40,80,180,0.65)" }}
+          style={{
+            ...styles.dashBtn,
+            background: dashFlash
+              ? "rgba(120,200,255,0.9)"
+              : "rgba(30,70,170,0.75)",
+          }}
           onTouchStart={onDash}
         >
           <span style={styles.dashIcon}>⚡</span>
@@ -196,24 +203,27 @@ export function MobileControls({ gsRef }: Props) {
   );
 }
 
+const JR = JOYSTICK_RADIUS;
+const KR = KNOB_RADIUS;
+
 const styles: Record<string, React.CSSProperties> = {
   wrapper: {
     position: "absolute",
     inset: 0,
     pointerEvents: "none",
-    display: "flex",
     userSelect: "none",
+    WebkitUserSelect: "none",
     touchAction: "none",
   },
   joystickBase: {
     position: "absolute",
     bottom: 36,
     left: 36,
-    width: JOYSTICK_RADIUS * 2,
-    height: JOYSTICK_RADIUS * 2,
+    width: JR * 2,
+    height: JR * 2,
     borderRadius: "50%",
-    background: "rgba(180,120,255,0.18)",
-    border: "2px solid rgba(180,120,255,0.6)",
+    background: "rgba(180,120,255,0.15)",
+    border: "2px solid rgba(180,120,255,0.55)",
     pointerEvents: "auto",
     touchAction: "none",
     transition: "opacity 0.15s",
@@ -222,12 +232,12 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute",
     top: "50%",
     left: "50%",
-    width: KNOB_RADIUS * 2,
-    height: KNOB_RADIUS * 2,
+    width: KR * 2,
+    height: KR * 2,
     borderRadius: "50%",
-    background: "rgba(200,150,255,0.75)",
-    border: "2px solid rgba(220,180,255,0.9)",
-    boxShadow: "0 0 10px rgba(180,100,255,0.6)",
+    background: "rgba(210,160,255,0.8)",
+    border: "2px solid rgba(230,200,255,0.9)",
+    boxShadow: "0 0 12px rgba(180,100,255,0.7)",
     pointerEvents: "none",
     transition: "transform 0.04s",
   },
@@ -239,19 +249,18 @@ const styles: Record<string, React.CSSProperties> = {
     height: "100%",
     pointerEvents: "auto",
     touchAction: "none",
-    transition: "background 0.1s",
+    transition: "background 0.08s",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: "0 0 0 80px",
   },
   attackHint: {
-    color: "rgba(255,100,100,0.25)",
-    fontSize: 11,
+    color: "rgba(255,100,100,0.2)",
+    fontSize: 10,
     fontWeight: "bold",
     letterSpacing: 2,
     textAlign: "center",
-    lineHeight: 1.4,
+    lineHeight: 1.6,
     pointerEvents: "none",
     fontFamily: "inherit",
   },
@@ -259,10 +268,10 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute",
     bottom: 36,
     right: 36,
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    border: "2px solid rgba(100,160,255,0.7)",
+    width: 62,
+    height: 62,
+    borderRadius: 14,
+    border: "2px solid rgba(100,170,255,0.7)",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
@@ -271,10 +280,10 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "auto",
     touchAction: "none",
     transition: "background 0.1s",
-    boxShadow: "0 0 14px rgba(60,120,255,0.5)",
+    boxShadow: "0 0 16px rgba(60,130,255,0.45)",
   },
   dashIcon: {
-    fontSize: 20,
+    fontSize: 22,
     lineHeight: 1,
   },
   dashLabel: {

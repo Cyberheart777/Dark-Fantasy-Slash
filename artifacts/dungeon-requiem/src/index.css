@@ -12,9 +12,18 @@ html, body, #root {
   height: 100%;
   overflow: hidden;
   background: #04000a;
+  /* Prevent bounce / overscroll on mobile */
+  overscroll-behavior: none;
+}
+
+body {
+  /* Remove tap highlight flicker on mobile */
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Phaser canvas fit */
 canvas {
   display: block;
+  /* Prevent default touch behaviours on the 3D canvas */
+  touch-action: none;
 }
