@@ -7,6 +7,7 @@ import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
 import { CHARACTER_DATA } from "../data/CharacterData";
 import { DIFFICULTY_DATA } from "../data/DifficultyData";
+import { ENEMY_DATA } from "../data/EnemyData";
 
 interface TrialVictoryProps {
   onRetry: () => void;
@@ -31,6 +32,9 @@ export function TrialVictory({ onRetry }: TrialVictoryProps) {
   const diff = DIFFICULTY_DATA[difficultyTier];
   const lore = CHAMPION_LORE[selectedClass] ?? "The champion lies defeated.";
   const icon = CLASS_ICONS[selectedClass] ?? "◈";
+  const champType = `${selectedClass}_champion` as keyof typeof ENEMY_DATA;
+  const champDisplayName = ENEMY_DATA[champType]?.displayName ?? "The Champion";
+  const champFullLabel = `${champDisplayName} — ${selectedClass.charAt(0).toUpperCase() + selectedClass.slice(1)} Champion`;
 
   return (
     <div style={styles.overlay}>
@@ -48,7 +52,7 @@ export function TrialVictory({ onRetry }: TrialVictoryProps) {
         <div style={styles.champLine}>
           <span style={{ ...styles.champIcon, color: def.accentColor }}>{icon}</span>
           <span style={{ ...styles.champName, color: def.accentColor }}>
-            {selectedClass.toUpperCase()} CHAMPION SLAIN
+            {champFullLabel} SLAIN
           </span>
         </div>
 

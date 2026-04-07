@@ -908,8 +908,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (newEnrage > e.enragePhase) {
         const gain = newEnrage - e.enragePhase;
         e.enragePhase = newEnrage;
-        e.moveSpeed = e.baseMoveSpeed * (1 + newEnrage * 0.25);
-        e.damage = Math.round(e.baseDamage * (1 + newEnrage * 0.18));
+        e.moveSpeed = e.baseMoveSpeed * (1 + newEnrage * 0.20);
+        e.damage = Math.round(e.baseDamage * (1 + newEnrage * 0.15));
         e.hitFlashTimer = 0.6 * gain;
         // Color shift toward red as enrage deepens
         if (newEnrage === 1) { e.emissive = "#330000"; }
@@ -918,8 +918,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         audioManager.play("boss_special");
       }
 
-      // Sync champion to boss HP bar
-      store.setBossState(e.hp, e.maxHp, ENEMY_DATA[e.type as keyof typeof ENEMY_DATA].displayName, true);
+      // Sync champion to boss HP bar (show canonical name + class champion suffix)
+      const champCls = e.type.replace("_champion", "");
+      const champLabel = `${ENEMY_DATA[e.type as keyof typeof ENEMY_DATA].displayName} — ${champCls.charAt(0).toUpperCase() + champCls.slice(1)} Champion`;
+      store.setBossState(e.hp, e.maxHp, champLabel, true);
 
       const cdx = p.x - e.x;
       const cdz = p.z - e.z;
@@ -982,7 +984,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         e.radialTimer -= delta;
         if (e.radialTimer <= 0) {
           e.radialTimer = e.attackInterval;
-          const spread = (burstCount - 1) * 0.22;
           for (let k = 0; k < burstCount; k++) {
             const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
             const shotAngle = baseAngle + (k - (burstCount - 1) / 2) * 0.22;
@@ -994,16 +995,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               damage: e.damage, lifetime: 3.5, dead: false,
             });
           }
-          void spread;
           audioManager.play("boss_special");
         }
 
       } else if (e.type === "rogue_champion") {
         // ── Rogue Champion: fast, rapid twin shots, periodic dash ─────
-        const cx = p.x - e.x, cz = p.z - e.z;
-        const clen = Math.sqrt(cx * cx + cz * cz) || 1;
         // Circle-strafe around player at ~8 units distance
-        const strafeAngle = Math.atan2(cx, cz) + 0.015 * e.moveSpeed;
+        const strafeAngle = Math.atan2(p.x - e.x, p.z - e.z) + 0.015 * e.moveSpeed;
         const targetX = p.x - Math.sin(strafeAngle) * 8;
         const targetZ = p.z - Math.cos(strafeAngle) * 8;
         const toX = targetX - e.x, toZ = targetZ - e.z;
@@ -1043,7 +1041,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           audioManager.play("dash");
         }
 
-        void cx; void cz; void clen;
       }
     }
 
