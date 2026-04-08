@@ -227,6 +227,16 @@ function orbId()   { return `o${_oid++}`; }
 function projId()  { return `p${_pid++}`; }
 function eprojId() { return `ep${_epid++}`; }
 function gearId()  { return `g${_gid++}`; }
+let _dpid = 1;
+function popupId() { return `dp${_dpid++}`; }
+
+/** Spawn a floating damage number. */
+function spawnDmgPopup(x: number, z: number, value: number, isCrit: boolean, isPlayer: boolean): void {
+  useGameStore.getState().addDamagePopup({
+    id: popupId(), x, z, value, isCrit, isPlayer,
+    spawnTime: performance.now(),
+  });
+}
 
 const CRYSTAL_TIER: Record<string, CrystalTier> = {
   scuttler:         "green",
@@ -724,10 +734,12 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (isCrit) dmg = Math.floor(dmg * 1.85);
             e.hp -= dmg;
             e.hitFlashTimer = 0.15;
+            spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
             meleeHitsThisSwing++;
 
             if (stats.doubleStrikeChance > 0 && Math.random() < stats.doubleStrikeChance) {
               e.hp -= dmg;
+              spawnDmgPopup(e.x + 0.3, e.z, dmg, false, false);
             }
             if (stats.lifesteal > 0) {
               p.hp = Math.min(p.maxHp, p.hp + dmg * stats.lifesteal);
@@ -1110,7 +1122,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
               const afterShield = rawDmg - shielded;
               const effective = Math.max(1, (afterShield - stats.armor) * stats.incomingDamageMult);
-              p.hp -= effective;
+              p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.8;
               // Iron Reprisal
               if (stats.ironReprisalEnabled) {
@@ -1160,7 +1172,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
               const afterShield = rawDmg - shielded;
               const effective = Math.max(1, (afterShield - stats.armor) * stats.incomingDamageMult);
-              p.hp -= effective;
+              p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
               // Iron Reprisal shockwave
               if (stats.ironReprisalEnabled) {
@@ -1211,6 +1223,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (isCrit) dmg = Math.floor(dmg * 1.85);
         e.hp -= dmg;
         e.hitFlashTimer = 0.15;
+        spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
         if (stats.lifesteal > 0) {
           p.hp = Math.min(p.maxHp, p.hp + dmg * stats.lifesteal);
         }
@@ -1320,7 +1333,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
           if (!isDodged) {
             const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
-            p.hp -= effective;
+            p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.6;
             if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
             else { audioManager.play("player_hurt"); }
@@ -1353,6 +1366,16 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     // Remove after animation completes
     g.xpOrbs = g.xpOrbs.filter((o) => !o.collected || o.collectTimer < 0.2);
 
+    // ── Damage popup cleanup (expire after 1s) ──────────────────────────
+    const now = performance.now();
+    const popups = store.damagePopups;
+    if (popups.length > 0 && now - popups[0].spawnTime > 1000) {
+      const fresh = popups.filter((pp) => now - pp.spawnTime < 1000);
+      if (fresh.length !== popups.length) {
+        useGameStore.setState({ damagePopups: fresh });
+      }
+    }
+
     // ── Gear Drops — pickup + despawn ──────────────────────────────────────
     for (const gd of g.gearDrops) {
       gd.lifetime -= delta;
@@ -1381,7 +1404,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           if (dist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
             const rawDmg = e.damage * 3;
             const effective = Math.max(100, (rawDmg - stats.armor) * stats.incomingDamageMult);
-            p.hp -= effective;
+            p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
             if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
             else { audioManager.play("player_hurt"); }
@@ -1484,7 +1507,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (cDist <= e.attackRange * 1.3 && p.invTimer <= 0 && !p.dead) {
               const rawDmg = e.damage * 1.5 * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE * 0.3);
               const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
-              p.hp -= effective;
+              p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
               if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
             }
