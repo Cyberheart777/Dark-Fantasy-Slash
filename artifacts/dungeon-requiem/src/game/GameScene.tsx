@@ -22,7 +22,7 @@ import { createDefaultStats, type PlayerStats } from "../data/UpgradeData";
 import { buildMetaModifiers, buildTrialModifiers } from "../data/MetaUpgradeData";
 import { resolveStats } from "../data/StatModifier";
 import { InputManager3D } from "./InputManager3D";
-import { rollGearDrop, GEAR_DROP_CHANCE, type GearDef } from "../data/GearData";
+import { tryRollGear, type GearDef } from "../data/GearData";
 import { DungeonRoom } from "../world/DungeonRoom";
 import { Torch3D } from "../world/Torch3D";
 import { Player3D } from "../entities/Player3D";
@@ -326,16 +326,15 @@ function handlePlayerFatalDmg(p: PlayerRuntime, g: GameState): boolean {
 
 /** Try to spawn a gear drop at the given position based on enemy type. */
 function trySpawnGear(enemyType: string, x: number, z: number, g: GameState): void {
-  const chance = GEAR_DROP_CHANCE[enemyType] ?? 0;
-  if (chance <= 0 || Math.random() > chance) return;
-  const gear = rollGearDrop();
+  const gear = tryRollGear(enemyType);
+  if (!gear) return;
   g.gearDrops.push({
     id: gearId(),
     x: x + (Math.random() - 0.5) * 1.5,
     z: z + (Math.random() - 0.5) * 1.5,
     gear,
     floatOffset: Math.random() * Math.PI * 2,
-    lifetime: 20, // despawn after 20s if not picked up
+    lifetime: 20,
   });
 }
 

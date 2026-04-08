@@ -66,26 +66,40 @@ export const GEAR_POOL: GearDef[] = [
  * Pick a random gear piece using rarity-weighted selection.
  * Can optionally filter by slot.
  */
-export function rollGearDrop(forSlot?: GearSlot): GearDef {
-  const pool = forSlot ? GEAR_POOL.filter(g => g.slot === forSlot) : GEAR_POOL;
-  const totalWeight = pool.reduce((sum, g) => sum + GEAR_RARITY_WEIGHT[g.rarity], 0);
-  let roll = Math.random() * totalWeight;
-  for (const g of pool) {
-    roll -= GEAR_RARITY_WEIGHT[g.rarity];
-    if (roll <= 0) return g;
-  }
-  return pool[pool.length - 1];
+export function rollGearDrop(rarity: GearRarity, forSlot?: GearSlot): GearDef {
+  const pool = GEAR_POOL.filter(g => g.rarity === rarity && (!forSlot || g.slot === forSlot));
+  if (pool.length === 0) return GEAR_POOL.find(g => g.rarity === rarity) ?? GEAR_POOL[0];
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
-/** Drop chance by enemy type. */
-export const GEAR_DROP_CHANCE: Record<string, number> = {
-  scuttler: 0,
-  wraith: 0,
-  brute: 0.03,      // 3% on brute kill
-  elite: 0.15,      // 15% on elite kill
-  boss: 0.80,       // 80% on boss kill
-  xp_goblin: 0.10,  // 10% on goblin
-  warrior_champion: 1.0,
-  mage_champion: 1.0,
-  rogue_champion: 1.0,
+/**
+ * Drop chances per enemy type, per rarity.
+ * Common is the base chance. Rare and epic are much lower.
+ * Roll each rarity independently — epic first, then rare, then common.
+ * This means you can't get a common if you roll an epic.
+ */
+export const GEAR_DROP_RATES: Record<string, Record<GearRarity, number>> = {
+  scuttler:          { common: 0,      rare: 0,      epic: 0 },
+  wraith:            { common: 0,      rare: 0,      epic: 0 },
+  brute:             { common: 0.001,  rare: 0.0002, epic: 0 },        // 0.1% common, 0.02% rare
+  elite:             { common: 0.01,   rare: 0.003,  epic: 0.0005 },   // 1% common, 0.3% rare, 0.05% epic
+  boss:              { common: 0.10,   rare: 0.04,   epic: 0.01 },     // 10% common, 4% rare, 1% epic
+  xp_goblin:         { common: 0.005,  rare: 0.001,  epic: 0 },        // 0.5% common, 0.1% rare
+  warrior_champion:  { common: 1.0,    rare: 0.40,   epic: 0.10 },     // guaranteed common, 40% rare, 10% epic
+  mage_champion:     { common: 1.0,    rare: 0.40,   epic: 0.10 },
+  rogue_champion:    { common: 1.0,    rare: 0.40,   epic: 0.10 },
 };
+
+/**
+ * Attempt a gear drop. Rolls epic first, then rare, then common.
+ * Returns null if nothing drops.
+ */
+export function tryRollGear(enemyType: string): GearDef | null {
+  const rates = GEAR_DROP_RATES[enemyType];
+  if (!rates) return null;
+  // Roll highest rarity first
+  if (rates.epic > 0 && Math.random() < rates.epic) return rollGearDrop("epic");
+  if (rates.rare > 0 && Math.random() < rates.rare) return rollGearDrop("rare");
+  if (rates.common > 0 && Math.random() < rates.common) return rollGearDrop("common");
+  return null;
+}
