@@ -96,6 +96,9 @@ export interface MetaState {
   // e.g. { warrior: "hard", mage: "normal" }
   trialWins: Record<string, string>;
 
+  // Gear stash — gear carried out of runs, sellable at forge
+  gearStash: Array<{ id: string; name: string; icon: string; rarity: string; slot: string }>;
+
   // Actions
   addShards: (amount: number) => void;
   spendShards: (amount: number) => boolean;
@@ -108,7 +111,16 @@ export interface MetaState {
   updateBestWave: (wave: number) => void;
   checkUnlocks: () => void;
   completeTrial: (cls: string, difficulty?: string) => void;
+  addGearToStash: (gear: { id: string; name: string; icon: string; rarity: string; slot: string }) => void;
+  sellGear: (index: number) => void;
 }
+
+/** Shard value when selling gear at the forge. Intentionally low. */
+const GEAR_SELL_VALUE: Record<string, number> = {
+  common: 5,
+  rare: 15,
+  epic: 35,
+};
 
 const DEFAULT_STATE = {
   shards: 0,
@@ -120,6 +132,7 @@ const DEFAULT_STATE = {
   unlockedClasses: ["warrior"] as string[],
   unlockedRaces: ["human"] as string[],
   trialWins: {} as Record<string, string>,
+  gearStash: [] as Array<{ id: string; name: string; icon: string; rarity: string; slot: string }>,
 };
 
 export const useMetaStore = create<MetaState>()(
@@ -196,9 +209,7 @@ export const useMetaStore = create<MetaState>()(
         const current = s.trialWins[cls];
         const currentRank = current ? (DIFF_RANK[current] ?? 0) : 0;
         const newRank = DIFF_RANK[difficulty] ?? 0;
-        // Only upgrade if this is a higher difficulty clear
         if (newRank <= currentRank) {
-          // Still set the milestone for first-time clear tracking
           set((s2) => ({
             milestones: { ...s2.milestones, [`trial_${cls}`]: true },
           }));
@@ -208,6 +219,23 @@ export const useMetaStore = create<MetaState>()(
           trialWins: { ...s2.trialWins, [cls]: difficulty },
           milestones: { ...s2.milestones, [`trial_${cls}`]: true },
         }));
+      },
+
+      addGearToStash: (gear) =>
+        set((s) => ({ gearStash: [...s.gearStash, gear] })),
+
+      sellGear: (index) => {
+        const s = get();
+        const item = s.gearStash[index];
+        if (!item) return;
+        const value = GEAR_SELL_VALUE[item.rarity] ?? 5;
+        const newStash = [...s.gearStash];
+        newStash.splice(index, 1);
+        set({
+          gearStash: newStash,
+          shards: s.shards + value,
+          totalShardsEarned: s.totalShardsEarned + value,
+        });
       },
     }),
     {

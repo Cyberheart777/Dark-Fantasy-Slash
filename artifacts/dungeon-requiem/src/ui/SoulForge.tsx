@@ -11,7 +11,7 @@ import { DIFFICULTIES, DIFFICULTY_DATA } from "../data/DifficultyData";
 import { useGameStore } from "../store/gameStore";
 
 export function SoulForge() {
-  const { shards, totalShardsEarned, purchased, purchaseRank, trialWins } = useMetaStore();
+  const { shards, totalShardsEarned, purchased, purchaseRank, trialWins, gearStash, sellGear } = useMetaStore();
   const setPhase = useGameStore((s) => s.setPhase);
   const [flash, setFlash] = useState<string | null>(null);
 
@@ -186,6 +186,37 @@ export function SoulForge() {
             );
           })}
         </div>
+
+        {/* Gear Stash — sell collected gear for shards */}
+        {gearStash.length > 0 && (
+          <div style={styles.trialBox}>
+            <div style={styles.trialTitle}>🎒 GEAR STASH — SELL FOR SHARDS</div>
+            <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, marginTop: 8 }}>
+              {gearStash.map((item, i) => {
+                const rarityColor = item.rarity === "epic" ? "#aa44ff" : item.rarity === "rare" ? "#4488dd" : "#6a6a7a";
+                const sellVal = item.rarity === "epic" ? 35 : item.rarity === "rare" ? 15 : 5;
+                return (
+                  <button
+                    key={`${item.id}-${i}`}
+                    onClick={() => sellGear(i)}
+                    style={{
+                      display: "flex", flexDirection: "column" as const, alignItems: "center",
+                      gap: 3, padding: "8px 10px",
+                      background: "#0a0610", border: `1.5px solid ${rarityColor}`,
+                      borderRadius: 8, cursor: "pointer", fontFamily: "monospace",
+                      minWidth: 64, transition: "all 0.15s",
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>{item.icon}</span>
+                    <span style={{ fontSize: 8, color: rarityColor, letterSpacing: 1 }}>{item.rarity.toUpperCase()}</span>
+                    <span style={{ fontSize: 9, color: "#8070a0", maxWidth: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{item.name}</span>
+                    <span style={{ fontSize: 10, color: "#d0a0ff", fontWeight: "bold" }}>◈ {sellVal}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div style={styles.footer}>

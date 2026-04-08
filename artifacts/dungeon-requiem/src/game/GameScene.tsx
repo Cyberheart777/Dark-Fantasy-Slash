@@ -1619,6 +1619,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       const shardReward = Math.round(500 * g.difficultyShardMult);
       meta.addShards(shardReward);
       store.addRunShards(shardReward);
+      // Transfer gear to stash
+      for (const slot of ["weapon", "armor", "trinket"] as const) {
+        const gear = g.equippedGear[slot];
+        if (gear) meta.addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
+      }
       store.setBossState(0, 0, "", false);
       audioManager.stopMusic();
       g.running = false;
@@ -1694,6 +1699,14 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     if (p.dead) {
       g.running = false;
       if (g.score > store.bestScore) store.setBestScore(g.score, g.wave);
+      // Transfer equipped gear to persistent stash
+      const meta = useMetaStore.getState();
+      for (const slot of ["weapon", "armor", "trinket"] as const) {
+        const gear = g.equippedGear[slot];
+        if (gear) {
+          meta.addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
+        }
+      }
       store.setPhase("gameover");
     }
   });
