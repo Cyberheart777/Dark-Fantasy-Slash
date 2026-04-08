@@ -60,7 +60,7 @@ export class ProgressionManager {
       this._xpToNextLevel = this.calcXpThreshold(this._level);
       // Apply small passive growth every level
       CLASS_GROWTH[this._charClass](this._stats);
-      const choices = pickUpgradeChoices(this._acquiredUpgrades, 3, this._level);
+      const choices = pickUpgradeChoices(this._acquiredUpgrades, 3, this._level, this._charClass);
       this.onLevelUp?.(this._level, choices);
     }
   }

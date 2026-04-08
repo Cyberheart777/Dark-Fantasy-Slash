@@ -5,8 +5,9 @@
  */
 
 import { useState } from "react";
-import { useMetaStore } from "../store/metaStore";
+import { useMetaStore, TRIAL_BUFFS, getEarnedTrialBuffs } from "../store/metaStore";
 import { META_UPGRADES, nextRankCost, nextRankLine } from "../data/MetaUpgradeData";
+import { DIFFICULTIES, DIFFICULTY_DATA } from "../data/DifficultyData";
 import { useGameStore } from "../store/gameStore";
 
 export function SoulForge() {
@@ -50,26 +51,49 @@ export function SoulForge() {
           "The dungeon does not forget those who survive it. Every Shard you carry back… is a thread binding you to what waits below."
         </div>
 
-        {/* Trial of Champions trophies */}
+        {/* Trial of Champions — per-difficulty progress */}
         <div style={styles.trialBox}>
-          <div style={styles.trialTitle}>🏆 TRIAL OF CHAMPIONS</div>
+          <div style={styles.trialTitle}>🏆 TRIAL OF CHAMPIONS — PERMANENT BUFFS</div>
           <div style={styles.trialRow}>
             {([["warrior", "⚔", "#e06020"], ["mage", "✦", "#6020e0"], ["rogue", "◆", "#20a0e0"]] as [string, string, string][]).map(([cls, icon, color]) => {
-              const won = trialWins?.[cls] ?? false;
+              const highestClear = trialWins?.[cls] as string | undefined;
+              const diffRank = highestClear ? ({ normal: 1, hard: 2, nightmare: 3 }[highestClear] ?? 0) : 0;
               return (
                 <div key={cls} style={{
                   ...styles.trialCard,
-                  borderColor: won ? color + "88" : "#1a1228",
-                  boxShadow: won ? `0 0 14px ${color}44` : "none",
-                  opacity: won ? 1 : 0.45,
+                  borderColor: diffRank > 0 ? color + "88" : "#1a1228",
+                  boxShadow: diffRank > 0 ? `0 0 14px ${color}44` : "none",
                 }}>
-                  <div style={{ fontSize: 22, filter: won ? `drop-shadow(0 0 6px ${color})` : "none" }}>{icon}</div>
-                  <div style={{ fontSize: 9, letterSpacing: 2, color: won ? color : "#4a3060", fontFamily: "monospace", marginTop: 4 }}>
+                  <div style={{ fontSize: 22, filter: diffRank > 0 ? `drop-shadow(0 0 6px ${color})` : "none" }}>{icon}</div>
+                  <div style={{ fontSize: 9, letterSpacing: 2, color: diffRank > 0 ? color : "#4a3060", fontFamily: "monospace", marginTop: 4 }}>
                     {cls.toUpperCase()}
                   </div>
-                  <div style={{ fontSize: 10, color: won ? "#60ff40" : "#3a2050", marginTop: 2 }}>
-                    {won ? "✔ CLEARED" : "○ LOCKED"}
+                  {/* Per-difficulty pips */}
+                  <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                    {DIFFICULTIES.map((tier, i) => {
+                      const d = DIFFICULTY_DATA[tier];
+                      const cleared = diffRank >= i + 1;
+                      return (
+                        <div key={tier} style={{
+                          width: 20, height: 6, borderRadius: 3,
+                          background: cleared ? d.color : "#1a1228",
+                          boxShadow: cleared ? `0 0 4px ${d.color}` : "none",
+                        }} title={`${d.label}: ${cleared ? "Cleared" : "Locked"}`} />
+                      );
+                    })}
                   </div>
+                  {/* Current buff summary */}
+                  {diffRank > 0 && (
+                    <div style={{ fontSize: 9, color: "#8070a0", marginTop: 4, lineHeight: 1.4, fontFamily: "monospace" }}>
+                      {TRIAL_BUFFS
+                        .filter(b => b.class === cls && ({ normal: 1, hard: 2, nightmare: 3 }[b.difficulty] ?? 0) <= diffRank)
+                        .map(b => b.description.replace(" permanently", ""))
+                        .join(", ")}
+                    </div>
+                  )}
+                  {diffRank === 0 && (
+                    <div style={{ fontSize: 9, color: "#3a2050", marginTop: 4, fontFamily: "monospace" }}>○ LOCKED</div>
+                  )}
                 </div>
               );
             })}

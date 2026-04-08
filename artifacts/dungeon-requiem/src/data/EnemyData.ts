@@ -183,15 +183,39 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
 };
 
 export const SPAWN_TABLE: Array<[EnemyType, number][]> = [
+  // Wave 1-2: scuttlers only
   [["scuttler", 10]],
+  // Wave 3-4: wraiths appear
   [["scuttler", 7], ["wraith", 3]],
+  // Wave 5-6: brutes join
   [["scuttler", 5], ["wraith", 4], ["brute", 1]],
+  // Wave 7-8: more brutes, fewer scuttlers
   [["scuttler", 4], ["wraith", 4], ["brute", 2]],
+  // Wave 9-10: elites appear
   [["scuttler", 3], ["wraith", 3], ["brute", 2], ["elite", 1]],
+  // Wave 11-12: elite frequency up, wraith swarms
+  [["scuttler", 3], ["wraith", 4], ["brute", 2], ["elite", 2]],
+  // Wave 13-14: brute-heavy, elites common
+  [["scuttler", 2], ["wraith", 3], ["brute", 3], ["elite", 2]],
+  // Wave 15-16: wraith-dominant with elite muscle
+  [["scuttler", 2], ["wraith", 5], ["brute", 2], ["elite", 3]],
+  // Wave 17-18: heavy composition
+  [["scuttler", 1], ["wraith", 4], ["brute", 3], ["elite", 3]],
+  // Wave 19-20: elite swarm
+  [["scuttler", 1], ["wraith", 3], ["brute", 3], ["elite", 4]],
+  // Wave 21-24: endgame — elites everywhere
+  [["scuttler", 1], ["wraith", 3], ["brute", 4], ["elite", 5]],
+  // Wave 25-28: nightmare tier
+  [["wraith", 3], ["brute", 4], ["elite", 6]],
+  // Wave 29-32: pure brutality
+  [["wraith", 2], ["brute", 5], ["elite", 6]],
+  // Wave 33+: hell
+  [["wraith", 2], ["brute", 4], ["elite", 8]],
 ];
 
 export function pickEnemyType(wave: number): EnemyType {
-  const tableIdx = Math.min(Math.floor(wave / 2), SPAWN_TABLE.length - 1);
+  // Map waves to table tiers: wave 1-2→0, 3-4→1, ..., every 2 waves advances a tier
+  const tableIdx = Math.min(Math.floor((wave - 1) / 2), SPAWN_TABLE.length - 1);
   const table = SPAWN_TABLE[tableIdx];
   const totalWeight = table.reduce((sum, [, w]) => sum + w, 0);
   let rand = Math.random() * totalWeight;

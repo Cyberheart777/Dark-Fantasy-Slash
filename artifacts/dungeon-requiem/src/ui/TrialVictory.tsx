@@ -4,7 +4,7 @@
  */
 
 import { useGameStore } from "../store/gameStore";
-import { useMetaStore } from "../store/metaStore";
+import { useMetaStore, TRIAL_BUFFS } from "../store/metaStore";
 import { CHARACTER_DATA } from "../data/CharacterData";
 import { DIFFICULTY_DATA } from "../data/DifficultyData";
 import { ENEMY_DATA } from "../data/EnemyData";
@@ -27,7 +27,7 @@ const CLASS_ICONS: Record<string, string> = {
 
 export function TrialVictory({ onRetry }: TrialVictoryProps) {
   const { selectedClass, difficultyTier, shardsThisRun, kills, score } = useGameStore();
-  const { shards } = useMetaStore();
+  const { shards, trialWins } = useMetaStore();
   const def = CHARACTER_DATA[selectedClass];
   const diff = DIFFICULTY_DATA[difficultyTier];
   const lore = CHAMPION_LORE[selectedClass] ?? "The champion lies defeated.";
@@ -35,6 +35,16 @@ export function TrialVictory({ onRetry }: TrialVictoryProps) {
   const champType = `${selectedClass}_champion` as keyof typeof ENEMY_DATA;
   const champDisplayName = ENEMY_DATA[champType]?.displayName ?? "The Champion";
   const champFullLabel = `${champDisplayName} — ${selectedClass.charAt(0).toUpperCase() + selectedClass.slice(1)} Champion`;
+
+  // Find the buff earned for this specific class + difficulty
+  const earnedBuff = TRIAL_BUFFS.find(b => b.class === selectedClass && b.difficulty === difficultyTier);
+  // Check if this was a NEW clear (higher than previous)
+  const prevClear = trialWins[selectedClass];
+  const diffRank: Record<string, number> = { normal: 1, hard: 2, nightmare: 3 };
+  const prevRank = prevClear ? (diffRank[prevClear] ?? 0) : 0;
+  const thisRank = diffRank[difficultyTier] ?? 0;
+  // The store already updated, so if current == this tier, it was a new record
+  const isNewRecord = thisRank >= prevRank;
 
   return (
     <div style={styles.overlay}>
@@ -59,6 +69,26 @@ export function TrialVictory({ onRetry }: TrialVictoryProps) {
         <div style={styles.lore}>{lore}</div>
 
         <div style={styles.divider} />
+
+        {/* Permanent buff award */}
+        {earnedBuff && (
+          <div style={styles.buffBox}>
+            <div style={styles.buffTitle}>
+              {isNewRecord ? "⚜ PERMANENT BUFF UNLOCKED" : "⚜ BUFF ALREADY EARNED"}
+            </div>
+            <div style={{ ...styles.buffName, color: isNewRecord ? "#ffcc40" : "#8070a0" }}>
+              {earnedBuff.label}
+            </div>
+            <div style={{ ...styles.buffDesc, color: isNewRecord ? "#e0d0f0" : "#605070" }}>
+              {earnedBuff.description}
+            </div>
+            {!isNewRecord && (
+              <div style={styles.buffHint}>
+                Clear on a higher difficulty for new buffs!
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={styles.statRow}>
           <div style={styles.stat}>
@@ -228,6 +258,41 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#7050a0",
     fontFamily: "monospace",
     marginTop: 2,
+  },
+  buffBox: {
+    background: "rgba(80,50,0,0.3)",
+    border: "1px solid rgba(200,150,0,0.4)",
+    borderRadius: 10,
+    padding: "14px",
+    textAlign: "center" as const,
+    marginBottom: 8,
+  },
+  buffTitle: {
+    fontSize: 10,
+    letterSpacing: 3,
+    color: "#aa8030",
+    fontFamily: "monospace",
+    marginBottom: 6,
+  },
+  buffName: {
+    fontSize: 18,
+    fontWeight: 900,
+    fontFamily: "monospace",
+    letterSpacing: 2,
+    textShadow: "0 0 10px rgba(255,180,0,0.4)",
+  },
+  buffDesc: {
+    fontSize: 13,
+    fontFamily: "monospace",
+    marginTop: 4,
+    lineHeight: 1.4,
+  },
+  buffHint: {
+    fontSize: 10,
+    color: "#605060",
+    fontFamily: "monospace",
+    marginTop: 6,
+    fontStyle: "italic" as const,
   },
   btnCol: {
     display: "flex",

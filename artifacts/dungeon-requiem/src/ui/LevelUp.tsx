@@ -5,7 +5,39 @@
  */
 
 import { useGameStore } from "../store/gameStore";
-import type { UpgradeDef } from "../data/UpgradeData";
+import type { UpgradeDef, UpgradeRarity } from "../data/UpgradeData";
+
+// ─── Rarity color theming ────────────────────────────────────────────────────
+
+const RARITY_THEME: Record<UpgradeRarity, {
+  bg: string; bgHover: string;
+  border: string; borderHover: string;
+  glow: string; nameColor: string;
+  badgeColor: string; badgeBg: string; badgeBorder: string;
+  iconBg: string; iconBorder: string;
+}> = {
+  common: {
+    bg: "rgba(40,35,50,0.6)", bgHover: "rgba(60,55,70,0.75)",
+    border: "rgba(100,95,120,0.35)", borderHover: "rgba(140,130,160,0.6)",
+    glow: "none", nameColor: "#c0b8d0",
+    badgeColor: "#9990aa", badgeBg: "rgba(80,75,100,0.4)", badgeBorder: "rgba(100,95,120,0.5)",
+    iconBg: "rgba(50,45,65,0.8)", iconBorder: "rgba(100,95,120,0.4)",
+  },
+  rare: {
+    bg: "rgba(15,30,65,0.6)", bgHover: "rgba(25,45,90,0.75)",
+    border: "rgba(60,120,220,0.4)", borderHover: "rgba(80,150,255,0.7)",
+    glow: "0 0 12px rgba(60,120,255,0.25)", nameColor: "#70b0ff",
+    badgeColor: "#60a0ff", badgeBg: "rgba(20,50,120,0.5)", badgeBorder: "rgba(60,120,220,0.6)",
+    iconBg: "rgba(15,35,75,0.8)", iconBorder: "rgba(60,120,220,0.5)",
+  },
+  epic: {
+    bg: "rgba(45,15,70,0.6)", bgHover: "rgba(65,25,100,0.75)",
+    border: "rgba(160,60,255,0.45)", borderHover: "rgba(190,100,255,0.75)",
+    glow: "0 0 14px rgba(140,40,255,0.3)", nameColor: "#cc88ff",
+    badgeColor: "#bb70ff", badgeBg: "rgba(80,20,140,0.5)", badgeBorder: "rgba(160,60,255,0.6)",
+    iconBg: "rgba(55,20,90,0.8)", iconBorder: "rgba(160,60,255,0.5)",
+  },
+};
 
 interface LevelUpProps {
   onChoice: (id: string) => void;
@@ -36,48 +68,82 @@ export function LevelUp({ onChoice }: LevelUpProps) {
 
 function UpgradeCard({ upgrade, onSelect }: { upgrade: UpgradeDef; onSelect: () => void }) {
   const isRelic = !!upgrade.isRelic;
+  const rarity = upgrade.rarity ?? "common";
+  const theme = RARITY_THEME[rarity];
+
   return (
     <button
       style={{
         ...styles.card,
-        ...(isRelic ? styles.cardRelic : {}),
+        ...(isRelic
+          ? styles.cardRelic
+          : {
+              background: theme.bg,
+              border: `1px solid ${theme.border}`,
+              boxShadow: theme.glow,
+            }
+        ),
       }}
       onClick={onSelect}
       onMouseEnter={(e) => {
         const el = e.currentTarget;
-        el.style.background = isRelic
-          ? "rgba(90,60,0,0.75)"
-          : "rgba(70,40,100,0.75)";
-        el.style.borderColor = isRelic
-          ? "rgba(255,180,0,0.9)"
-          : "rgba(180,100,255,0.7)";
-        el.style.boxShadow = isRelic
-          ? "0 0 22px rgba(255,160,0,0.5)"
-          : "0 0 16px rgba(120,0,220,0.4)";
+        if (isRelic) {
+          el.style.background = "rgba(90,60,0,0.75)";
+          el.style.borderColor = "rgba(255,180,0,0.9)";
+          el.style.boxShadow = "0 0 22px rgba(255,160,0,0.5)";
+        } else {
+          el.style.background = theme.bgHover;
+          el.style.borderColor = theme.borderHover;
+          el.style.boxShadow = rarity === "common" ? "0 0 10px rgba(100,90,130,0.2)" : theme.glow.replace("0.25", "0.5").replace("0.3", "0.55");
+        }
       }}
       onMouseLeave={(e) => {
         const el = e.currentTarget;
-        el.style.background = isRelic
-          ? "rgba(60,40,0,0.6)"
-          : "rgba(40,20,60,0.6)";
-        el.style.borderColor = isRelic
-          ? "rgba(220,150,0,0.7)"
-          : "rgba(120,80,160,0.35)";
-        el.style.boxShadow = isRelic
-          ? "0 0 10px rgba(200,120,0,0.3)"
-          : "none";
+        if (isRelic) {
+          el.style.background = "rgba(60,40,0,0.6)";
+          el.style.borderColor = "rgba(220,150,0,0.7)";
+          el.style.boxShadow = "0 0 10px rgba(200,120,0,0.3)";
+        } else {
+          el.style.background = theme.bg;
+          el.style.borderColor = theme.border;
+          el.style.boxShadow = theme.glow;
+        }
       }}
     >
-      <div style={{ ...styles.cardIcon, ...(isRelic ? styles.cardIconRelic : {}) }}>
+      <div style={{
+        ...styles.cardIcon,
+        ...(isRelic
+          ? styles.cardIconRelic
+          : { background: theme.iconBg, border: `1px solid ${theme.iconBorder}` }
+        ),
+      }}>
         {upgrade.icon}
       </div>
       <div style={styles.cardContent}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ ...styles.cardName, ...(isRelic ? styles.cardNameRelic : {}) }}>
+          <div style={{
+            ...styles.cardName,
+            ...(isRelic ? styles.cardNameRelic : { color: theme.nameColor }),
+          }}>
             {upgrade.name}
           </div>
           {isRelic && (
             <span style={styles.relicBadge}>RELIC</span>
+          )}
+          {!isRelic && rarity !== "common" && (
+            <span style={{
+              display: "inline-block",
+              background: theme.badgeBg,
+              border: `1px solid ${theme.badgeBorder}`,
+              borderRadius: 4,
+              padding: "2px 8px",
+              color: theme.badgeColor,
+              fontSize: 10,
+              fontWeight: "bold",
+              letterSpacing: 2,
+            }}>
+              {rarity.toUpperCase()}
+            </span>
           )}
         </div>
         <div style={styles.cardDesc}>{upgrade.description}</div>

@@ -1,7 +1,7 @@
 /**
  * AttackEffect.tsx
- * Fire-and-forget sword swing arc visual.
- * Each increment of triggerKey plays one clean flash animation.
+ * Fire-and-forget attack visual.
+ * Improved: smoother arc, more slashes, glow pulse, slight screen presence.
  */
 
 import { useRef } from "react";
@@ -30,35 +30,53 @@ export function AttackEffect({ x, z, angle, triggerKey }: AttackEffectProps) {
     }
 
     if (progress.current > 0) {
-      progress.current = Math.max(0, progress.current - delta * 4.5);
+      progress.current = Math.max(0, progress.current - delta * 4.0);
     }
 
     groupRef.current.position.set(x, 0.8, z);
     groupRef.current.rotation.y = angle;
 
     const p = progress.current;
-    const scale = Math.sin(p * Math.PI);
+    // Smooth ease-out curve instead of pure sine
+    const eased = 1 - Math.pow(1 - p, 3);
+    const scale = eased;
     groupRef.current.scale.setScalar(scale);
+
+    // Rotate the arc through the swing
+    const swingAngle = (1 - p) * 1.2; // sweep from left to right
     groupRef.current.children.forEach((child, i) => {
       if (child instanceof THREE.Mesh) {
-        (child.material as THREE.MeshStandardMaterial).opacity = p * (1 - i * 0.15);
+        const mat = child.material as THREE.MeshStandardMaterial;
+        mat.opacity = p * (1 - i * 0.12);
+        mat.emissiveIntensity = 2 + p * 3;
       }
     });
+    groupRef.current.rotation.y = angle + swingAngle - 0.6;
 
-    lightRef.current.intensity = p * 3;
-    lightRef.current.position.set(x + Math.sin(angle) * 3, 1, z + Math.cos(angle) * 3);
+    // Light intensity follows swing
+    lightRef.current.intensity = p * 4;
+    lightRef.current.position.set(
+      x + Math.sin(angle) * 3,
+      1.2,
+      z + Math.cos(angle) * 3
+    );
   });
 
   return (
     <>
       <group ref={groupRef}>
-        {[0, 0.18, 0.35].map((offset, i) => (
+        {/* Main arc slashes — 5 layered planes for richer visual */}
+        {[0, 0.12, 0.24, 0.36, 0.48].map((offset, i) => (
           <mesh
             key={i}
-            position={[Math.sin(-0.6 + offset * 2) * 2.5, offset * 0.3, Math.cos(-0.6 + offset * 2) * 2.5]}
-            rotation={[0, -0.6 + offset * 2, Math.PI / 4]}
+            position={[
+              Math.sin(-0.5 + offset * 2.2) * 2.8,
+              offset * 0.25,
+              Math.cos(-0.5 + offset * 2.2) * 2.8,
+            ]}
+            rotation={[0, -0.5 + offset * 2.2, Math.PI / 4 + i * 0.05]}
           >
-            <planeGeometry args={[0.15 - i * 0.03, 2.0 - i * 0.3]} />
+            <planeGeometry args={[0.12 - i * 0.015, 2.2 - i * 0.25]} />
             <meshStandardMaterial
               color="#e0e0ff"
               emissive="#a0a0ff"
@@ -70,8 +88,21 @@ export function AttackEffect({ x, z, angle, triggerKey }: AttackEffectProps) {
             />
           </mesh>
         ))}
+        {/* Inner bright core slash */}
+        <mesh position={[Math.sin(0.3) * 2, 0.15, Math.cos(0.3) * 2]} rotation={[0, 0.3, Math.PI / 3.5]}>
+          <planeGeometry args={[0.06, 2.6]} />
+          <meshStandardMaterial
+            color="#ffffff"
+            emissive="#ccccff"
+            emissiveIntensity={5}
+            transparent
+            opacity={0.9}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
       </group>
-      <pointLight ref={lightRef} color="#8080ff" intensity={0} distance={8} decay={2} />
+      <pointLight ref={lightRef} color="#8080ff" intensity={0} distance={10} decay={2} />
     </>
   );
 }

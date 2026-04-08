@@ -35,10 +35,13 @@ export interface StatModifier {
 export function resolveStats(base: PlayerStats, modifiers: StatModifier[]): PlayerStats {
   if (modifiers.length === 0) return { ...base };
 
-  const result = { ...base } as Record<string, number>;
+  const result = { ...base } as unknown as Record<string, number | boolean>;
   const statKeys = Object.keys(base) as (keyof PlayerStats)[];
 
   for (const key of statKeys) {
+    // Skip non-numeric fields (booleans like earthbreakerEnabled)
+    if (typeof base[key] !== "number") continue;
+
     const relevant = modifiers.filter((m) => m.stat === key);
     if (relevant.length === 0) continue;
 
@@ -63,7 +66,7 @@ export function resolveStats(base: PlayerStats, modifiers: StatModifier[]): Play
     result[key] = val;
   }
 
-  return result as PlayerStats;
+  return result as unknown as PlayerStats;
 }
 
 /** Build flat modifiers from a simple key-value bonus map. */

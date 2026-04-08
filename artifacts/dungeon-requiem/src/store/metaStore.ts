@@ -1,14 +1,62 @@
 /**
  * metaStore.ts
  * Persistent Zustand store for cross-run (meta) progression.
- * Data survives page refreshes via localStorage.
  *
- * Kept completely separate from gameStore so it is never reset
- * between runs — only explicit player actions change it.
+ * CHANGES:
+ *  - trialWins now tracks highest difficulty cleared per class (was just boolean)
+ *  - New: trialBuffs() computed getter returns StatModifiers from trial clears
+ *  - completeTrial() now takes difficulty tier
+ *  - Backward compatible: old boolean trialWins migrate to "normal"
  */
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { DifficultyTier } from "../data/DifficultyData";
+
+// ─── Trial buff definitions ──────────────────────────────────────────────────
+// Each class × difficulty gives a permanent stat bonus.
+// These stack: clearing normal+hard+nightmare gives all three.
+
+export interface TrialBuff {
+  class: string;
+  difficulty: DifficultyTier;
+  label: string;
+  description: string;
+  stat: string;    // key in PlayerStats
+  value: number;
+}
+
+export const TRIAL_BUFFS: TrialBuff[] = [
+  // ── Warrior champion rewards ──
+  { class: "warrior", difficulty: "normal",    label: "Vanguard's Resolve",   description: "+5 Armor permanently",           stat: "armor",       value: 5 },
+  { class: "warrior", difficulty: "hard",      label: "Vanguard's Fury",      description: "+3 Damage permanently",          stat: "damage",      value: 3 },
+  { class: "warrior", difficulty: "nightmare", label: "Vanguard's Immortality", description: "+20 Max HP permanently",       stat: "maxHealth",   value: 20 },
+  // ── Mage champion rewards ──
+  { class: "mage",    difficulty: "normal",    label: "Arcanist's Focus",     description: "+3% Crit Chance permanently",    stat: "critChance",  value: 0.03 },
+  { class: "mage",    difficulty: "hard",      label: "Arcanist's Surge",     description: "+4 Damage permanently",          stat: "damage",      value: 4 },
+  { class: "mage",    difficulty: "nightmare", label: "Arcanist's Ascension", description: "+0.08 Attack Speed permanently", stat: "attackSpeed",  value: 0.08 },
+  // ── Rogue champion rewards ──
+  { class: "rogue",   difficulty: "normal",    label: "Shadow's Swiftness",   description: "+0.5 Move Speed permanently",    stat: "moveSpeed",   value: 0.5 },
+  { class: "rogue",   difficulty: "hard",      label: "Shadow's Edge",        description: "+3% Dodge Chance permanently",   stat: "dodgeChance", value: 0.03 },
+  { class: "rogue",   difficulty: "nightmare", label: "Shadow's Embrace",     description: "+3% Lifesteal permanently",      stat: "lifesteal",   value: 0.03 },
+];
+
+/** Difficulty ranking for comparison. */
+const DIFF_RANK: Record<string, number> = { normal: 1, hard: 2, nightmare: 3 };
+
+/** Get all earned trial buffs based on current trialWins state. */
+export function getEarnedTrialBuffs(trialWins: Record<string, string>): TrialBuff[] {
+  const earned: TrialBuff[] = [];
+  for (const buff of TRIAL_BUFFS) {
+    const cleared = trialWins[buff.class];
+    if (!cleared) continue;
+    const clearedRank = DIFF_RANK[cleared] ?? 0;
+    const buffRank = DIFF_RANK[buff.difficulty] ?? 0;
+    // You earn all buffs at or below your highest clear
+    if (clearedRank >= buffRank) earned.push(buff);
+  }
+  return earned;
+}
 
 // ─── Milestone definitions ────────────────────────────────────────────────────
 
@@ -17,67 +65,18 @@ export interface MilestoneDef {
   label: string;
   description: string;
   icon: string;
-  // What it unlocks (display only — actual unlock derived in checkUnlocks)
   unlocks: string;
 }
 
 export const MILESTONE_DEFS: MilestoneDef[] = [
-  {
-    id: "wave5",
-    label: "Into the Dark",
-    description: "Survive to Wave 5",
-    icon: "🌊",
-    unlocks: "Unlocks: Mage class",
-  },
-  {
-    id: "kills100",
-    label: "Blood Rite",
-    description: "Slay 100 enemies across all runs",
-    icon: "💀",
-    unlocks: "Unlocks: Rogue class",
-  },
-  {
-    id: "boss_kill",
-    label: "Warden's Fall",
-    description: "Defeat The Warden Reborn",
-    icon: "👑",
-    unlocks: "Unlocks: Dwarf race & Trial of Champions",
-  },
-  {
-    id: "wave10",
-    label: "Undying Descent",
-    description: "Survive to Wave 10",
-    icon: "🔥",
-    unlocks: "Unlocks: Elf race",
-  },
-  {
-    id: "kills500",
-    label: "Reaper",
-    description: "Slay 500 enemies across all runs",
-    icon: "⚰️",
-    unlocks: "Bonus Soul Forge slot",
-  },
-  {
-    id: "trial_warrior",
-    label: "Iron Vanguard Slain",
-    description: "Defeat the Warrior Champion in Trial of Champions",
-    icon: "⚔️",
-    unlocks: "Trophy: Warrior Champion",
-  },
-  {
-    id: "trial_mage",
-    label: "Void Arcanist Slain",
-    description: "Defeat the Mage Champion in Trial of Champions",
-    icon: "✦",
-    unlocks: "Trophy: Mage Champion",
-  },
-  {
-    id: "trial_rogue",
-    label: "Shadow Blade Slain",
-    description: "Defeat the Rogue Champion in Trial of Champions",
-    icon: "◆",
-    unlocks: "Trophy: Rogue Champion",
-  },
+  { id: "wave5",    label: "Into the Dark",        description: "Survive to Wave 5",                           icon: "🌊", unlocks: "Unlocks: Mage class" },
+  { id: "kills100", label: "Blood Rite",           description: "Slay 100 enemies across all runs",            icon: "💀", unlocks: "Unlocks: Rogue class" },
+  { id: "boss_kill",label: "Warden's Fall",        description: "Defeat The Warden Reborn",                    icon: "👑", unlocks: "Unlocks: Dwarf race & Trial of Champions" },
+  { id: "wave10",   label: "Undying Descent",      description: "Survive to Wave 10",                          icon: "🔥", unlocks: "Unlocks: Elf race" },
+  { id: "kills500", label: "Reaper",               description: "Slay 500 enemies across all runs",            icon: "⚰️", unlocks: "Bonus Soul Forge slot" },
+  { id: "trial_warrior", label: "Iron Vanguard Slain", description: "Defeat the Warrior Champion",             icon: "⚔️", unlocks: "Permanent stat buff" },
+  { id: "trial_mage",   label: "Void Arcanist Slain", description: "Defeat the Mage Champion",                icon: "✦",  unlocks: "Permanent stat buff" },
+  { id: "trial_rogue",  label: "Shadow Blade Slain",  description: "Defeat the Rogue Champion",               icon: "◆",  unlocks: "Permanent stat buff" },
 ];
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -87,15 +86,15 @@ export interface MetaState {
   totalShardsEarned: number;
   purchased: Record<string, number>;
 
-  // Milestone & unlock tracking
   milestones: Record<string, boolean>;
   totalKills: number;
   bestWaveEver: number;
   unlockedClasses: string[];
   unlockedRaces: string[];
 
-  // Trial of Champions wins per class
-  trialWins: Record<string, boolean>;
+  // Trial of Champions: highest difficulty cleared per class
+  // e.g. { warrior: "hard", mage: "normal" }
+  trialWins: Record<string, string>;
 
   // Actions
   addShards: (amount: number) => void;
@@ -104,12 +103,11 @@ export interface MetaState {
   purchaseRank: (id: string, cost: number, maxRanks: number) => boolean;
   hardReset: () => void;
 
-  // Milestone actions
   unlockMilestone: (id: string) => void;
   addTotalKills: (n: number) => void;
   updateBestWave: (wave: number) => void;
   checkUnlocks: () => void;
-  completeTrial: (cls: string) => void;
+  completeTrial: (cls: string, difficulty?: string) => void;
 }
 
 const DEFAULT_STATE = {
@@ -121,7 +119,7 @@ const DEFAULT_STATE = {
   bestWaveEver: 0,
   unlockedClasses: ["warrior"] as string[],
   unlockedRaces: ["human"] as string[],
-  trialWins: {} as Record<string, boolean>,
+  trialWins: {} as Record<string, string>,
 };
 
 export const useMetaStore = create<MetaState>()(
@@ -159,8 +157,6 @@ export const useMetaStore = create<MetaState>()(
 
       hardReset: () => set({ ...DEFAULT_STATE }),
 
-      // ─── Milestone actions ───────────────────────────────────────────────
-
       unlockMilestone: (id) =>
         set((s) => ({
           milestones: { ...s.milestones, [id]: true },
@@ -169,7 +165,6 @@ export const useMetaStore = create<MetaState>()(
       addTotalKills: (n) => {
         const s = get();
         const newTotal = s.totalKills + n;
-        // Derive wave milestones from kills while we're here
         const newMilestones = { ...s.milestones };
         if (newTotal >= 100) newMilestones["kills100"] = true;
         if (newTotal >= 500) newMilestones["kills500"] = true;
@@ -190,25 +185,47 @@ export const useMetaStore = create<MetaState>()(
         const classes: string[] = ["warrior"];
         if (s.milestones["wave5"]) classes.push("mage");
         if (s.milestones["kills100"]) classes.push("rogue");
-
         const races: string[] = ["human"];
         if (s.milestones["boss_kill"]) races.push("dwarf");
         if (s.milestones["wave10"]) races.push("elf");
-
         set({ unlockedClasses: classes, unlockedRaces: races });
       },
 
-      completeTrial: (cls: string) => {
-        const milestoneId = `trial_${cls}`;
-        set((s) => ({
-          trialWins: { ...s.trialWins, [cls]: true },
-          milestones: { ...s.milestones, [milestoneId]: true },
+      completeTrial: (cls: string, difficulty: string = "normal") => {
+        const s = get();
+        const current = s.trialWins[cls];
+        const currentRank = current ? (DIFF_RANK[current] ?? 0) : 0;
+        const newRank = DIFF_RANK[difficulty] ?? 0;
+        // Only upgrade if this is a higher difficulty clear
+        if (newRank <= currentRank) {
+          // Still set the milestone for first-time clear tracking
+          set((s2) => ({
+            milestones: { ...s2.milestones, [`trial_${cls}`]: true },
+          }));
+          return;
+        }
+        set((s2) => ({
+          trialWins: { ...s2.trialWins, [cls]: difficulty },
+          milestones: { ...s2.milestones, [`trial_${cls}`]: true },
         }));
       },
     }),
     {
       name: "dungeon-requiem-meta",
-      version: 2,
+      version: 3, // bumped from 2 — triggers migration
+      migrate: (persisted: any, version: number) => {
+        if (version < 3) {
+          // Migrate old boolean trialWins to difficulty strings
+          const oldWins = persisted?.trialWins ?? {};
+          const newWins: Record<string, string> = {};
+          for (const [cls, val] of Object.entries(oldWins)) {
+            if (val === true) newWins[cls] = "normal";
+            else if (typeof val === "string") newWins[cls] = val;
+          }
+          return { ...persisted, trialWins: newWins };
+        }
+        return persisted as MetaState;
+      },
     },
   ),
 );

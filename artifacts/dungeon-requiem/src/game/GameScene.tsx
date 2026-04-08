@@ -19,7 +19,7 @@ import { DIFFICULTY_DATA } from "../data/DifficultyData";
 import { RACE_DATA, type RaceType } from "../data/RaceData";
 import { ProgressionManager } from "../systems/ProgressionManager";
 import { createDefaultStats, type PlayerStats } from "../data/UpgradeData";
-import { buildMetaModifiers } from "../data/MetaUpgradeData";
+import { buildMetaModifiers, buildTrialModifiers } from "../data/MetaUpgradeData";
 import { resolveStats } from "../data/StatModifier";
 import { InputManager3D } from "./InputManager3D";
 import { DungeonRoom } from "../world/DungeonRoom";
@@ -48,6 +48,22 @@ export interface PlayerRuntime {
   dead: boolean;
   regenTimer: number;
   echoAttackCounter: number;
+  // ── Class-specific runtime state ───────────────────────────────────────
+  meleeHitCounter: number;       // warrior: consecutive hit count for blood momentum / earthbreaker
+  momentumTimer: number;         // warrior: 2s reset timer for blood momentum
+  momentumStacks: number;        // warrior: current blood momentum damage stacks
+  fortressBonusArmor: number;    // warrior: accumulated fortress armor
+  fortressStillTimer: number;    // warrior: time standing still
+  lastX: number; lastZ: number;  // track movement for fortress
+  warCryTimer: number;           // warrior: remaining war cry buff duration
+  critCascadeTimer: number;      // rogue: remaining crit cascade buff duration
+  invisTimer: number;            // rogue: evasion matrix invisibility
+  guaranteedCrit: boolean;       // rogue: next hit auto-crits
+  singularityTimer: number;      // mage: timer for next singularity
+  singularityActiveTimer: number;// mage: remaining duration of active vortex
+  singularityX: number;          // mage: vortex position
+  singularityZ: number;
+  bladeOrbitAngle: number;       // rogue: current rotation of blade orbit
 }
 
 export interface EnemyRuntime {
@@ -72,6 +88,13 @@ export interface EnemyRuntime {
   enragePhase: number; // 0=none, 1=75%, 2=50%, 3=25%
   baseMoveSpeed: number;
   baseDamage: number;
+  // ── DoT / debuff state ─────────────────────────────────────────────────
+  poisonStacks: number;        // rogue venom: number of stacks
+  poisonDps: number;           // damage per second per stack
+  bleedDps: number;            // rogue serrated edge bleed
+  bleedTimer: number;          // remaining bleed duration
+  slowPct: number;             // current slow amount (0..1)
+  slowTimer: number;           // remaining slow duration
 }
 
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
@@ -80,6 +103,7 @@ export interface XPOrb {
   id: string; x: number; z: number;
   value: number; collected: boolean; floatOffset: number;
   crystalTier: CrystalTier;
+  collectTimer: number; // 0 = not collected yet, >0 = animating collection
 }
 
 export interface EnemyProjectile {
@@ -165,9 +189,10 @@ function makeProgWithMeta(cls: CharacterClass, race: RaceType): { progression: P
     critChance: Math.min(0.95, def.critChance + raceDef.critBonus),
     attackRange: def.attackRange,
   };
-  // 2. Resolve meta flat bonuses on top (Layer 1 — flat additions only)
+  // 2. Resolve meta flat bonuses + trial buffs on top (Layer 1 — flat additions only)
   const metaMods = buildMetaModifiers(useMetaStore.getState().purchased);
-  const resolved = resolveStats(classBase, metaMods);
+  const trialMods = buildTrialModifiers(useMetaStore.getState().trialWins);
+  const resolved = resolveStats(classBase, [...metaMods, ...trialMods]);
   resolved.maxHealth = Math.round(resolved.maxHealth);
   resolved.currentHealth = resolved.maxHealth;
   resolved.damage = Math.round(resolved.damage);
@@ -211,6 +236,21 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     dashVX: 0, dashVZ: 0, isDashing: false,
     attackTimer: 0, attackTrigger: 0, attackAngle: 0,
     dead: false, regenTimer: 0, echoAttackCounter: 0,
+    // Class-specific runtime
+    meleeHitCounter: 0,
+    momentumTimer: 0,
+    momentumStacks: 0,
+    fortressBonusArmor: 0,
+    fortressStillTimer: 0,
+    lastX: 0, lastZ: 0,
+    warCryTimer: 0,
+    critCascadeTimer: 0,
+    invisTimer: 0,
+    guaranteedCrit: false,
+    singularityTimer: 0,
+    singularityActiveTimer: 0,
+    singularityX: 0, singularityZ: 0,
+    bladeOrbitAngle: 0,
   };
 }
 
@@ -239,6 +279,7 @@ function spawnGoblin(): EnemyRuntime {
     specialWarning: false, specialWarnTimer: 0,
     minionTimer: 0, radialTimer: 0,
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: 0,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
   };
 }
 
@@ -250,7 +291,7 @@ function handlePlayerFatalDmg(p: PlayerRuntime, g: GameState): boolean {
   if (stats.deathBargainActive === 1) {
     p.hp = 1;
     stats.deathBargainActive = 0;
-    p.invTimer = 2.0; // 2s of post-bargain invincibility
+    p.invTimer = 1.5; // 1.5s of post-bargain invincibility
     audioManager.play("player_hurt");
     return false; // survived
   }
@@ -269,7 +310,7 @@ function handlePlayerFatalDmg(p: PlayerRuntime, g: GameState): boolean {
 
 function triggerSoulfire(deadEnemy: EnemyRuntime, g: GameState): void {
   if (Math.random() > g.progression.stats.soulfireChance) return;
-  const dmg = Math.round(g.progression.stats.damage * 2.0);
+  const dmg = Math.round(g.progression.stats.damage * 1.5);
   for (const nearby of g.enemies) {
     if (nearby.dead || nearby.id === deadEnemy.id) continue;
     const dx = nearby.x - deadEnemy.x;
@@ -316,6 +357,7 @@ function spawnEnemy(wave: number, hpMult = 1, dmgMult = 1, speedMult = 1): Enemy
     specialWarning: false, specialWarnTimer: 0,
     minionTimer: 0, radialTimer: 0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
   };
 }
 
@@ -347,6 +389,7 @@ function spawnBoss(wave: number): EnemyRuntime {
     minionTimer: 10,
     radialTimer: 5,
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: Math.round(def.damage * (1 + (bossCount - 1) * 0.15)),
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
   };
 }
 
@@ -373,6 +416,7 @@ function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult =
     minionTimer: 3.0,
     radialTimer: cls === "mage" ? 2.2 : cls === "rogue" ? 0.75 : 5.0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
   };
 }
 
@@ -381,16 +425,38 @@ function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult =
 function CameraController({ gs }: { gs: React.RefObject<GameState | null> }) {
   const { camera } = useThree();
   const target = useRef(new THREE.Vector3());
+  const shakeTimer = useRef(0);
+  const shakeAmp = useRef(0);
+  const lastHp = useRef(-1);
 
   useEffect(() => {
     camera.position.set(0, 28, 22);
     (camera as THREE.PerspectiveCamera).lookAt(0, 0, 0);
   }, [camera]);
 
-  useFrame(() => {
+  useFrame((_, delta) => {
     if (!gs.current) return;
     const p = gs.current.player;
+
+    // Detect HP loss → subtle shake
+    if (lastHp.current >= 0 && p.hp < lastHp.current) {
+      const pct = (lastHp.current - p.hp) / p.maxHp;
+      shakeAmp.current = Math.min(0.35, pct * 2); // very gentle cap
+      shakeTimer.current = 0.18;
+    }
+    lastHp.current = p.hp;
+
     target.current.set(p.x, 28, p.z + 22);
+
+    // Apply shake — decays quickly, small offset
+    if (shakeTimer.current > 0) {
+      shakeTimer.current -= delta;
+      const decay = Math.max(0, shakeTimer.current / 0.18);
+      const a = shakeAmp.current * decay;
+      target.current.x += (Math.random() - 0.5) * a;
+      target.current.z += (Math.random() - 0.5) * a;
+    }
+
     camera.position.lerp(target.current, 0.08);
     (camera as THREE.PerspectiveCamera).lookAt(p.x, 0, p.z);
   });
@@ -480,7 +546,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         // Dash initiation
         if (input.dash && p.dashCooldown <= 0) {
           g.input.consumeDash();
-          p.isDashing = true;
           audioManager.play("dash");
           p.dashTimer = GAME_CONFIG.PLAYER.DASH_DURATION;
           const dashDir = len > 0
@@ -489,6 +554,50 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           p.dashVX = dashDir.x * GAME_CONFIG.PLAYER.DASH_SPEED;
           p.dashVZ = dashDir.z * GAME_CONFIG.PLAYER.DASH_SPEED;
           p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.1;
+
+          // ── Warrior: War Cry — +damage buff after dash ──
+          if (g.charClass === "warrior" && stats.warCryDmgBonus > 0) {
+            p.warCryTimer = 5.0;
+          }
+
+          // ── Mage: Blink — teleport to dash endpoint instantly ──
+          if (g.charClass === "mage" && stats.mageDashTeleport) {
+            const blinkDist = GAME_CONFIG.PLAYER.DASH_SPEED * GAME_CONFIG.PLAYER.DASH_DURATION;
+            p.x = Math.max(-ARENA, Math.min(ARENA, p.x + dashDir.x * blinkDist));
+            p.z = Math.max(-ARENA, Math.min(ARENA, p.z + dashDir.z * blinkDist));
+            // Leave a damage afterimage at origin
+            const blinkDmg = Math.round(stats.damage * 0.6);
+            for (const e of g.enemies) {
+              if (e.dead) continue;
+              const bx = e.x - (p.x - dashDir.x * blinkDist);
+              const bz = e.z - (p.z - dashDir.z * blinkDist);
+              if (Math.sqrt(bx * bx + bz * bz) <= 3.5) {
+                e.hp -= blinkDmg; e.hitFlashTimer = 0.2;
+                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; }
+              }
+            }
+            p.isDashing = false; // instant, no travel
+            p.dashCooldown = stats.dashCooldown;
+          } else {
+            p.isDashing = true;
+
+            // ── Rogue: Shadowstrike — deal damage to enemies in dash path ──
+            if (g.charClass === "rogue" && stats.rogueDashDamage) {
+              const dashDmg = Math.round(stats.damage * 0.5);
+              for (const e of g.enemies) {
+                if (e.dead) continue;
+                const ex = e.x - p.x, ez = e.z - p.z;
+                const eDist = Math.sqrt(ex * ex + ez * ez);
+                if (eDist <= stats.attackRange) {
+                  e.hp -= dashDmg; e.hitFlashTimer = 0.15;
+                  if (e.hp <= 0 && !e.dead) {
+                    e.dead = true; g.kills++; g.score += e.scoreValue;
+                    if (stats.dashResetOnKill) p.dashCooldown = 0;
+                  }
+                }
+              }
+            }
+          }
         }
       }
 
@@ -507,6 +616,14 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (g.charClass === "warrior") {
           audioManager.play("attack_melee");
           // ── Melee arc sweep ────────────────────────────────────────────
+          // War Cry damage bonus
+          const warCryMult = p.warCryTimer > 0 ? (1 + stats.warCryDmgBonus) : 1;
+          // Blood Momentum stacking
+          const momentumMult = stats.bloodMomentumPerHit > 0
+            ? 1 + Math.min(p.momentumStacks * stats.bloodMomentumPerHit, 0.60)
+            : 1;
+
+          let meleeHitsThisSwing = 0;
           for (const e of g.enemies) {
             if (e.dead) continue;
             const edx = e.x - p.x;
@@ -521,17 +638,22 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (cleaved.current.has(e.id) && Math.random() > stats.cleaveChance) continue;
             cleaved.current.add(e.id);
 
-            let dmg = stats.damage;
+            let dmg = Math.round(stats.damage * warCryMult * momentumMult);
             const isCrit = Math.random() < stats.critChance;
             if (isCrit) dmg = Math.floor(dmg * 1.85);
             e.hp -= dmg;
             e.hitFlashTimer = 0.15;
+            meleeHitsThisSwing++;
 
             if (stats.doubleStrikeChance > 0 && Math.random() < stats.doubleStrikeChance) {
               e.hp -= dmg;
             }
             if (stats.lifesteal > 0) {
               p.hp = Math.min(p.maxHp, p.hp + dmg * stats.lifesteal);
+            }
+            // Warrior: Siphon Strike — melee lifedrain
+            if (stats.meleeLifedrainPct > 0) {
+              p.hp = Math.min(p.maxHp, p.hp + dmg * stats.meleeLifedrainPct);
             }
             if (e.hp <= 0) {
               e.dead = true;
@@ -542,7 +664,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
               if (stats.soulfireChance > 0) triggerSoulfire(e, g);
               const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
-              g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
+              g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
               if (e.type === "boss") {
                 g.bossAlive = false; g.bossId = null;
                 g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
@@ -556,11 +678,38 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               }
             }
           }
-          // Phantom Echo relic: every Nth attack, fire a free bonus sweep at 70% damage
+          // ── Blood Momentum: update stacks after melee swing ──
+          if (stats.bloodMomentumPerHit > 0 && meleeHitsThisSwing > 0) {
+            p.momentumStacks = Math.min(p.momentumStacks + meleeHitsThisSwing, 20);
+            p.momentumTimer = 2.0; // reset 2s decay
+          }
+          p.meleeHitCounter += meleeHitsThisSwing;
+
+          // ── Earthbreaker: every 5th hit, AoE slam ──
+          if (stats.earthbreakerEnabled && p.meleeHitCounter >= 5) {
+            p.meleeHitCounter = 0;
+            const slamDmg = Math.round(stats.damage * 1.2 * warCryMult);
+            for (const e of g.enemies) {
+              if (e.dead) continue;
+              const ex = e.x - p.x, ez = e.z - p.z;
+              if (Math.sqrt(ex * ex + ez * ez) <= stats.attackRange * 1.5) {
+                e.hp -= slamDmg; e.hitFlashTimer = 0.25;
+                if (e.hp <= 0 && !e.dead) {
+                  e.dead = true; g.kills++; g.score += e.scoreValue;
+                  if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+                  if (stats.soulfireChance > 0) triggerSoulfire(e, g);
+                  const xg = Math.round(e.xpReward * stats.xpMultiplier);
+                  g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
+                }
+              }
+            }
+          }
+
+          // Phantom Echo relic: every Nth attack, fire a free bonus sweep at 50% damage
           if (stats.phantomEchoEvery > 0) {
             p.echoAttackCounter++;
             if (p.echoAttackCounter % stats.phantomEchoEvery === 0) {
-              const echoDmg = Math.round(stats.damage * 0.7);
+              const echoDmg = Math.round(stats.damage * 0.5);
               for (const e of g.enemies) {
                 if (e.dead) continue;
                 const edx = e.x - p.x; const edz = e.z - p.z;
@@ -577,7 +726,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                   if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
                   if (stats.soulfireChance > 0) triggerSoulfire(e, g);
                   const xg = Math.round(e.xpReward * stats.xpMultiplier);
-                  g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
+                  g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
                 }
               }
             }
@@ -586,42 +735,83 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           audioManager.play(g.charClass === "mage" ? "attack_orb" : "attack_dagger");
           // ── Projectile attack (Mage / Rogue) ───────────────────────────
           const def = CHARACTER_DATA[g.charClass];
-          const count = def.projectileCount;
-          for (let i = 0; i < count; i++) {
-            const spread = count > 1 ? (i - (count - 1) / 2) * def.projectileSpread : 0;
-            const angle = p.angle + spread;
-            const projStyle = g.charClass === "mage" ? "orb" : "dagger";
-            g.projectiles.push({
-              id: projId(),
-              x: p.x, z: p.z,
-              vx: Math.sin(angle) * def.projectileSpeed,
-              vz: Math.cos(angle) * def.projectileSpeed,
-              damage: stats.damage,
-              radius: def.projectileRadius,
-              lifetime: def.projectileLifetime,
-              piercing: def.projectilePiercing,
-              hitIds: new Set(),
-              color: def.accentColor,
-              glowColor: def.color,
-              style: projStyle,
-              dead: false,
-            });
-            // Twin Fang proc — fire a second projectile with slight offset
-            if (stats.doubleStrikeChance > 0 && Math.random() < stats.doubleStrikeChance) {
-              const extraAngle = angle + (Math.random() - 0.5) * 0.25;
+          // Extra projectiles from upgrades
+          const extraCount = g.charClass === "mage" ? stats.mageExtraOrbs
+                           : g.charClass === "rogue" ? stats.rogueExtraDaggers : 0;
+          const totalCount = def.projectileCount + extraCount;
+          const projStyle = g.charClass === "mage" ? "orb" as const : "dagger" as const;
+          // Mage piercing override from upgrade
+          const isPiercing = def.projectilePiercing || (g.charClass === "mage" && stats.magePiercingOrbs);
+          // War cry damage bonus (warrior only but just in case)
+          const warCryMult = p.warCryTimer > 0 ? (1 + stats.warCryDmgBonus) : 1;
+          const projDmg = Math.round(stats.damage * warCryMult);
+
+          const fireVolley = (angleOffset: number) => {
+            for (let i = 0; i < totalCount; i++) {
+              const spread = totalCount > 1 ? (i - (totalCount - 1) / 2) * def.projectileSpread : 0;
+              const angle = p.angle + spread + angleOffset;
               g.projectiles.push({
                 id: projId(),
                 x: p.x, z: p.z,
-                vx: Math.sin(extraAngle) * def.projectileSpeed,
-                vz: Math.cos(extraAngle) * def.projectileSpeed,
-                damage: stats.damage,
+                vx: Math.sin(angle) * def.projectileSpeed,
+                vz: Math.cos(angle) * def.projectileSpeed,
+                damage: projDmg,
                 radius: def.projectileRadius,
                 lifetime: def.projectileLifetime,
-                piercing: def.projectilePiercing,
+                piercing: isPiercing,
                 hitIds: new Set(),
                 color: def.accentColor,
                 glowColor: def.color,
                 style: projStyle,
+                dead: false,
+              });
+              // Twin Fang proc
+              if (stats.doubleStrikeChance > 0 && Math.random() < stats.doubleStrikeChance) {
+                const extraAngle = angle + (Math.random() - 0.5) * 0.25;
+                g.projectiles.push({
+                  id: projId(),
+                  x: p.x, z: p.z,
+                  vx: Math.sin(extraAngle) * def.projectileSpeed,
+                  vz: Math.cos(extraAngle) * def.projectileSpeed,
+                  damage: projDmg,
+                  radius: def.projectileRadius,
+                  lifetime: def.projectileLifetime,
+                  piercing: isPiercing,
+                  hitIds: new Set(),
+                  color: def.accentColor,
+                  glowColor: def.color,
+                  style: projStyle,
+                  dead: false,
+                });
+              }
+            }
+          };
+
+          // Fire main volley
+          fireVolley(0);
+
+          // Mage: Spell Echo — chance to double-cast entire volley
+          if (g.charClass === "mage" && stats.spellEchoChance > 0 && Math.random() < stats.spellEchoChance) {
+            fireVolley((Math.random() - 0.5) * 0.15); // slight angle jitter
+          }
+
+          // Rogue: Phantom Blades — 2 extra spectral daggers at wide angles
+          if (g.charClass === "rogue" && stats.phantomBladesEnabled) {
+            for (const offset of [-0.5, 0.5]) { // ~28 degrees each side
+              const phantomAngle = p.angle + offset;
+              g.projectiles.push({
+                id: projId(),
+                x: p.x, z: p.z,
+                vx: Math.sin(phantomAngle) * def.projectileSpeed * 0.8,
+                vz: Math.cos(phantomAngle) * def.projectileSpeed * 0.8,
+                damage: Math.round(projDmg * 0.5),
+                radius: def.projectileRadius * 0.7,
+                lifetime: def.projectileLifetime * 0.7,
+                piercing: false,
+                hitIds: new Set(),
+                color: "#80ffcc",
+                glowColor: "#40cc88",
+                style: "dagger",
                 dead: false,
               });
             }
@@ -635,6 +825,94 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (p.regenTimer >= 1) {
           p.regenTimer = 0;
           p.hp = Math.min(p.maxHp, p.hp + stats.healthRegen);
+        }
+      }
+
+      // ── Per-frame passive systems ────────────────────────────────────────
+
+      // Warrior: Blood Momentum decay
+      if (stats.bloodMomentumPerHit > 0 && p.momentumStacks > 0) {
+        p.momentumTimer -= delta;
+        if (p.momentumTimer <= 0) {
+          p.momentumStacks = 0;
+          p.momentumTimer = 0;
+        }
+      }
+
+      // Warrior: War Cry timer
+      if (p.warCryTimer > 0) p.warCryTimer -= delta;
+
+      // Warrior: Fortress — gain armor while standing still
+      if (stats.fortressArmorPerSec > 0) {
+        const moved = Math.abs(p.x - p.lastX) > 0.01 || Math.abs(p.z - p.lastZ) > 0.01;
+        if (!moved) {
+          p.fortressStillTimer += delta;
+          if (p.fortressStillTimer >= 1) {
+            p.fortressStillTimer = 0;
+            p.fortressBonusArmor = Math.min(30, p.fortressBonusArmor + stats.fortressArmorPerSec);
+            stats.armor += stats.fortressArmorPerSec; // directly modify; reset on move
+          }
+        } else {
+          if (p.fortressBonusArmor > 0) {
+            stats.armor -= p.fortressBonusArmor;
+            p.fortressBonusArmor = 0;
+          }
+          p.fortressStillTimer = 0;
+        }
+        p.lastX = p.x;
+        p.lastZ = p.z;
+      }
+
+      // Rogue: Crit Cascade timer
+      if (p.critCascadeTimer > 0) p.critCascadeTimer -= delta;
+
+      // Rogue: Evasion Matrix invisibility
+      if (p.invisTimer > 0) {
+        p.invisTimer -= delta;
+        p.invTimer = Math.max(p.invTimer, p.invisTimer); // can't be hit while invisible
+      }
+
+      // Rogue: Blade Orbit — spinning daggers damage nearby enemies
+      if (stats.bladeOrbitCount > 0) {
+        p.bladeOrbitAngle += delta * 4; // rotation speed
+        const orbitDmg = Math.round(stats.damage * 0.3) * delta; // per-frame scaled
+        for (const e of g.enemies) {
+          if (e.dead) continue;
+          const ox = e.x - p.x, oz = e.z - p.z;
+          if (Math.sqrt(ox * ox + oz * oz) <= 2.5) {
+            e.hp -= orbitDmg;
+            if (e.hp <= 0 && !e.dead) {
+              e.dead = true; g.kills++; g.score += e.scoreValue;
+              if (stats.dashResetOnKill) p.dashCooldown = 0;
+              if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+            }
+          }
+        }
+      }
+
+      // Mage: Singularity — periodic vortex
+      if (stats.singularityInterval > 0) {
+        if (p.singularityActiveTimer > 0) {
+          // Active vortex: pull enemies toward vortex center
+          p.singularityActiveTimer -= delta;
+          for (const e of g.enemies) {
+            if (e.dead) continue;
+            const sx = p.singularityX - e.x, sz = p.singularityZ - e.z;
+            const sd = Math.sqrt(sx * sx + sz * sz);
+            if (sd <= 8 && sd > 0.5) {
+              const pullStr = 6 * delta;
+              e.x += (sx / sd) * pullStr;
+              e.z += (sz / sd) * pullStr;
+            }
+          }
+        } else {
+          p.singularityTimer -= delta;
+          if (p.singularityTimer <= 0) {
+            p.singularityTimer = stats.singularityInterval;
+            p.singularityActiveTimer = 3.0;
+            p.singularityX = p.x;
+            p.singularityZ = p.z;
+          }
         }
       }
     }
@@ -662,6 +940,47 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
         e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
         continue; // goblins don't attack
+      }
+
+      // ── DoT/Debuff tick ────────────────────────────────────────────────
+      // Poison (rogue venom)
+      if (e.poisonStacks > 0 && e.poisonDps > 0) {
+        e.hp -= e.poisonStacks * e.poisonDps * delta;
+        if (e.hp <= 0 && !e.dead) {
+          e.dead = true; g.kills++; g.score += e.scoreValue;
+          if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+          // Venom spread on death
+          if (stats.venomStackDps > 0) {
+            for (const nearby of g.enemies) {
+              if (nearby.dead || nearby.id === e.id) continue;
+              const nx = nearby.x - e.x, nz = nearby.z - e.z;
+              if (Math.sqrt(nx * nx + nz * nz) <= 3.5) {
+                nearby.poisonStacks = Math.min(nearby.poisonStacks + 1, 5);
+                nearby.poisonDps = stats.venomStackDps;
+              }
+            }
+          }
+          if (stats.soulfireChance > 0) triggerSoulfire(e, g);
+          const xg = Math.round(e.xpReward * stats.xpMultiplier);
+          g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
+          continue;
+        }
+      }
+      // Bleed (rogue serrated edge)
+      if (e.bleedTimer > 0 && e.bleedDps > 0) {
+        e.bleedTimer -= delta;
+        e.hp -= e.bleedDps * delta;
+        if (e.bleedTimer <= 0) { e.bleedDps = 0; }
+        if (e.hp <= 0 && !e.dead) {
+          e.dead = true; g.kills++; g.score += e.scoreValue;
+          if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+          continue;
+        }
+      }
+      // Slow decay
+      if (e.slowTimer > 0) {
+        e.slowTimer -= delta;
+        if (e.slowTimer <= 0) e.slowPct = 0;
       }
 
       // Wraith phasing + ranged shot
@@ -693,9 +1012,23 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             const rawDmg = e.damage * 1.4 * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
             const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
             if (!isDodged) {
-              const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
+              // Mana Shield absorption
+              const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
+              const afterShield = rawDmg - shielded;
+              const effective = Math.max(1, (afterShield - stats.armor) * stats.incomingDamageMult);
               p.hp -= effective;
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.8;
+              // Iron Reprisal
+              if (stats.ironReprisalEnabled) {
+                const repDmg = Math.round(p.maxHp * 0.15);
+                for (const re of g.enemies) {
+                  if (re.dead) continue;
+                  const rx = re.x - p.x, rz = re.z - p.z;
+                  if (Math.sqrt(rx * rx + rz * rz) <= 4) { re.hp -= repDmg; re.hitFlashTimer = 0.2; }
+                }
+              }
+              // Frost Armor
+              if (stats.frostArmorSlowPct > 0) { e.slowPct = stats.frostArmorSlowPct; e.slowTimer = 2.0; }
               if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
               else { audioManager.play("player_hurt"); }
             }
@@ -703,9 +1036,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         }
       }
 
-      // Move toward player
+      // Move toward player (with slow applied)
       if (dist > e.attackRange) {
-        const speed = e.phasing ? e.moveSpeed * 1.6 : e.moveSpeed;
+        const slowMult = e.slowPct > 0 ? (1 - e.slowPct) : 1;
+        const speed = (e.phasing ? e.moveSpeed * 1.6 : e.moveSpeed) * slowMult;
         e.vx = THREE.MathUtils.lerp(e.vx, (edx / dist) * speed, 0.15);
         e.vz = THREE.MathUtils.lerp(e.vz, (edz / dist) * speed, 0.15);
         e.x += e.vx * delta;
@@ -720,11 +1054,31 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           e.attackTimer = e.attackInterval;
           if (p.invTimer <= 0 && !p.isDashing && !p.dead) {
             const rawDmg = e.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
-            const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
             const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
-            if (!isDodged) {
+            if (isDodged) {
+              // ── Evasion Matrix: dodge → invis + guaranteed crit ──
+              if (stats.evasionMatrixEnabled) {
+                p.invisTimer = 1.0;
+                p.guaranteedCrit = true;
+              }
+            } else {
+              // Mana Shield absorption
+              const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
+              const afterShield = rawDmg - shielded;
+              const effective = Math.max(1, (afterShield - stats.armor) * stats.incomingDamageMult);
               p.hp -= effective;
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+              // Iron Reprisal shockwave
+              if (stats.ironReprisalEnabled) {
+                const repDmg = Math.round(p.maxHp * 0.15);
+                for (const re of g.enemies) {
+                  if (re.dead) continue;
+                  const rx = re.x - p.x, rz = re.z - p.z;
+                  if (Math.sqrt(rx * rx + rz * rz) <= 4) { re.hp -= repDmg; re.hitFlashTimer = 0.2; }
+                }
+              }
+              // Frost Armor slow
+              if (stats.frostArmorSlowPct > 0) { e.slowPct = stats.frostArmorSlowPct; e.slowTimer = 2.0; }
               if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
               else { audioManager.play("player_hurt"); }
             }
@@ -757,13 +1111,56 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (Math.sqrt(pdx * pdx + pdz * pdz) > proj.radius + e.collisionRadius) continue;
 
         let dmg = proj.damage;
-        const isCrit = Math.random() < stats.critChance;
+        // Crit: guaranteed crit from evasion matrix, or normal roll
+        const isCrit = p.guaranteedCrit || Math.random() < (stats.critChance + (p.critCascadeTimer > 0 ? 0.12 : 0));
+        if (p.guaranteedCrit) p.guaranteedCrit = false;
         if (isCrit) dmg = Math.floor(dmg * 1.85);
         e.hp -= dmg;
         e.hitFlashTimer = 0.15;
         if (stats.lifesteal > 0) {
           p.hp = Math.min(p.maxHp, p.hp + dmg * stats.lifesteal);
         }
+
+        // ── Rogue: Venom Stack — apply poison on hit ──
+        if (stats.venomStackDps > 0) {
+          e.poisonStacks = Math.min(e.poisonStacks + 1, 5);
+          e.poisonDps = stats.venomStackDps;
+        }
+        // ── Rogue: Serrated Edge — bleed on crit ──
+        if (isCrit && stats.serratedBleedDps > 0) {
+          e.bleedDps = stats.serratedBleedDps;
+          e.bleedTimer = 3.0;
+        }
+        // ── Rogue: Crit Cascade — crits boost crit chance ──
+        if (isCrit && stats.critCascadeEnabled) {
+          p.critCascadeTimer = 3.0;
+        }
+        // ── Mage: Chain Lightning — bounce to nearby enemies ──
+        if (stats.chainLightningBounces > 0) {
+          let bounceSource = e;
+          const bounced = new Set<string>([e.id]);
+          for (let b = 0; b < stats.chainLightningBounces; b++) {
+            let closest: EnemyRuntime | null = null;
+            let closestDist = 6; // max bounce range
+            for (const t of g.enemies) {
+              if (t.dead || bounced.has(t.id)) continue;
+              const bx = t.x - bounceSource.x, bz = t.z - bounceSource.z;
+              const bd = Math.sqrt(bx * bx + bz * bz);
+              if (bd < closestDist) { closestDist = bd; closest = t; }
+            }
+            if (!closest) break;
+            bounced.add(closest.id);
+            const chainDmg = Math.round(dmg * 0.6);
+            closest.hp -= chainDmg;
+            closest.hitFlashTimer = 0.12;
+            if (closest.hp <= 0 && !closest.dead) {
+              closest.dead = true; g.kills++; g.score += closest.scoreValue;
+              if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+            }
+            bounceSource = closest;
+          }
+        }
+
         if (proj.piercing) {
           proj.hitIds.add(e.id);
         } else {
@@ -777,8 +1174,26 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           useGameStore.getState().addRunShards(5);
           if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
           if (stats.soulfireChance > 0) triggerSoulfire(e, g);
+          // ── Rogue: Shadow Step — dash reset on kill ──
+          if (stats.dashResetOnKill) p.dashCooldown = 0;
+          // ── Mage: Arcane Fracture — death explosion projectiles ──
+          if (stats.arcaneFractureEnabled) {
+            for (let f = 0; f < 3; f++) {
+              const fracAngle = Math.random() * Math.PI * 2;
+              g.projectiles.push({
+                id: projId(), x: e.x, z: e.z,
+                vx: Math.sin(fracAngle) * 10,
+                vz: Math.cos(fracAngle) * 10,
+                damage: Math.round(stats.damage * 0.4),
+                radius: 0.35, lifetime: 0.8,
+                piercing: true, hitIds: new Set(),
+                color: "#ff66ff", glowColor: "#cc33cc",
+                style: "orb", dead: false,
+              });
+            }
+          }
           const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
-          g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green" });
+          g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
           if (e.type === "boss") {
             g.bossAlive = false; g.bossId = null;
             g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
@@ -828,16 +1243,25 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     // ── XP Orbs ───────────────────────────────────────────────────────────
     const pickupR = GAME_CONFIG.PLAYER.PICKUP_RADIUS;
     for (const orb of g.xpOrbs) {
-      if (orb.collected) continue;
+      if (orb.collected) {
+        // Animating collection — magnetize toward player
+        orb.collectTimer += delta;
+        const t = Math.min(orb.collectTimer / 0.2, 1); // 0.2s animation
+        orb.x = THREE.MathUtils.lerp(orb.x, p.x, t * 0.4);
+        orb.z = THREE.MathUtils.lerp(orb.z, p.z, t * 0.4);
+        continue;
+      }
       const odx = p.x - orb.x;
       const odz = p.z - orb.z;
       if (Math.sqrt(odx * odx + odz * odz) <= pickupR) {
         orb.collected = true;
+        orb.collectTimer = 0;
         audioManager.play("xp_pickup");
-        g.progression.addXp(orb.value); // onLevelUp callback handles phase change
+        g.progression.addXp(orb.value);
       }
     }
-    g.xpOrbs = g.xpOrbs.filter((o) => !o.collected);
+    // Remove after animation completes
+    g.xpOrbs = g.xpOrbs.filter((o) => !o.collected || o.collectTimer < 0.2);
 
     // ── Boss special attack ────────────────────────────────────────────────
     for (const e of g.enemies) {
@@ -1053,9 +1477,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       g.stormCallTimer -= delta;
       if (g.stormCallTimer <= 0) {
         g.stormCallTimer = stats.stormCallInterval;
-        const targets = g.enemies.filter((e) => !e.dead).slice(0, 10);
+        const targets = g.enemies.filter((e) => !e.dead).slice(0, 8);
         for (const t of targets) {
-          const stormDmg = Math.round(stats.damage * 1.8);
+          const stormDmg = Math.round(stats.damage * 1.2);
           t.hp -= stormDmg; t.hitFlashTimer = 0.3;
           if (t.hp <= 0 && !t.dead) {
             t.dead = true; g.kills++; g.score += t.scoreValue;
@@ -1063,7 +1487,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
             if (stats.soulfireChance > 0) triggerSoulfire(t, g);
             const xg = Math.round(t.xpReward * stats.xpMultiplier);
-            g.xpOrbs.push({ id: orbId(), x: t.x, z: t.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[t.type] ?? "green" });
+            g.xpOrbs.push({ id: orbId(), x: t.x, z: t.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[t.type] ?? "green", collectTimer: 0 });
             if (t.type === "boss") { g.bossAlive = false; g.bossId = null; g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave); store.setBossState(0, 0, "", false); }
           }
         }
@@ -1074,7 +1498,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     if (g.trialMode && g.trialChampionDefeated) {
       g.trialChampionDefeated = false;
       const meta = useMetaStore.getState();
-      meta.completeTrial(g.charClass);
+      meta.completeTrial(g.charClass, useGameStore.getState().difficultyTier);
       const shardReward = Math.round(500 * g.difficultyShardMult);
       meta.addShards(shardReward);
       store.addRunShards(shardReward);
