@@ -113,6 +113,7 @@ export interface EnemyProjectile {
   damage: number;
   lifetime: number;
   dead: boolean;
+  style: "default" | "orb" | "dagger" | "sword";
 }
 
 export interface Projectile {
@@ -543,58 +544,83 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           p.z += mz * stats.moveSpeed * delta;
         }
 
-        // Dash initiation
+        // Dash initiation — class-specific baseline dashes
         if (input.dash && p.dashCooldown <= 0) {
           g.input.consumeDash();
           audioManager.play("dash");
-          p.dashTimer = GAME_CONFIG.PLAYER.DASH_DURATION;
           const dashDir = len > 0
             ? { x: mx, z: mz }
             : { x: Math.sin(p.angle), z: Math.cos(p.angle) };
-          p.dashVX = dashDir.x * GAME_CONFIG.PLAYER.DASH_SPEED;
-          p.dashVZ = dashDir.z * GAME_CONFIG.PLAYER.DASH_SPEED;
-          p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.1;
 
-          // ── Warrior: War Cry — +damage buff after dash ──
-          if (g.charClass === "warrior" && stats.warCryDmgBonus > 0) {
-            p.warCryTimer = 5.0;
-          }
-
-          // ── Mage: Blink — teleport to dash endpoint instantly ──
-          if (g.charClass === "mage" && stats.mageDashTeleport) {
+          if (g.charClass === "mage") {
+            // ── Mage: Blink — instant teleport + slow at origin ──
             const blinkDist = GAME_CONFIG.PLAYER.DASH_SPEED * GAME_CONFIG.PLAYER.DASH_DURATION;
+            const originX = p.x, originZ = p.z;
             p.x = Math.max(-ARENA, Math.min(ARENA, p.x + dashDir.x * blinkDist));
             p.z = Math.max(-ARENA, Math.min(ARENA, p.z + dashDir.z * blinkDist));
-            // Leave a damage afterimage at origin
-            const blinkDmg = Math.round(stats.damage * 0.6);
+            p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.15;
+            // Afterimage: slow enemies at origin (baseline), damage if volatile blink upgrade
+            const blinkDmg = stats.volatileBlinkEnabled ? Math.round(stats.damage * 1.0) : Math.round(stats.damage * 0.4);
+            const blinkRadius = stats.volatileBlinkEnabled ? 5.0 : 3.5;
             for (const e of g.enemies) {
               if (e.dead) continue;
-              const bx = e.x - (p.x - dashDir.x * blinkDist);
-              const bz = e.z - (p.z - dashDir.z * blinkDist);
-              if (Math.sqrt(bx * bx + bz * bz) <= 3.5) {
+              const bx = e.x - originX, bz = e.z - originZ;
+              if (Math.sqrt(bx * bx + bz * bz) <= blinkRadius) {
                 e.hp -= blinkDmg; e.hitFlashTimer = 0.2;
+                // Baseline slow at blink origin
+                if (stats.mageBlinkSlowPct > 0) { e.slowPct = stats.mageBlinkSlowPct; e.slowTimer = 2.0; }
                 if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; }
               }
             }
             p.isDashing = false; // instant, no travel
             p.dashCooldown = stats.dashCooldown;
-          } else {
-            p.isDashing = true;
 
-            // ── Rogue: Shadowstrike — deal damage to enemies in dash path ──
-            if (g.charClass === "rogue" && stats.rogueDashDamage) {
-              const dashDmg = Math.round(stats.damage * 0.5);
-              for (const e of g.enemies) {
-                if (e.dead) continue;
-                const ex = e.x - p.x, ez = e.z - p.z;
-                const eDist = Math.sqrt(ex * ex + ez * ez);
-                if (eDist <= stats.attackRange) {
-                  e.hp -= dashDmg; e.hitFlashTimer = 0.15;
-                  if (e.hp <= 0 && !e.dead) {
-                    e.dead = true; g.kills++; g.score += e.scoreValue;
-                    if (stats.dashResetOnKill) p.dashCooldown = 0;
-                  }
+          } else if (g.charClass === "rogue") {
+            // ── Rogue: Poison Dash — pass through enemies, apply venom ──
+            p.isDashing = true;
+            p.dashTimer = GAME_CONFIG.PLAYER.DASH_DURATION;
+            p.dashVX = dashDir.x * GAME_CONFIG.PLAYER.DASH_SPEED;
+            p.dashVZ = dashDir.z * GAME_CONFIG.PLAYER.DASH_SPEED;
+            p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.05; // short i-frames
+            const dashDmg = Math.round(stats.damage * 0.4);
+            const poisonPerStack = stats.venomStackDps > 0 ? stats.venomStackDps : 3; // baseline 3 dps even without upgrade
+            for (const e of g.enemies) {
+              if (e.dead) continue;
+              const ex = e.x - p.x, ez = e.z - p.z;
+              if (Math.sqrt(ex * ex + ez * ez) <= stats.attackRange * 0.8) {
+                e.hp -= dashDmg; e.hitFlashTimer = 0.15;
+                // Apply poison stacks (baseline 1, upgradeable to 3 with Toxic Dash)
+                e.poisonStacks = Math.min(e.poisonStacks + stats.toxicDashStacks, 5);
+                e.poisonDps = poisonPerStack * stats.deepWoundsMultiplier;
+                if (e.hp <= 0 && !e.dead) {
+                  e.dead = true; g.kills++; g.score += e.scoreValue;
+                  if (stats.dashResetOnKill) p.dashCooldown = 0;
                 }
+              }
+            }
+
+          } else {
+            // ── Warrior: Knockback Charge — push enemies away ──
+            p.isDashing = true;
+            p.dashTimer = GAME_CONFIG.PLAYER.DASH_DURATION;
+            p.dashVX = dashDir.x * GAME_CONFIG.PLAYER.DASH_SPEED;
+            p.dashVZ = dashDir.z * GAME_CONFIG.PLAYER.DASH_SPEED;
+            p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.15; // longer i-frames for melee
+            p.warCryTimer = stats.warCryDmgBonus > 0 ? 4.0 : 0;
+            // Knockback enemies in path
+            const kbForce = stats.dashKnockbackForce;
+            const kbDmg = Math.round(stats.damage * 0.3);
+            for (const e of g.enemies) {
+              if (e.dead) continue;
+              const ex = e.x - p.x, ez = e.z - p.z;
+              const eDist = Math.sqrt(ex * ex + ez * ez);
+              if (eDist <= 4 && eDist > 0.1) {
+                // Push enemy away from dash direction
+                const nx = ex / eDist, nz = ez / eDist;
+                e.x = Math.max(-ARENA, Math.min(ARENA, e.x + nx * kbForce));
+                e.z = Math.max(-ARENA, Math.min(ARENA, e.z + nz * kbForce));
+                e.hp -= kbDmg; e.hitFlashTimer = 0.2;
+                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; }
               }
             }
           }
@@ -654,6 +680,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             // Warrior: Siphon Strike — melee lifedrain
             if (stats.meleeLifedrainPct > 0) {
               p.hp = Math.min(p.maxHp, p.hp + dmg * stats.meleeLifedrainPct);
+            }
+            // Warrior: Serrated Edge — bleed on crit
+            if (isCrit && stats.serratedBleedDps > 0) {
+              e.bleedDps = stats.serratedBleedDps;
+              e.bleedTimer = 3.0;
             }
             if (e.hp <= 0) {
               e.dead = true;
@@ -744,7 +775,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const isPiercing = def.projectilePiercing || (g.charClass === "mage" && stats.magePiercingOrbs);
           // War cry damage bonus (warrior only but just in case)
           const warCryMult = p.warCryTimer > 0 ? (1 + stats.warCryDmgBonus) : 1;
-          const projDmg = Math.round(stats.damage * warCryMult);
+          // Split Bolt: +1 orb already counted in mageExtraOrbs, apply -25% damage
+          const splitMult = stats.splitBoltActive ? 0.75 : 1;
+          const projDmg = Math.round(stats.damage * warCryMult * splitMult);
+          // Projectile radius with bonus
+          const projRadius = def.projectileRadius + stats.projectileRadiusBonus;
 
           const fireVolley = (angleOffset: number) => {
             for (let i = 0; i < totalCount; i++) {
@@ -756,7 +791,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 vx: Math.sin(angle) * def.projectileSpeed,
                 vz: Math.cos(angle) * def.projectileSpeed,
                 damage: projDmg,
-                radius: def.projectileRadius,
+                radius: projRadius,
                 lifetime: def.projectileLifetime,
                 piercing: isPiercing,
                 hitIds: new Set(),
@@ -774,7 +809,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                   vx: Math.sin(extraAngle) * def.projectileSpeed,
                   vz: Math.cos(extraAngle) * def.projectileSpeed,
                   damage: projDmg,
-                  radius: def.projectileRadius,
+                  radius: projRadius,
                   lifetime: def.projectileLifetime,
                   piercing: isPiercing,
                   hitIds: new Set(),
@@ -998,7 +1033,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             id: eprojId(), x: e.x, z: e.z,
             vx: (edx / dn) * 9, vz: (edz / dn) * 9,
             damage: e.damage * 0.9,
-            lifetime: 4.5, dead: false,
+            lifetime: 4.5, dead: false, style: "default" as const,
           });
         }
       }
@@ -1125,11 +1160,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (stats.venomStackDps > 0) {
           e.poisonStacks = Math.min(e.poisonStacks + 1, 5);
           e.poisonDps = stats.venomStackDps;
-        }
-        // ── Rogue: Serrated Edge — bleed on crit ──
-        if (isCrit && stats.serratedBleedDps > 0) {
-          e.bleedDps = stats.serratedBleedDps;
-          e.bleedTimer = 3.0;
         }
         // ── Rogue: Crit Cascade — crits boost crit chance ──
         if (isCrit && stats.critCascadeEnabled) {
@@ -1304,7 +1334,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             vx: Math.sin(angle) * 9,
             vz: Math.cos(angle) * 9,
             damage: e.damage * 0.75,
-            lifetime: 4.5, dead: false,
+            lifetime: 4.5, dead: false, style: "default" as const,
           });
         }
         audioManager.play("boss_special");
@@ -1420,7 +1450,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               id: eprojId(), x: e.x, z: e.z,
               vx: Math.sin(shotAngle) * speed,
               vz: Math.cos(shotAngle) * speed,
-              damage: e.damage, lifetime: 3.5, dead: false,
+              damage: e.damage, lifetime: 3.5, dead: false, style: "orb" as const,
             });
           }
           audioManager.play("boss_special");
@@ -1452,7 +1482,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               id: eprojId(), x: e.x, z: e.z,
               vx: Math.sin(shotAngle) * speed,
               vz: Math.cos(shotAngle) * speed,
-              damage: e.damage, lifetime: 1.5, dead: false,
+              damage: e.damage, lifetime: 1.5, dead: false, style: "dagger" as const,
             });
           }
         }
@@ -1609,11 +1639,51 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
   const t   = useRef(Math.random() * 100);
   useFrame((_, delta) => {
     t.current += delta;
-    if (ref.current) {
-      ref.current.position.set(ep.x, 0.9 + Math.sin(t.current * 8) * 0.08, ep.z);
+    if (!ref.current) return;
+    ref.current.position.set(ep.x, 0.9 + Math.sin(t.current * 8) * 0.08, ep.z);
+    if (ep.style === "dagger") {
+      // Dagger: align to travel direction + barrel roll
+      const angle = Math.atan2(ep.vx, ep.vz);
+      ref.current.rotation.y = angle;
+      ref.current.rotation.z = t.current * 12;
+    } else {
       ref.current.rotation.y = t.current * 6;
     }
   });
+
+  // ── Mage champion orb ──
+  if (ep.style === "orb") {
+    return (
+      <group ref={ref}>
+        <mesh>
+          <sphereGeometry args={[0.28, 8, 6]} />
+          <meshStandardMaterial color="#9030d0" emissive="#cc00ff" emissiveIntensity={4} roughness={0.1} transparent opacity={0.9} />
+        </mesh>
+        <mesh>
+          <sphereGeometry args={[0.38, 6, 4]} />
+          <meshStandardMaterial color="#6010a0" emissive="#aa00ff" emissiveIntensity={1.5} transparent opacity={0.3} side={THREE.BackSide} />
+        </mesh>
+      </group>
+    );
+  }
+
+  // ── Rogue champion dagger ──
+  if (ep.style === "dagger") {
+    return (
+      <group ref={ref}>
+        <mesh position={[0, 0, -0.18]}>
+          <boxGeometry args={[0.06, 0.06, 0.4]} />
+          <meshStandardMaterial color="#40e8a0" emissive="#00dd66" emissiveIntensity={2.5} metalness={0.9} roughness={0.1} />
+        </mesh>
+        <mesh position={[0, 0, 0.04]}>
+          <boxGeometry args={[0.16, 0.05, 0.05]} />
+          <meshStandardMaterial color="#18b870" metalness={0.7} roughness={0.2} />
+        </mesh>
+      </group>
+    );
+  }
+
+  // ── Default (wraith, boss) — purple diamond ──
   return (
     <group ref={ref}>
       <mesh>

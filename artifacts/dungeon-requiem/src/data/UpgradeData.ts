@@ -40,6 +40,8 @@ export type UpgradeId =
   | "fortress"
   | "war_cry"
   | "melee_lifedrain"
+  | "serrated_edge"
+  | "concussive_charge"
   // ── Mage-only ──
   | "chain_lightning"
   | "spell_echo"
@@ -49,6 +51,9 @@ export type UpgradeId =
   | "frost_armor"
   | "piercing_orbs"
   | "extra_orb"
+  | "volatile_blink"
+  | "projectile_size"
+  | "split_bolt"
   // ── Rogue-only ──
   | "shadow_step"
   | "venom_stack"
@@ -57,7 +62,8 @@ export type UpgradeId =
   | "evasion_matrix"
   | "blade_orbit"
   | "extra_daggers"
-  | "serrated_edge"
+  | "toxic_dash"
+  | "deep_wounds"
   // ── Relics ──
   | "relic_soulfire"
   | "relic_vampiric"
@@ -121,8 +127,10 @@ export interface PlayerStats {
   earthbreakerEnabled: boolean;  // every 5th hit AoE slam
   ironReprisalEnabled: boolean;  // shockwave on damage taken
   fortressArmorPerSec: number;   // armor/sec while standing still
-  warCryDmgBonus: number;        // % bonus damage for 5s after dash
+  warCryDmgBonus: number;        // % bonus damage for 5s after dash (baseline)
   meleeLifedrainPct: number;     // % of melee damage healed
+  serratedBleedDps: number;      // bleed damage per sec on crit (WARRIOR owns bleed)
+  dashKnockbackForce: number;    // knockback distance on dash (baseline, upgradeable)
   // ── Mage-specific ──────────────────────────────────────────────────────────
   chainLightningBounces: number; // bounce count per hit
   spellEchoChance: number;       // chance to double-cast
@@ -132,8 +140,10 @@ export interface PlayerStats {
   frostArmorSlowPct: number;     // slow on enemies that hit you
   magePiercingOrbs: boolean;     // orbs pierce through all enemies
   mageExtraOrbs: number;         // additional projectiles per attack
-  // ── Mage dash: Blink (teleport forward, leave damage zone) ──
-  mageDashTeleport: boolean;     // dash = instant teleport + afterimage damage
+  mageBlinkSlowPct: number;      // slow applied to enemies at blink origin (baseline)
+  volatileBlinkEnabled: boolean; // blink afterimage explodes for 1× damage
+  projectileRadiusBonus: number; // flat bonus to projectile collision radius
+  splitBoltActive: boolean;      // +1 orb but -25% damage
   // ── Rogue-specific ─────────────────────────────────────────────────────────
   dashResetOnKill: boolean;      // dash cd resets on kill
   venomStackDps: number;         // poison damage per second per stack
@@ -142,9 +152,8 @@ export interface PlayerStats {
   evasionMatrixEnabled: boolean; // dodge → invis + crit
   bladeOrbitCount: number;       // spinning daggers
   rogueExtraDaggers: number;     // additional daggers per attack
-  serratedBleedDps: number;      // bleed damage per sec on crit
-  // ── Rogue dash: Shadowstrike (dash through enemies, deal damage) ──
-  rogueDashDamage: boolean;      // dash deals damage to enemies passed through
+  toxicDashStacks: number;       // poison stacks applied by dash (baseline 1, upgradeable)
+  deepWoundsMultiplier: number;  // multiplier on poison duration/damage
 }
 
 export function createDefaultStats(): PlayerStats {
@@ -176,8 +185,10 @@ export function createDefaultStats(): PlayerStats {
     earthbreakerEnabled: false,
     ironReprisalEnabled: false,
     fortressArmorPerSec: 0,
-    warCryDmgBonus: 0,
+    warCryDmgBonus: 0.15,        // baseline: +15% damage for 4s after dash
     meleeLifedrainPct: 0,
+    serratedBleedDps: 0,          // bleed on crit (warrior owns bleed)
+    dashKnockbackForce: 3,        // baseline knockback on dash
     // Mage
     chainLightningBounces: 0,
     spellEchoChance: 0,
@@ -187,7 +198,10 @@ export function createDefaultStats(): PlayerStats {
     frostArmorSlowPct: 0,
     magePiercingOrbs: false,
     mageExtraOrbs: 0,
-    mageDashTeleport: false,
+    mageBlinkSlowPct: 0.30,       // baseline: 30% slow at blink origin
+    volatileBlinkEnabled: false,
+    projectileRadiusBonus: 0,
+    splitBoltActive: false,
     // Rogue
     dashResetOnKill: false,
     venomStackDps: 0,
@@ -196,8 +210,8 @@ export function createDefaultStats(): PlayerStats {
     evasionMatrixEnabled: false,
     bladeOrbitCount: 0,
     rogueExtraDaggers: 0,
-    serratedBleedDps: 0,
-    rogueDashDamage: false,
+    toxicDashStacks: 1,            // baseline: 1 poison stack on dash
+    deepWoundsMultiplier: 1.0,
   };
 }
 
@@ -366,16 +380,28 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     apply: (s) => { s.fortressArmorPerSec = 3; },
   },
   war_cry: {
-    id: "war_cry", name: "War Cry",
-    description: "After dashing, deal +25% damage for 5 seconds.",
+    id: "war_cry", name: "Battle Roar",
+    description: "War Cry damage bonus increased to +35% for 6 seconds.",
     icon: "📯", maxStacks: 1, rarity: "rare", classes: ["warrior"],
-    apply: (s) => { s.warCryDmgBonus = 0.25; },
+    apply: (s) => { s.warCryDmgBonus = 0.35; },  // upgrades baseline 0.15 → 0.35
   },
   melee_lifedrain: {
     id: "melee_lifedrain", name: "Siphon Strike",
     description: "Melee hits heal you for 8% of damage dealt.",
     icon: "💚", maxStacks: 3, rarity: "rare", classes: ["warrior"],
     apply: (s) => { s.meleeLifedrainPct += 0.08; },
+  },
+  serrated_edge: {
+    id: "serrated_edge", name: "Serrated Edge",
+    description: "Critical hits apply a bleed: 6 damage/sec for 3s.",
+    icon: "🩸", maxStacks: 3, rarity: "rare", classes: ["warrior"],
+    apply: (s) => { s.serratedBleedDps += 6; },
+  },
+  concussive_charge: {
+    id: "concussive_charge", name: "Concussive Charge",
+    description: "Dash knockback distance +50%. Knocked enemies take damage.",
+    icon: "💥", maxStacks: 2, rarity: "rare", classes: ["warrior"],
+    apply: (s) => { s.dashKnockbackForce += 2; },
   },
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -429,6 +455,24 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "🟣", maxStacks: 3, rarity: "rare", classes: ["mage"],
     apply: (s) => { s.mageExtraOrbs += 1; },
   },
+  volatile_blink: {
+    id: "volatile_blink", name: "Volatile Blink",
+    description: "Blink afterimage now explodes for 1× damage in a wide radius.",
+    icon: "💥", maxStacks: 1, rarity: "epic", classes: ["mage"],
+    apply: (s) => { s.volatileBlinkEnabled = true; },
+  },
+  projectile_size: {
+    id: "projectile_size", name: "Amplified Orbs",
+    description: "+20% projectile collision radius.",
+    icon: "🔵", maxStacks: 3, rarity: "common", classes: ["mage"],
+    apply: (s) => { s.projectileRadiusBonus += 0.11; },
+  },
+  split_bolt: {
+    id: "split_bolt", name: "Split Bolt",
+    description: "+1 orb per attack but -25% damage. Trades focus for spread.",
+    icon: "🔀", maxStacks: 1, rarity: "rare", classes: ["mage"],
+    apply: (s) => { s.splitBoltActive = true; s.mageExtraOrbs += 1; },
+  },
 
   // ════════════════════════════════════════════════════════════════════════════
   // ROGUE-ONLY — speed, crits, poison, extra daggers
@@ -475,11 +519,17 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "🔪", maxStacks: 3, rarity: "rare", classes: ["rogue"],
     apply: (s) => { s.rogueExtraDaggers += 1; },
   },
-  serrated_edge: {
-    id: "serrated_edge", name: "Serrated Edge",
-    description: "Critical hits apply a bleed: 6 damage/sec for 3s.",
-    icon: "🩸", maxStacks: 3, rarity: "rare", classes: ["rogue"],
-    apply: (s) => { s.serratedBleedDps += 6; },
+  toxic_dash: {
+    id: "toxic_dash", name: "Toxic Dash",
+    description: "Dash applies 3 poison stacks instead of 1.",
+    icon: "☠️", maxStacks: 1, rarity: "rare", classes: ["rogue"],
+    apply: (s) => { s.toxicDashStacks = 3; },
+  },
+  deep_wounds: {
+    id: "deep_wounds", name: "Deep Wounds",
+    description: "Poison damage and duration increased by 50%.",
+    icon: "🧪", maxStacks: 2, rarity: "rare", classes: ["rogue"],
+    apply: (s) => { s.deepWoundsMultiplier += 0.5; },
   },
 
   // ════════════════════════════════════════════════════════════════════════════

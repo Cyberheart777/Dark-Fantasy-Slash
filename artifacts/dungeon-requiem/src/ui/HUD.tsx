@@ -45,6 +45,20 @@ export function HUD({ onExtract }: HUDProps) {
     return () => { if (announceTimer.current) clearTimeout(announceTimer.current); };
   }, [bossAlive]);
 
+  // Wave clear flash
+  const prevWave = useRef(wave);
+  const [waveFlash, setWaveFlash] = useState(false);
+  const waveFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (wave > prevWave.current && wave > 1) {
+      setWaveFlash(true);
+      if (waveFlashTimer.current) clearTimeout(waveFlashTimer.current);
+      waveFlashTimer.current = setTimeout(() => setWaveFlash(false), 2000);
+    }
+    prevWave.current = wave;
+    return () => { if (waveFlashTimer.current) clearTimeout(waveFlashTimer.current); };
+  }, [wave]);
+
   const hpPct = Math.max(0, playerHP / playerMaxHP) * 100;
   const xpPct = Math.min(100, (xp / xpToNext) * 100);
   const minutes = Math.floor(survivalTime / 60);
@@ -165,6 +179,14 @@ export function HUD({ onExtract }: HUDProps) {
         <div style={styles.bossAnnounce}>
           <div style={styles.bossAnnounceTop}>⚠ BOSS APPROACHES ⚠</div>
           <div style={styles.bossAnnounceBottom}>{bossName}</div>
+        </div>
+      )}
+
+      {/* Wave clear flash */}
+      {waveFlash && (
+        <div style={styles.waveFlash}>
+          <div style={styles.waveFlashText}>WAVE {wave}</div>
+          <div style={styles.waveFlashSub}>enemies grow stronger</div>
         </div>
       )}
     </div>
@@ -395,6 +417,30 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 18,
     letterSpacing: 6,
     textShadow: "0 0 12px #ff0055",
+    textTransform: "uppercase" as const,
+  },
+  waveFlash: {
+    position: "absolute",
+    top: "22%",
+    left: "50%",
+    transform: "translateX(-50%)",
+    textAlign: "center" as const,
+    pointerEvents: "none",
+    animation: "fadeOut 2s ease-out forwards",
+  },
+  waveFlashText: {
+    color: "#ffcc44",
+    fontSize: 36,
+    fontWeight: 900,
+    letterSpacing: 8,
+    textShadow: "0 0 20px #ffaa00, 0 0 40px #885500",
+    textTransform: "uppercase" as const,
+  },
+  waveFlashSub: {
+    color: "rgba(255,200,100,0.6)",
+    fontSize: 13,
+    letterSpacing: 4,
+    marginTop: 6,
     textTransform: "uppercase" as const,
   },
 };

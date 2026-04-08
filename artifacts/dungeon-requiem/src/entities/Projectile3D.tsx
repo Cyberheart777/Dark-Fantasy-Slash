@@ -138,8 +138,8 @@ export function Projectile3D({ proj }: ProjectileProps) {
             />
           </mesh>
           {/* Tip — bright leading edge */}
-          <mesh position={[0, 0, -0.52]}>
-            <coneGeometry args={[0.04, 0.15, 4]} rotation={[Math.PI / 2, 0, 0]} />
+          <mesh position={[0, 0, -0.52]} rotation={[Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[0.04, 0.15, 4]} />
             <meshStandardMaterial
               color={proj.glowColor}
               emissive={proj.glowColor}
