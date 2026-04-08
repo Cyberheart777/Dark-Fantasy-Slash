@@ -624,7 +624,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 e.hp -= blinkDmg; e.hitFlashTimer = 0.2;
                 // Baseline slow at blink origin
                 if (stats.mageBlinkSlowPct > 0) { e.slowPct = stats.mageBlinkSlowPct; e.slowTimer = 2.0; }
-                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; }
+                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; trySpawnGear(e.type, e.x, e.z, g); }
               }
             }
             p.isDashing = false; // instant, no travel
@@ -675,7 +675,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 e.x = Math.max(-ARENA, Math.min(ARENA, e.x + nx * kbForce));
                 e.z = Math.max(-ARENA, Math.min(ARENA, e.z + nz * kbForce));
                 e.hp -= kbDmg; e.hitFlashTimer = 0.2;
-                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; }
+                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; trySpawnGear(e.type, e.x, e.z, g); }
               }
             }
           }
@@ -784,6 +784,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
                   if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
                   if (stats.soulfireChance > 0) triggerSoulfire(e, g);
+                  trySpawnGear(e.type, e.x, e.z, g);
                   const xg = Math.round(e.xpReward * stats.xpMultiplier);
                   g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
                 }
@@ -811,6 +812,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                   if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
                   if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
                   if (stats.soulfireChance > 0) triggerSoulfire(e, g);
+                  trySpawnGear(e.type, e.x, e.z, g);
                   const xg = Math.round(e.xpReward * stats.xpMultiplier);
                   g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
                 }
@@ -1051,6 +1053,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             }
           }
           if (stats.soulfireChance > 0) triggerSoulfire(e, g);
+          trySpawnGear(e.type, e.x, e.z, g);
           const xg = Math.round(e.xpReward * stats.xpMultiplier);
           g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
           continue;
@@ -1064,6 +1067,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (e.hp <= 0 && !e.dead) {
           e.dead = true; g.kills++; g.score += e.scoreValue;
           if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+          trySpawnGear(e.type, e.x, e.z, g);
           continue;
         }
       }
@@ -1603,6 +1607,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (g.trialMode && t.type.endsWith("_champion")) g.trialChampionDefeated = true;
             if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
             if (stats.soulfireChance > 0) triggerSoulfire(t, g);
+            trySpawnGear(t.type, t.x, t.z, g);
             const xg = Math.round(t.xpReward * stats.xpMultiplier);
             g.xpOrbs.push({ id: orbId(), x: t.x, z: t.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[t.type] ?? "green", collectTimer: 0 });
             if (t.type === "boss") { g.bossAlive = false; g.bossId = null; g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave); store.setBossState(0, 0, "", false); }
