@@ -1,51 +1,49 @@
 ## IMPORTANT: Codebase Overhaul — Read Before Making Changes
 
-16 files were rewritten or significantly modified. Do NOT revert or overwrite with older patterns.
+17 files were rewritten or significantly modified. Do NOT revert or overwrite with older patterns.
 
-### Modified Files (16 total)
+### Modified Files (17 total)
 
 **Data Layer:**
-- `src/data/UpgradeData.ts` — 56 upgrades with class-gating and rarity. PlayerStats has ~48 fields including booleans for mechanic toggles. Bleed is WARRIOR-only, poison is ROGUE-only, slow/control is MAGE-only. Dash flags removed — dashes are baseline per class.
-- `src/data/CharacterData.ts` — Warrior damage 35 (was 18). Mage range 22 (was 40), dash cooldown 2.8 (blink tradeoff). Rogue range 20 (was 30), dash cooldown 1.2 (fastest).
-- `src/data/MetaUpgradeData.ts` — 12 Soul Forge upgrades. `buildTrialModifiers()` for trial buff application.
-- `src/data/EnemyData.ts` — 14-tier spawn table progressing through wave 33+.
-- `src/data/StatModifier.ts` — Handles boolean PlayerStats fields by skipping non-numeric keys.
+- `src/data/UpgradeData.ts` — 56+ upgrades with class-gating and rarity. Bleed=WARRIOR, Poison=ROGUE, Slow=MAGE. Dashes are baseline per class (no upgrade gate). Projectile interface has `isFracture` flag.
+- `src/data/CharacterData.ts` — Warrior damage 35. Mage range 22, dash cd 2.8. Rogue range 20, dash cd 1.2.
+- `src/data/MetaUpgradeData.ts` — 12 Soul Forge upgrades + `buildTrialModifiers()`.
+- `src/data/EnemyData.ts` — 14-tier spawn table through wave 33+.
+- `src/data/StatModifier.ts` — Handles boolean PlayerStats fields.
+- `src/data/GearData.ts` — NEW: 18 equippable items (6 weapon/6 armor/6 trinket), 3 rarities, drop chance per enemy type.
 
 **Store:**
-- `src/store/metaStore.ts` — `trialWins` is `Record<string, string>` (highest difficulty per class). 9 permanent trial buffs. `completeTrial(cls, difficulty)`. Version 3 migration.
+- `src/store/metaStore.ts` — Per-difficulty trial tracking, 9 permanent buffs, v3 migration.
+- `src/store/gameStore.ts` — Added gear state (equippedWeapon/Armor/Trinket), setGearEquipped action, GearDef import.
 
 **Game Engine:**
 - `src/game/GameScene.tsx` — Major systems:
-  - CLASS-SPECIFIC BASELINE DASHES: Warrior = knockback charge + war cry buff. Mage = blink teleport + slow at origin (+ volatile blink upgrade for explosion). Rogue = poison dash applying venom stacks.
-  - Warrior melee: blood momentum, earthbreaker, iron reprisal, fortress, melee lifedrain, BLEED ON CRIT
-  - Mage projectiles: extra orbs, piercing, spell echo, chain lightning, arcane fracture, projectile radius bonus, split bolt damage reduction
-  - Rogue projectiles: extra daggers, phantom blades, venom on hit, crit cascade, blade orbit
-  - DoT system: poison ticks (rogue), bleed ticks (warrior), slow decay (mage)
-  - EnemyProjectile has `style` field: "default" | "orb" | "dagger" — champions fire class-matched projectiles
-  - Screen shake, XP orb collection animation, trial buffs at run start
+  - BASELINE DASHES: Warrior=knockback+warCry, Mage=blink+slow, Rogue=poison dash
+  - Warrior champion AI: telegraphed wind-up swing (1.2s warning), slower pursuit, 6s slam cooldown
+  - Arcane fracture: `isFracture` flag prevents chain reactions, exactly 3 projectiles per death
+  - GEAR SYSTEM: GearDropRuntime, trySpawnGear() on kills, equipGear() with stat application, pickup in game loop, GearDrop3D floating gem component
+  - EnemyProjectile style field: champions fire class-matched projectiles
+  - All previous systems intact (DoTs, screen shake, XP animation, trial buffs)
 
 **UI:**
-- `src/ui/LevelUp.tsx` — Rarity-colored cards with badges
-- `src/ui/SoulForge.tsx` — 12 upgrades, per-difficulty trial pips with buff descriptions
-- `src/ui/TrialVictory.tsx` — Shows permanent buff awarded on clear
-- `src/ui/HUD.tsx` — Wave clear flash ("WAVE X — enemies grow stronger")
+- `src/ui/LevelUp.tsx` — Rarity-colored cards
+- `src/ui/SoulForge.tsx` — 12 upgrades, per-difficulty trial pips
+- `src/ui/TrialVictory.tsx` — Permanent buff display on clear
+- `src/ui/HUD.tsx` — Wave flash, gear slot display (3 slots top-right with rarity borders)
 
 **Entities & Effects:**
-- `src/entities/Enemy3D.tsx` — Walk cycles, spawn/death animations, wraith/boss improvements
-- `src/entities/Projectile3D.tsx` — Dagger spin, orb flicker, motion trail
-- `src/entities/XPOrb3D.tsx` — Magnetize + pop collection animation
+- `src/entities/Enemy3D.tsx` — Walk cycles, spawn/death animations
+- `src/entities/Projectile3D.tsx` — Dagger spin, orb flicker
+- `src/entities/XPOrb3D.tsx` — Collection animation
 - `src/effects/AttackEffect.tsx` — 5-layer slash arc
 
-### KEY ARCHITECTURE RULES
-1. **Class identity through DoTs:** Warrior = bleed, Rogue = poison, Mage = slow/freeze. Never mix.
-2. **Dashes are baseline, not upgrades.** Warrior always knockbacks, Mage always blinks, Rogue always poisons. Upgrades ENHANCE these (Battle Roar, Volatile Blink, Toxic Dash).
-3. **PlayerStats has boolean fields.** Code casting to Record<string, number> must skip booleans.
-4. **trialWins stores difficulty strings** not booleans. e.g. `{ warrior: "hard" }`.
-5. **EnemyProjectile needs style field.** All spawns must include `style: "default" as const` (or "orb"/"dagger" for champions).
-6. **Enemy spawns need DoT fields.** `poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0`.
-7. **XPOrb spawns need `collectTimer: 0`.**
-8. **Meta progression = Soul Forge + Trial Buffs.** Both applied in `makeProgWithMeta()`.
-9. **Projectile range starts short** (mage 22, rogue 20). `attack_range_boost` upgrade extends it.
-
-### Files NOT Changed
-ProgressionManager.ts, RaceData.ts, DifficultyData.ts, GameConfig.ts, SaveData.ts, gameStore.ts, Player3D.tsx, MainMenu.tsx, CharacterSelect.tsx, GameOver.tsx, PauseMenu.tsx, MobileControls.tsx, AudioManager.ts, SoundData.ts, InputManager3D.ts, DungeonRoom.tsx, Torch3D.tsx, App.tsx, main.tsx, index.css
+### KEY RULES
+1. Warrior=bleed, Rogue=poison, Mage=slow. Never mix.
+2. Dashes are baseline. Upgrades enhance, not enable.
+3. PlayerStats has booleans — skip in Record<string,number> casts.
+4. trialWins stores difficulty strings not booleans.
+5. EnemyProjectile needs `style` field on all spawns.
+6. Enemy spawns need DoT fields + gear fields initialized.
+7. XPOrb spawns need `collectTimer: 0`.
+8. Gear spawns via `trySpawnGear()` after enemy death audio plays.
+9. Projectile interface has `isFracture?` — fracture projectiles must not chain.

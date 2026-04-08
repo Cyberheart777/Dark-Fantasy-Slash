@@ -29,6 +29,7 @@ export function HUD({ onExtract }: HUDProps) {
     acquiredUpgrades, isDashing,
     bossHP, bossMaxHP, bossName, bossAlive, bossSpecialWarn,
     highestBossWaveCleared, trialMode,
+    equippedWeapon, equippedArmor, equippedTrinket,
   } = useGameStore();
 
   // Boss arrival announcement
@@ -135,6 +136,24 @@ export function HUD({ onExtract }: HUDProps) {
           </div>
         </div>
       )}
+
+      {/* Gear slots — top-right */}
+      <div style={styles.gearPanel}>
+        {([["⚔", equippedWeapon], ["🛡", equippedArmor], ["💎", equippedTrinket]] as [string, any][]).map(([slotIcon, gear], i) => (
+          <div key={i} style={{
+            ...styles.gearSlot,
+            borderColor: gear ? (gear.rarity === "epic" ? "#aa44ff" : gear.rarity === "rare" ? "#4488dd" : "#6a6a7a") : "#2a2035",
+            boxShadow: gear?.rarity === "epic" ? "0 0 8px rgba(140,40,255,0.3)" : gear?.rarity === "rare" ? "0 0 6px rgba(60,120,255,0.2)" : "none",
+          }}>
+            <div style={{ fontSize: 16 }}>{gear ? gear.icon : slotIcon}</div>
+            {gear && (
+              <div style={{ fontSize: 8, color: gear.rarity === "epic" ? "#cc88ff" : gear.rarity === "rare" ? "#70b0ff" : "#999", letterSpacing: 1, marginTop: 2, textAlign: "center" as const, lineHeight: 1.2, maxWidth: 52, overflow: "hidden" }}>
+                {gear.name}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
 
       {/* Dash cooldown indicator */}
       <div style={{ ...styles.actionIndicator, opacity: isDashing ? 1 : 0.3 }}>
@@ -418,6 +437,26 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: 6,
     textShadow: "0 0 12px #ff0055",
     textTransform: "uppercase" as const,
+  },
+  gearPanel: {
+    position: "absolute",
+    top: 80,
+    right: 12,
+    display: "flex",
+    gap: 6,
+    pointerEvents: "none",
+  },
+  gearSlot: {
+    width: 52,
+    height: 52,
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(10,6,20,0.85)",
+    border: "1.5px solid #2a2035",
+    borderRadius: 8,
+    transition: "border-color 0.2s, box-shadow 0.2s",
   },
   waveFlash: {
     position: "absolute",

@@ -22,6 +22,7 @@ import { createDefaultStats, type PlayerStats } from "../data/UpgradeData";
 import { buildMetaModifiers, buildTrialModifiers } from "../data/MetaUpgradeData";
 import { resolveStats } from "../data/StatModifier";
 import { InputManager3D } from "./InputManager3D";
+import { rollGearDrop, GEAR_DROP_CHANCE, type GearDef } from "../data/GearData";
 import { DungeonRoom } from "../world/DungeonRoom";
 import { Torch3D } from "../world/Torch3D";
 import { Player3D } from "../entities/Player3D";
@@ -129,6 +130,7 @@ export interface Projectile {
   glowColor: string;
   style: "orb" | "dagger";
   dead: boolean;
+  isFracture?: boolean; // prevents chain reaction from arcane fracture
 }
 
 export interface GameState {
@@ -158,6 +160,17 @@ export interface GameState {
   difficultyShardMult: number;
   // Extraction
   highestBossWaveCleared: number;
+  // Gear drops
+  gearDrops: GearDropRuntime[];
+  equippedGear: Record<string, GearDef | null>; // keyed by slot: weapon, armor, trinket
+}
+
+export interface GearDropRuntime {
+  id: string;
+  x: number; z: number;
+  gear: GearDef;
+  floatOffset: number;
+  lifetime: number; // despawns after N seconds
 }
 
 // ─── Torch positions ──────────────────────────────────────────────────────────
@@ -208,10 +221,12 @@ let _eid = 1;
 let _oid = 1;
 let _pid = 1;
 let _epid = 1;
+let _gid = 1;
 function enemyId() { return `e${_eid++}`; }
 function orbId()   { return `o${_oid++}`; }
 function projId()  { return `p${_pid++}`; }
 function eprojId() { return `ep${_epid++}`; }
+function gearId()  { return `g${_gid++}`; }
 
 const CRYSTAL_TIER: Record<string, CrystalTier> = {
   scuttler:         "green",
@@ -308,6 +323,47 @@ function handlePlayerFatalDmg(p: PlayerRuntime, g: GameState): boolean {
 }
 
 // ─── Soulfire relic — explosion on kill ───────────────────────────────────────
+
+/** Try to spawn a gear drop at the given position based on enemy type. */
+function trySpawnGear(enemyType: string, x: number, z: number, g: GameState): void {
+  const chance = GEAR_DROP_CHANCE[enemyType] ?? 0;
+  if (chance <= 0 || Math.random() > chance) return;
+  const gear = rollGearDrop();
+  g.gearDrops.push({
+    id: gearId(),
+    x: x + (Math.random() - 0.5) * 1.5,
+    z: z + (Math.random() - 0.5) * 1.5,
+    gear,
+    floatOffset: Math.random() * Math.PI * 2,
+    lifetime: 20, // despawn after 20s if not picked up
+  });
+}
+
+/** Equip a gear piece: apply bonuses to stats, replace any existing gear in that slot. */
+function equipGear(gear: GearDef, g: GameState): void {
+  const stats = g.progression.stats;
+  // Remove old gear bonuses if slot was occupied
+  const old = g.equippedGear[gear.slot];
+  if (old) {
+    for (const [key, val] of Object.entries(old.bonuses)) {
+      if (typeof (stats as any)[key] === "number") {
+        (stats as any)[key] -= val as number;
+      }
+    }
+  }
+  // Apply new gear bonuses
+  for (const [key, val] of Object.entries(gear.bonuses)) {
+    if (typeof (stats as any)[key] === "number") {
+      (stats as any)[key] += val as number;
+    }
+  }
+  // Update max HP if it changed
+  if (gear.bonuses.maxHealth) {
+    g.player.maxHp = stats.maxHealth;
+    g.player.hp = Math.min(g.player.hp + (gear.bonuses.maxHealth as number), g.player.maxHp);
+  }
+  g.equippedGear[gear.slot] = gear;
+}
 
 function triggerSoulfire(deadEnemy: EnemyRuntime, g: GameState): void {
   if (Math.random() > g.progression.stats.soulfireChance) return;
@@ -701,11 +757,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
                 store.setBossState(0, 0, "", false);
                 store.setBossSpecialWarn(false);
-                audioManager.play("boss_death");
+                audioManager.play("boss_death"); trySpawnGear(e.type, e.x, e.z, g);
                 useMetaStore.getState().unlockMilestone("boss_kill");
                 useMetaStore.getState().checkUnlocks();
               } else {
-                audioManager.play("enemy_death");
+                audioManager.play("enemy_death"); trySpawnGear(e.type, e.x, e.z, g);
               }
             }
           }
@@ -1207,7 +1263,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           // ── Rogue: Shadow Step — dash reset on kill ──
           if (stats.dashResetOnKill) p.dashCooldown = 0;
           // ── Mage: Arcane Fracture — death explosion projectiles ──
-          if (stats.arcaneFractureEnabled) {
+          if (stats.arcaneFractureEnabled && !proj.isFracture) {
             for (let f = 0; f < 3; f++) {
               const fracAngle = Math.random() * Math.PI * 2;
               g.projectiles.push({
@@ -1219,6 +1275,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 piercing: true, hitIds: new Set(),
                 color: "#ff66ff", glowColor: "#cc33cc",
                 style: "orb", dead: false,
+                isFracture: true,
               });
             }
           }
@@ -1229,11 +1286,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
             store.setBossState(0, 0, "", false);
             store.setBossSpecialWarn(false);
-            audioManager.play("boss_death");
+            audioManager.play("boss_death"); trySpawnGear(e.type, e.x, e.z, g);
             useMetaStore.getState().unlockMilestone("boss_kill");
             useMetaStore.getState().checkUnlocks();
           } else {
-            audioManager.play("enemy_death");
+            audioManager.play("enemy_death"); trySpawnGear(e.type, e.x, e.z, g);
           }
         }
         if (!proj.piercing) break;
@@ -1292,6 +1349,21 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     }
     // Remove after animation completes
     g.xpOrbs = g.xpOrbs.filter((o) => !o.collected || o.collectTimer < 0.2);
+
+    // ── Gear Drops — pickup + despawn ──────────────────────────────────────
+    for (const gd of g.gearDrops) {
+      gd.lifetime -= delta;
+      if (gd.lifetime <= 0) continue; // will be filtered out
+      const gdx = p.x - gd.x, gdz = p.z - gd.z;
+      if (Math.sqrt(gdx * gdx + gdz * gdz) <= GAME_CONFIG.PLAYER.PICKUP_RADIUS) {
+        equipGear(gd.gear, g);
+        gd.lifetime = -1; // mark for removal
+        audioManager.play("level_up"); // satisfying pickup sound
+        // Notify store for UI
+        store.setGearEquipped(gd.gear.slot, gd.gear);
+      }
+    }
+    g.gearDrops = g.gearDrops.filter((gd) => gd.lifetime > 0);
 
     // ── Boss special attack ────────────────────────────────────────────────
     for (const e of g.enemies) {
@@ -1386,38 +1458,54 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       const cDist = Math.sqrt(cdx * cdx + cdz * cdz);
 
       if (e.type === "warrior_champion") {
-        // ── Warrior Champion: charges + melee AoE ─────────────────────
+        // ── Warrior Champion: stalks player, telegraphed overhead swing ───
         const cx = p.x - e.x, cz = p.z - e.z;
         const clen = Math.sqrt(cx * cx + cz * cz) || 1;
-        e.x += (cx / clen) * e.moveSpeed * delta;
-        e.z += (cz / clen) * e.moveSpeed * delta;
+
+        // Slower pursuit — walks menacingly, doesn't sprint
+        const pursuitSpeed = e.moveSpeed * 0.65;
+        e.x += (cx / clen) * pursuitSpeed * delta;
+        e.z += (cz / clen) * pursuitSpeed * delta;
         e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
         e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
 
-        // Melee AoE attack
-        e.attackTimer -= delta;
-        if (e.attackTimer <= 0) {
-          e.attackTimer = e.attackInterval;
-          if (cDist <= e.attackRange && p.invTimer <= 0 && !p.dead) {
-            const rawDmg = e.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
-            const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
-            p.hp -= effective;
-            p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
-            if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
+        // ── Telegraphed melee swing (replaces instant damage) ──
+        // Phase 1: wind-up (specialWarning=true, 1.2s) — player can see and dodge
+        // Phase 2: swing lands — wide arc damage
+        if (e.specialWarning) {
+          e.specialWarnTimer -= delta;
+          if (e.specialWarnTimer <= 0) {
+            // Swing lands!
+            e.specialWarning = false;
+            store.setBossSpecialWarn(false);
+            if (cDist <= e.attackRange * 1.3 && p.invTimer <= 0 && !p.dead) {
+              const rawDmg = e.damage * 1.5 * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE * 0.3);
+              const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
+              p.hp -= effective;
+              p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+              if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
+            }
+            audioManager.play("boss_special");
+          }
+        } else {
+          e.attackTimer -= delta;
+          if (e.attackTimer <= 0 && cDist <= e.attackRange * 1.5) {
+            // Start wind-up — telegraph the attack
+            e.attackTimer = e.attackInterval + 1.0; // longer between swings
+            e.specialWarning = true;
+            e.specialWarnTimer = 1.2; // 1.2s warning before damage
+            store.setBossSpecialWarn(true);
           }
         }
 
-        // Charge special every 4s — AoE slam at current position
+        // ── Ground slam special every 6s (was 4s) — big AoE with 1.5s warning ──
         e.specialTimer -= delta;
-        if (e.specialTimer <= 0) {
-          e.specialTimer = 4.0;
-          if (cDist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
-            const slamDmg = Math.max(1, (e.damage * 2.0 - stats.armor) * stats.incomingDamageMult);
-            p.hp -= slamDmg;
-            p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
-            if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
-          }
-          audioManager.play("boss_special");
+        if (e.specialTimer <= 0 && !e.specialWarning) {
+          e.specialTimer = 6.0;
+          // Slam uses the boss AoE ring for visual warning
+          e.specialWarning = true;
+          e.specialWarnTimer = 1.5;
+          store.setBossSpecialWarn(true);
         }
 
       } else if (e.type === "mage_champion") {
@@ -1630,7 +1718,58 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       {gs.current?.enemyProjectiles.map((ep) => (
         <EnemyProjectile3D key={ep.id} ep={ep} />
       ))}
+      {gs.current?.gearDrops.map((gd) => (
+        <GearDrop3D key={gd.id} drop={gd} />
+      ))}
     </>
+  );
+}
+
+// ─── Gear Drop 3D — floating rarity-colored gem ──────────────────────────────
+
+const GEAR_RARITY_3D: Record<string, { color: string; emissive: string; intensity: number; lightColor: string }> = {
+  common: { color: "#a0a0b0", emissive: "#606070", intensity: 2, lightColor: "#8888aa" },
+  rare:   { color: "#4488ff", emissive: "#2244cc", intensity: 4, lightColor: "#4488ff" },
+  epic:   { color: "#bb66ff", emissive: "#8822dd", intensity: 5, lightColor: "#aa44ff" },
+};
+
+function GearDrop3D({ drop }: { drop: GearDropRuntime }) {
+  const ref = useRef<THREE.Group>(null);
+  const t = useRef(drop.floatOffset);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (!ref.current) return;
+    ref.current.position.set(drop.x, 0.6 + Math.sin(t.current * 2.5) * 0.2, drop.z);
+    ref.current.rotation.y = t.current * 1.8;
+    // Pulse scale slightly
+    const pulse = 1 + Math.sin(t.current * 4) * 0.08;
+    ref.current.scale.setScalar(pulse);
+  });
+
+  const style = GEAR_RARITY_3D[drop.gear.rarity] ?? GEAR_RARITY_3D.common;
+
+  return (
+    <group ref={ref}>
+      {/* Base gem shape */}
+      <mesh castShadow>
+        <octahedronGeometry args={[0.28, 0]} />
+        <meshStandardMaterial color={style.color} emissive={style.emissive} emissiveIntensity={style.intensity} roughness={0.1} metalness={0.5} />
+      </mesh>
+      {/* Outer glow shell */}
+      <mesh>
+        <octahedronGeometry args={[0.4, 0]} />
+        <meshStandardMaterial color={style.emissive} emissive={style.emissive} emissiveIntensity={style.intensity * 0.4} transparent opacity={0.2} side={THREE.BackSide} />
+      </mesh>
+      {/* Inner diamond for epic rarity */}
+      {drop.gear.rarity === "epic" && (
+        <mesh rotation={[0.5, 0.5, 0]} scale={0.5}>
+          <octahedronGeometry args={[0.28, 0]} />
+          <meshStandardMaterial color="#ffffff" emissive="#cc88ff" emissiveIntensity={6} transparent opacity={0.6} />
+        </mesh>
+      )}
+      <pointLight color={style.lightColor} intensity={style.intensity * 0.6} distance={5} decay={2} />
+    </group>
   );
 }
 
@@ -1812,7 +1951,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       difficultyDmgMult: diff.enemyDamageMult,
       difficultySpeedMult: diff.enemySpeedMult,
       difficultyShardMult: diff.shardBonusMult,
-      highestBossWaveCleared: 0,
+      highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
     };
     progression.onLevelUp = (_lvl, choices) => {
       audioManager.play("level_up");
@@ -1868,7 +2007,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           difficultyDmgMult: resetDiff.enemyDamageMult,
           difficultySpeedMult: resetDiff.enemySpeedMult,
           difficultyShardMult: resetDiff.shardBonusMult,
-          highestBossWaveCleared: 0,
+          highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
         };
         _eid = 1; _oid = 1; _pid = 1; _epid = 1;
       } else {

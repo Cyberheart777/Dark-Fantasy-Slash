@@ -10,6 +10,8 @@ import type { CharacterClass } from "../data/CharacterData";
 import type { RaceType } from "../data/RaceData";
 import type { DifficultyTier } from "../data/DifficultyData";
 
+import type { GearDef } from "../data/GearData";
+
 export type GamePhase =
   | "menu"
   | "charselect"
@@ -113,6 +115,11 @@ export interface GameUIState {
   runExtracted: boolean;
   extractedBonusShards: number;
 
+  // Gear
+  equippedWeapon: GearDef | null;
+  equippedArmor: GearDef | null;
+  equippedTrinket: GearDef | null;
+
   // Actions
   setPhase: (phase: GamePhase) => void;
   addRunShards: (n: number) => void;
@@ -138,6 +145,7 @@ export interface GameUIState {
   setHighestBossWaveCleared: (wave: number) => void;
   setRunExtracted: (extracted: boolean) => void;
   setExtractedBonusShards: (n: number) => void;
+  setGearEquipped: (slot: string, gear: GearDef | null) => void;
   resetGame: () => void;
 }
 
@@ -182,6 +190,9 @@ const initialState = {
   highestBossWaveCleared: 0,
   runExtracted: false,
   extractedBonusShards: 0,
+  equippedWeapon: null as GearDef | null,
+  equippedArmor: null as GearDef | null,
+  equippedTrinket: null as GearDef | null,
 };
 
 export const useGameStore = create<GameUIState>((set) => ({
@@ -236,6 +247,12 @@ export const useGameStore = create<GameUIState>((set) => ({
     set({ masterVolume, sfxVolume, musicVolume, muted }),
 
   setBestScore: (bestScore, bestWave) => set({ bestScore, bestWave }),
+
+  setGearEquipped: (slot, gear) => set(
+    slot === "weapon" ? { equippedWeapon: gear } :
+    slot === "armor"  ? { equippedArmor: gear } :
+                        { equippedTrinket: gear }
+  ),
 
   resetGame: () =>
     set((s) => ({
