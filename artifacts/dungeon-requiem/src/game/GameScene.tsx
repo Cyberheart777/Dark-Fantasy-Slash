@@ -1733,6 +1733,202 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       {gs.current?.gearDrops.map((gd) => (
         <GearDrop3D key={gd.id} drop={gd} />
       ))}
+      {/* Ability visual effects */}
+      <AbilityEffects gs={gs} />
+    </>
+  );
+}
+
+// ─── Ability Visual Effects (all in one component for perf) ──────────────────
+
+function AbilityEffects({ gs }: { gs: React.RefObject<GameState | null> }) {
+  // Singularity vortex
+  const vortexRef = useRef<THREE.Group>(null);
+  const vortexRingRef = useRef<THREE.Mesh>(null);
+  // Earthbreaker slam ring
+  const slamRef = useRef<THREE.Mesh>(null);
+  const slamTimer = useRef(0);
+  const lastMeleeHitCount = useRef(0);
+  // Blink flash
+  const blinkRef = useRef<THREE.Mesh>(null);
+  const blinkTimer = useRef(0);
+  const blinkX = useRef(0);
+  const blinkZ = useRef(0);
+  // Blade orbit
+  const orbitRef = useRef<THREE.Group>(null);
+  // Knockback wave
+  const kbRef = useRef<THREE.Mesh>(null);
+  const kbTimer = useRef(0);
+  // Poison trail
+  const poisonRef = useRef<THREE.Mesh>(null);
+  const poisonTimer = useRef(0);
+
+  useFrame((_, delta) => {
+    if (!gs.current) return;
+    const g = gs.current;
+    const p = g.player;
+    const stats = g.progression.stats;
+
+    // ── Singularity vortex ──
+    if (vortexRef.current) {
+      if (p.singularityActiveTimer > 0) {
+        vortexRef.current.visible = true;
+        vortexRef.current.position.set(p.singularityX, 0.15, p.singularityZ);
+        vortexRef.current.rotation.y += delta * 3;
+        const pulse = 1 + Math.sin(p.singularityActiveTimer * 5) * 0.15;
+        vortexRef.current.scale.setScalar(pulse);
+      } else {
+        vortexRef.current.visible = false;
+      }
+    }
+    if (vortexRingRef.current) {
+      if (p.singularityActiveTimer > 0) {
+        vortexRingRef.current.visible = true;
+        vortexRingRef.current.position.set(p.singularityX, 0.2, p.singularityZ);
+        vortexRingRef.current.rotation.z += delta * 5;
+      } else {
+        vortexRingRef.current.visible = false;
+      }
+    }
+
+    // ── Earthbreaker slam ──
+    if (slamRef.current) {
+      // Detect earthbreaker trigger via meleeHitCounter reset
+      if (stats.earthbreakerEnabled && p.meleeHitCounter === 0 && lastMeleeHitCount.current >= 5) {
+        slamTimer.current = 0.4;
+        slamRef.current.position.set(p.x, 0.12, p.z);
+      }
+      lastMeleeHitCount.current = p.meleeHitCounter;
+      if (slamTimer.current > 0) {
+        slamTimer.current -= delta;
+        slamRef.current.visible = true;
+        const t = 1 - slamTimer.current / 0.4;
+        slamRef.current.scale.setScalar(t * stats.attackRange * 1.5);
+        (slamRef.current.material as THREE.MeshBasicMaterial).opacity = (1 - t) * 0.7;
+      } else {
+        slamRef.current.visible = false;
+      }
+    }
+
+    // ── Mage blink flash ──
+    if (blinkRef.current) {
+      if (g.charClass === "mage" && p.invTimer > 0 && !p.isDashing) {
+        // Blink just happened if invTimer is fresh and player isn't dashing (blink is instant)
+        if (blinkTimer.current <= 0) {
+          blinkTimer.current = 0.3;
+          blinkX.current = p.x;
+          blinkZ.current = p.z;
+        }
+      }
+      if (blinkTimer.current > 0) {
+        blinkTimer.current -= delta;
+        blinkRef.current.visible = true;
+        blinkRef.current.position.set(blinkX.current, 0.5, blinkZ.current);
+        const t = 1 - blinkTimer.current / 0.3;
+        blinkRef.current.scale.setScalar(1 + t * 3);
+        (blinkRef.current.material as THREE.MeshBasicMaterial).opacity = (1 - t) * 0.6;
+      } else {
+        blinkRef.current.visible = false;
+      }
+    }
+
+    // ── Blade orbit visual ──
+    if (orbitRef.current) {
+      if (stats.bladeOrbitCount > 0) {
+        orbitRef.current.visible = true;
+        orbitRef.current.position.set(p.x, 0.8, p.z);
+        orbitRef.current.rotation.y = p.bladeOrbitAngle;
+      } else {
+        orbitRef.current.visible = false;
+      }
+    }
+
+    // ── Warrior knockback wave ──
+    if (kbRef.current) {
+      if (g.charClass === "warrior" && p.isDashing && kbTimer.current <= 0) {
+        kbTimer.current = 0.25;
+      }
+      if (kbTimer.current > 0) {
+        kbTimer.current -= delta;
+        kbRef.current.visible = true;
+        kbRef.current.position.set(p.x, 0.15, p.z);
+        const t = 1 - kbTimer.current / 0.25;
+        kbRef.current.scale.setScalar(1 + t * 4);
+        (kbRef.current.material as THREE.MeshBasicMaterial).opacity = (1 - t * t) * 0.5;
+      } else {
+        kbRef.current.visible = false;
+      }
+    }
+
+    // ── Rogue poison trail ──
+    if (poisonRef.current) {
+      if (g.charClass === "rogue" && p.isDashing) {
+        poisonTimer.current = 0.4;
+        poisonRef.current.position.set(p.x, 0.1, p.z);
+      }
+      if (poisonTimer.current > 0) {
+        poisonTimer.current -= delta;
+        poisonRef.current.visible = true;
+        const t = 1 - poisonTimer.current / 0.4;
+        poisonRef.current.scale.setScalar(1 + t * 2);
+        (poisonRef.current.material as THREE.MeshBasicMaterial).opacity = (1 - t) * 0.45;
+      } else {
+        poisonRef.current.visible = false;
+      }
+    }
+  });
+
+  return (
+    <>
+      {/* Singularity vortex — dark swirling disc */}
+      <group ref={vortexRef} visible={false}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.5, 8, 32]} />
+          <meshBasicMaterial color="#6600cc" transparent opacity={0.35} side={THREE.DoubleSide} />
+        </mesh>
+        <pointLight color="#9900ff" intensity={4} distance={10} decay={2} />
+      </group>
+      <mesh ref={vortexRingRef} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+        <torusGeometry args={[6, 0.12, 8, 32]} />
+        <meshStandardMaterial color="#aa44ff" emissive="#8800dd" emissiveIntensity={3} transparent opacity={0.5} />
+      </mesh>
+
+      {/* Earthbreaker slam — expanding orange ring */}
+      <mesh ref={slamRef} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+        <ringGeometry args={[0.8, 1.0, 24]} />
+        <meshBasicMaterial color="#ff8800" transparent opacity={0.7} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* Mage blink flash — expanding purple burst at arrival point */}
+      <mesh ref={blinkRef} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+        <circleGeometry args={[1, 16]} />
+        <meshBasicMaterial color="#cc66ff" transparent opacity={0.6} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* Blade orbit — spinning daggers */}
+      <group ref={orbitRef} visible={false}>
+        {[0, 1, 2].map((i) => {
+          const a = (i / 3) * Math.PI * 2;
+          return (
+            <mesh key={i} position={[Math.sin(a) * 2.2, 0, Math.cos(a) * 2.2]} rotation={[0, a, Math.PI / 4]}>
+              <boxGeometry args={[0.06, 0.06, 0.4]} />
+              <meshStandardMaterial color="#40e8a0" emissive="#00dd66" emissiveIntensity={2} metalness={0.9} roughness={0.1} />
+            </mesh>
+          );
+        })}
+      </group>
+
+      {/* Warrior knockback wave — expanding blue ring */}
+      <mesh ref={kbRef} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+        <ringGeometry args={[1.5, 2.0, 20]} />
+        <meshBasicMaterial color="#4488ff" transparent opacity={0.5} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* Rogue poison trail — green ground cloud */}
+      <mesh ref={poisonRef} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+        <circleGeometry args={[1.5, 12]} />
+        <meshBasicMaterial color="#30cc50" transparent opacity={0.4} side={THREE.DoubleSide} />
+      </mesh>
     </>
   );
 }
@@ -2049,6 +2245,11 @@ export function GameScene({ onRestart }: GameSceneProps) {
       useMetaStore.getState().addShards(bonus);
     }
     useGameStore.getState().setRunExtracted(true);
+    // Transfer gear to stash on extraction
+    for (const slot of ["weapon", "armor", "trinket"] as const) {
+      const gear = g.equippedGear[slot];
+      if (gear) useMetaStore.getState().addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
+    }
     // Mark player as dead so the restart useEffect triggers a full reset
     g.player.dead = true;
     g.running = false;

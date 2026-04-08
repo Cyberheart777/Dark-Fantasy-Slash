@@ -30,6 +30,7 @@ export function HUD({ onExtract }: HUDProps) {
     bossHP, bossMaxHP, bossName, bossAlive, bossSpecialWarn,
     highestBossWaveCleared, trialMode,
     equippedWeapon, equippedArmor, equippedTrinket,
+    damagePopups, playerX, playerZ,
   } = useGameStore();
 
   // Boss arrival announcement
@@ -208,6 +209,46 @@ export function HUD({ onExtract }: HUDProps) {
           <div style={styles.waveFlashSub}>enemies grow stronger</div>
         </div>
       )}
+
+      {/* Floating damage numbers */}
+      {damagePopups.slice(-15).map((popup) => {
+        const age = (performance.now() - popup.spawnTime) / 1000;
+        if (age > 0.8) return null;
+        // Rough world-to-screen: offset from center based on difference from player position
+        // Camera is isometric at ~28 units, viewport maps ~60 world units across ~100vw
+        const dx = (popup.x - playerX) * 1.5; // % of viewport
+        const dz = (popup.z - playerZ) * 1.2;
+        const rise = age * 60; // pixels upward
+        const opacity = Math.max(0, 1 - age / 0.8);
+        const scale = popup.isCrit ? 1.3 : 1;
+        return (
+          <div
+            key={popup.id}
+            style={{
+              position: "absolute",
+              left: `calc(50% + ${dx}vw)`,
+              top: `calc(42% + ${dz}vh - ${rise}px)`,
+              transform: `translateX(-50%) scale(${scale})`,
+              color: popup.isPlayer ? "#ff4444" : popup.isCrit ? "#ffcc00" : "#ffffff",
+              fontSize: popup.isCrit ? 18 : popup.isPlayer ? 16 : 14,
+              fontWeight: 900,
+              fontFamily: "monospace",
+              textShadow: popup.isCrit
+                ? "0 0 8px #ffaa00, 0 0 16px #ff6600"
+                : popup.isPlayer
+                ? "0 0 8px #ff0000"
+                : "0 0 6px #000000, 0 0 3px #000000",
+              opacity,
+              pointerEvents: "none",
+              whiteSpace: "nowrap",
+              letterSpacing: 1,
+            }}
+          >
+            {popup.isPlayer ? `-${Math.round(popup.value)}` : Math.round(popup.value)}
+            {popup.isCrit && <span style={{ fontSize: 10, marginLeft: 2, color: "#ffaa00" }}>!</span>}
+          </div>
+        );
+      })}
     </div>
   );
 }
