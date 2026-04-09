@@ -602,13 +602,17 @@ function CameraController({ gs }: { gs: React.RefObject<GameState | null> }) {
     target.current.set(p.x, 28, p.z + 22);
 
     // Apply shake — decays via the per-shake duration so larger triggers
-    // shake longer in addition to harder.
+    // shake longer in addition to harder. Gated on the user setting: even
+    // if triggerShake() has been called, we skip the camera displacement
+    // when shake is disabled, but still tick the timer down so it expires.
     if (g.shakeTimer > 0) {
       g.shakeTimer -= delta;
-      const decay = Math.max(0, g.shakeTimer / Math.max(0.0001, g.shakeDur));
-      const a = g.shakeAmp * decay;
-      target.current.x += (Math.random() - 0.5) * a;
-      target.current.z += (Math.random() - 0.5) * a;
+      if (useMetaStore.getState().settings.screenShake) {
+        const decay = Math.max(0, g.shakeTimer / Math.max(0.0001, g.shakeDur));
+        const a = g.shakeAmp * decay;
+        target.current.x += (Math.random() - 0.5) * a;
+        target.current.z += (Math.random() - 0.5) * a;
+      }
       if (g.shakeTimer <= 0) g.shakeAmp = 0;
     }
 
@@ -640,8 +644,10 @@ const ARENA = GAME_CONFIG.ARENA_HALF - 0.5;
 
 function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
   const phase = useGameStore((s) => s.phase);
-  const enemies = useGameStore((s) => s.enemies);
-  const xpOrbs = useGameStore((s) => s.xpOrbs);
+  // Intentionally NOT subscribing to s.enemies / s.xpOrbs here — no UI
+  // component actually reads those store fields, so subscribing would force
+  // GameLoop to re-render every frame (new array identity every frame) for
+  // zero benefit. Scene-graph reads come from gs.current.enemies directly.
   const attackTrigger = useGameStore((s) => s.attackTrigger);
   const playerX = useGameStore((s) => s.playerX);
   const playerZ = useGameStore((s) => s.playerZ);
@@ -1848,19 +1854,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       g.progression.xp,
       g.progression.xpToNextLevel
     );
-    store.setEnemies(
-      g.enemies.map((e) => ({
-        id: e.id, x: e.x, z: e.z,
-        healthPct: e.hp / e.maxHp,
-        type: e.type, dead: e.dead,
-      }))
-    );
-    store.setXPOrbs(
-      g.xpOrbs.map((o) => ({
-        id: o.id, x: o.x, z: o.z,
-        value: o.value, collected: o.collected,
-      }))
-    );
+    // NOTE: store.setEnemies() and store.setXPOrbs() used to run here every
+    // frame, projecting g.enemies / g.xpOrbs into EnemyUIState[] / XPOrbState[]
+    // shapes. No UI component actually reads those store fields — the scene
+    // graph renders directly from gs.current.enemies / gs.current.xpOrbs — so
+    // those writes were pure allocation waste (~30+ objects/frame at wave 20).
+    // The setters still exist on the store for future use; they just aren't
+    // called on the hot path.
     store.setWaveInfo(g.wave, g.score, g.kills, g.survivalTime);
     store.setHighestBossWaveCleared(g.highestBossWaveCleared);
 

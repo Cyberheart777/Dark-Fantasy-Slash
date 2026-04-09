@@ -40,6 +40,7 @@ export function HUD({ onExtract }: HUDProps) {
   const hasSeenTutorial = useMetaStore((s) => s.hasSeenTutorial);
   const markTutorialSeen = useMetaStore((s) => s.markTutorialSeen);
   const showTutorial = !hasSeenTutorial && !isMobile;
+  const settings = useMetaStore((s) => s.settings);
 
   useEffect(() => {
     if (!showTutorial) return;
@@ -261,6 +262,9 @@ export function HUD({ onExtract }: HUDProps) {
         const duration = popup.durationSec ?? 0.8;
         const age = (performance.now() - popup.spawnTime) / 1000;
         if (age > duration) return null;
+        // Damage number toggle: text popups (Item Dropped, etc.) always render.
+        // Numeric popups are gated on the setting.
+        if (!popup.text && !settings.damageNumbers) return null;
         // Rough world-to-screen: offset from center based on difference from player position
         // Camera is isometric at ~28 units, viewport maps ~60 world units across ~100vw
         const dx = (popup.x - playerX) * 1.5; // % of viewport

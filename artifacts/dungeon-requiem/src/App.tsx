@@ -34,6 +34,17 @@ function musicForPhase(phase: string): SoundKey | null {
 
 export default function App() {
   const phase = useGameStore((s) => s.phase);
+  const masterVolume = useGameStore((s) => s.masterVolume);
+  const sfxVolume = useGameStore((s) => s.sfxVolume);
+  const musicVolume = useGameStore((s) => s.musicVolume);
+  const muted = useGameStore((s) => s.muted);
+
+  // Propagate volume settings to the AudioManager whenever they change.
+  // Without this, the sliders in the pause menu would update store state
+  // but leave the actual audio output unchanged.
+  useEffect(() => {
+    audioManager.setVolume(masterVolume, sfxVolume, musicVolume, muted);
+  }, [masterVolume, sfxVolume, musicVolume, muted]);
 
   // ── Centralized music controller ──────────────────────────────────────────
   // Watches phase and plays the matching music track. playMusic() is

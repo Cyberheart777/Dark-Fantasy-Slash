@@ -11,6 +11,13 @@ import { audioManager } from "../audio/AudioManager";
 /** Play the UI click SFX and invoke the given handler. */
 const click = (fn: () => void) => () => { audioManager.play("menu_click"); fn(); };
 
+/**
+ * Displayed version. Bump per release — this line is the single source of
+ * truth for the version tag shown in the main menu and (eventually) the
+ * game-over screen. Format: MAJOR.MINOR.PATCH.
+ */
+const GAME_VERSION = "v0.1.0";
+
 function useIsMobile() {
   const [mob, setMob] = useState(() => window.innerWidth < 900);
   useEffect(() => {
@@ -39,6 +46,11 @@ export function MainMenu() {
       <div style={styles.vignette} />
 
       <div style={styles.panel}>
+        <div style={styles.eaBadge}>
+          <span style={styles.eaDot} />
+          EARLY ACCESS · {GAME_VERSION}
+        </div>
+
         <div style={styles.titleWrapper}>
           <div style={styles.titleGlow}>DUNGEON</div>
           <div style={styles.titleMain}>DUNGEON</div>
@@ -46,6 +58,9 @@ export function MainMenu() {
           <div style={styles.subtitle}>REQUIEM</div>
         </div>
 
+        <div style={styles.pitch}>
+          Dark fantasy roguelike — slay, die, return stronger.
+        </div>
         <div style={styles.tagline}>The world did not end in fire… it rotted.</div>
 
         <div style={styles.divider} />
@@ -105,7 +120,12 @@ export function MainMenu() {
         </div>
       </div>
 
-      <div style={styles.footer}>It calls. Not with words — but with hunger.</div>
+      <div style={styles.footer}>
+        <div style={styles.eaDisclaimer}>
+          Early Access: expect bugs, expect updates. Your feedback shapes the dungeon.
+        </div>
+        <div style={styles.footerQuote}>It calls. Not with words — but with hunger.</div>
+      </div>
     </div>
   );
 }
@@ -139,6 +159,52 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: "auto",
     position: "relative",
     zIndex: 1,
+  },
+  eaBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    fontSize: 10,
+    letterSpacing: 2,
+    fontWeight: 900,
+    color: "#ffd700",
+    background: "rgba(60,40,0,0.55)",
+    border: "1px solid rgba(200,150,0,0.5)",
+    borderRadius: 12,
+    padding: "4px 12px",
+    marginBottom: 14,
+    fontFamily: "monospace",
+    textShadow: "0 0 6px rgba(255,180,0,0.5)",
+  },
+  eaDot: {
+    display: "inline-block",
+    width: 6,
+    height: 6,
+    borderRadius: "50%",
+    background: "#ffcc00",
+    boxShadow: "0 0 6px #ffaa00",
+  },
+  pitch: {
+    color: "rgba(220,200,240,0.85)",
+    fontSize: 13,
+    letterSpacing: 1.5,
+    marginTop: 12,
+    fontWeight: 600,
+    textShadow: "0 0 8px rgba(140,60,200,0.4)",
+  },
+  eaDisclaimer: {
+    color: "rgba(200,160,100,0.55)",
+    fontSize: 10,
+    letterSpacing: 1.5,
+    marginBottom: 4,
+    fontFamily: "monospace",
+  },
+  footerQuote: {
+    color: "rgba(120,100,140,0.5)",
+    fontSize: 11,
+    letterSpacing: 2,
+    whiteSpace: "nowrap",
+    fontStyle: "italic" as const,
   },
   titleWrapper: {
     position: "relative",
@@ -309,12 +375,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   footer: {
     position: "absolute",
-    bottom: 24,
+    bottom: 18,
     left: "50%",
     transform: "translateX(-50%)",
-    color: "rgba(120,100,140,0.5)",
-    fontSize: 12,
-    letterSpacing: 2,
-    whiteSpace: "nowrap",
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    gap: 4,
+    textAlign: "center" as const,
   },
 };

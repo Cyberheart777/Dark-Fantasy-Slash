@@ -102,6 +102,12 @@ export interface MetaState {
   // First-run onboarding flag — set once the player has seen the HUD tutorial
   hasSeenTutorial: boolean;
 
+  // User settings — persisted across runs
+  settings: {
+    screenShake: boolean;   // camera shake on hits / kills / boss slams
+    damageNumbers: boolean; // floating numeric popups (text popups always show)
+  };
+
   // Actions
   addShards: (amount: number) => void;
   spendShards: (amount: number) => boolean;
@@ -117,6 +123,7 @@ export interface MetaState {
   addGearToStash: (gear: { id: string; name: string; icon: string; rarity: string; slot: string }) => void;
   sellGear: (index: number) => void;
   markTutorialSeen: () => void;
+  setSettings: (patch: Partial<MetaState["settings"]>) => void;
 }
 
 /** Shard value when selling gear at the forge. Intentionally low. */
@@ -138,6 +145,10 @@ const DEFAULT_STATE = {
   trialWins: {} as Record<string, string>,
   gearStash: [] as Array<{ id: string; name: string; icon: string; rarity: string; slot: string }>,
   hasSeenTutorial: false,
+  settings: {
+    screenShake: true,
+    damageNumbers: true,
+  },
 };
 
 export const useMetaStore = create<MetaState>()(
@@ -244,10 +255,13 @@ export const useMetaStore = create<MetaState>()(
       },
 
       markTutorialSeen: () => set({ hasSeenTutorial: true }),
+
+      setSettings: (patch) =>
+        set((s) => ({ settings: { ...s.settings, ...patch } })),
     }),
     {
       name: "dungeon-requiem-meta",
-      version: 4, // bumped from 3 — triggers migration
+      version: 5, // bumped from 4 — triggers migration
       migrate: (persisted: any, version: number) => {
         let state = persisted ?? {};
         if (version < 3) {
@@ -264,6 +278,13 @@ export const useMetaStore = create<MetaState>()(
           // Returning players have already learned the controls — skip the
           // tutorial overlay for them. Only fresh installs see it.
           state = { ...state, hasSeenTutorial: true };
+        }
+        if (version < 5) {
+          // New user settings default to on for returning players.
+          state = {
+            ...state,
+            settings: { screenShake: true, damageNumbers: true },
+          };
         }
         return state as MetaState;
       },
