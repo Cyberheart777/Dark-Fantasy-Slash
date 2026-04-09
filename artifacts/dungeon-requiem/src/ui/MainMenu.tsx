@@ -150,21 +150,22 @@ const styles: Record<string, React.CSSProperties> = {
     // AND as tonal tinting) + the key art image on top.
     //
     // Sizing / position notes:
-    //   - `background-size: auto 108%` scales the image to ~8% taller
-    //     than the viewport. That gives us vertical "room" to shift the
-    //     image without leaving a gap at the top or bottom.
-    //   - `background-position: center bottom` pins the bottom of the
-    //     image to the bottom of the viewport, so the ~8% of extra
-    //     height overflows off the TOP of the viewport. Visually this
-    //     shifts the entire composition UP by ~50-80px depending on
-    //     window size — roughly the "like an inch" tweak you asked for
-    //     on top of the previous position fix.
-    //   - The dark fallback gradient underneath still covers any
-    //     horizontal margin on very wide monitors, so nothing shows
-    //     through on either side.
+    //   - `background-size: auto 103%` scales the image to ~3% taller
+    //     than the viewport (was 108%). Smaller overscale = smaller
+    //     image AND less content cropped off the top, which visually
+    //     shifts the composition DOWN compared to the previous tuning.
+    //     One number change addresses both "shrink" and "bring down"
+    //     because with `center bottom` anchoring, all the overflow is
+    //     at the top — reducing overflow automatically reveals more of
+    //     the top of the source.
+    //   - `background-position: center bottom` unchanged — image still
+    //     bottom-pinned.
+    //   - If this is too subtle, nudge to `auto 102%` for even less
+    //     shift. If too much, bump to `auto 104%` or `105%` for a
+    //     smaller down-shift.
     background: `
       linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.55)),
-      url("${MENU_BG_URL}") center bottom / auto 108% no-repeat,
+      url("${MENU_BG_URL}") center bottom / auto 103% no-repeat,
       radial-gradient(ellipse at center, #12001a 0%, #04000a 100%)
     `,
     fontFamily: "'Segoe UI', monospace",
