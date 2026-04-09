@@ -25,6 +25,7 @@ export type SoundKey =
   | "level_up"
   | "xp_pickup"
   | "dash"
+  | "gear_drop"
   | "boss_spawn"
   | "boss_special"
   | "boss_death"
@@ -50,6 +51,7 @@ export const SOUND_REGISTRY: Record<SoundKey, SoundDef> = {
   level_up:       { category: "sfx",   src: "", volume: 0.9 },
   xp_pickup:      { category: "sfx",   src: "", volume: 0.3 },
   dash:           { category: "sfx",   src: "", volume: 0.5 },
+  gear_drop:      { category: "sfx",   src: "", volume: 0.85 },
   boss_spawn:     { category: "sfx",   src: "", volume: 1.0 },
   boss_special:   { category: "sfx",   src: "", volume: 0.9 },
   boss_death:     { category: "sfx",   src: "", volume: 1.0 },

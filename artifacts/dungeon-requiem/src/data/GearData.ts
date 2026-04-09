@@ -77,14 +77,19 @@ export function rollGearDrop(rarity: GearRarity, forSlot?: GearSlot): GearDef {
  * Common is the base chance. Rare and epic are much lower.
  * Roll each rarity independently — epic first, then rare, then common.
  * This means you can't get a common if you roll an epic.
+ *
+ * Tuned for early-access pacing: a new player should see at least one drop
+ * within their first 5 waves so the gear system is visibly present from the
+ * start. Boss and Trial Champion rates are intentionally left high so those
+ * fights still feel rewarding.
  */
 export const GEAR_DROP_RATES: Record<string, Record<GearRarity, number>> = {
-  scuttler:          { common: 0,      rare: 0,      epic: 0 },
-  wraith:            { common: 0,      rare: 0,      epic: 0 },
-  brute:             { common: 0.001,  rare: 0.0002, epic: 0 },        // 0.1% common, 0.02% rare
-  elite:             { common: 0.01,   rare: 0.003,  epic: 0.0005 },   // 1% common, 0.3% rare, 0.05% epic
+  scuttler:          { common: 0.005,  rare: 0,      epic: 0 },        // 0.5% common
+  wraith:            { common: 0.005,  rare: 0.001,  epic: 0 },        // 0.5% common, 0.1% rare
+  brute:             { common: 0.02,   rare: 0.003,  epic: 0 },        // 2% common, 0.3% rare
+  elite:             { common: 0.05,   rare: 0.01,   epic: 0.002 },    // 5% common, 1% rare, 0.2% epic
   boss:              { common: 0.10,   rare: 0.04,   epic: 0.01 },     // 10% common, 4% rare, 1% epic
-  xp_goblin:         { common: 0.005,  rare: 0.001,  epic: 0 },        // 0.5% common, 0.1% rare
+  xp_goblin:         { common: 0.02,   rare: 0.004,  epic: 0 },        // 2% common, 0.4% rare — rewards chasing
   warrior_champion:  { common: 1.0,    rare: 0.40,   epic: 0.10 },     // guaranteed common, 40% rare, 10% epic
   mage_champion:     { common: 1.0,    rare: 0.40,   epic: 0.10 },
   rogue_champion:    { common: 1.0,    rare: 0.40,   epic: 0.10 },

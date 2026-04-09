@@ -22,7 +22,7 @@ import { createDefaultStats, type PlayerStats } from "../data/UpgradeData";
 import { buildMetaModifiers, buildTrialModifiers } from "../data/MetaUpgradeData";
 import { resolveStats } from "../data/StatModifier";
 import { InputManager3D } from "./InputManager3D";
-import { tryRollGear, type GearDef } from "../data/GearData";
+import { tryRollGear, GEAR_RARITY_COLOR, type GearDef } from "../data/GearData";
 import { DungeonRoom } from "../world/DungeonRoom";
 import { Torch3D } from "../world/Torch3D";
 import { Player3D } from "../entities/Player3D";
@@ -238,6 +238,15 @@ function spawnDmgPopup(x: number, z: number, value: number, isCrit: boolean, isP
   });
 }
 
+/** Spawn a floating text popup (e.g. "Item Dropped!") with a custom color + duration. */
+function spawnTextPopup(x: number, z: number, text: string, color: string, durationSec = 2.5): void {
+  useGameStore.getState().addDamagePopup({
+    id: popupId(), x, z, value: 0, isCrit: false, isPlayer: false,
+    spawnTime: performance.now(),
+    text, color, durationSec,
+  });
+}
+
 const CRYSTAL_TIER: Record<string, CrystalTier> = {
   scuttler:         "green",
   wraith:           "blue",
@@ -338,14 +347,25 @@ function handlePlayerFatalDmg(p: PlayerRuntime, g: GameState): boolean {
 function trySpawnGear(enemyType: string, x: number, z: number, g: GameState): void {
   const gear = tryRollGear(enemyType);
   if (!gear) return;
+  const dropX = x + (Math.random() - 0.5) * 1.5;
+  const dropZ = z + (Math.random() - 0.5) * 1.5;
   g.gearDrops.push({
     id: gearId(),
-    x: x + (Math.random() - 0.5) * 1.5,
-    z: z + (Math.random() - 0.5) * 1.5,
+    x: dropX,
+    z: dropZ,
     gear,
     floatOffset: Math.random() * Math.PI * 2,
     lifetime: 20,
   });
+  // Drop-event feedback: chime + floating "Item Dropped!" text in rarity color
+  audioManager.play("gear_drop");
+  const rarityColor = GEAR_RARITY_COLOR[gear.rarity].text;
+  const label = gear.rarity === "epic"
+    ? `EPIC! ${gear.icon} ${gear.name}`
+    : gear.rarity === "rare"
+      ? `Rare! ${gear.icon} ${gear.name}`
+      : `${gear.icon} ${gear.name}`;
+  spawnTextPopup(dropX, dropZ, label, rarityColor, 2.5);
 }
 
 /** Equip a gear piece: apply bonuses to stats, replace any existing gear in that slot. */
@@ -1366,11 +1386,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     // Remove after animation completes
     g.xpOrbs = g.xpOrbs.filter((o) => !o.collected || o.collectTimer < 0.2);
 
-    // ── Damage popup cleanup (expire after 1s) ──────────────────────────
+    // ── Damage popup cleanup (expire based on per-popup durationSec, default 1s) ──
     const now = performance.now();
     const popups = store.damagePopups;
-    if (popups.length > 0 && now - popups[0].spawnTime > 1000) {
-      const fresh = popups.filter((pp) => now - pp.spawnTime < 1000);
+    if (popups.length > 0) {
+      const fresh = popups.filter((pp) => (now - pp.spawnTime) / 1000 < (pp.durationSec ?? 1.0));
       if (fresh.length !== popups.length) {
         useGameStore.setState({ damagePopups: fresh });
       }

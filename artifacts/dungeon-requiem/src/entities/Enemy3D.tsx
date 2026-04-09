@@ -2,17 +2,18 @@
  * Enemy3D.tsx
  * Renders each enemy based on its type.
  * Low-poly distinct silhouettes with per-type animations:
- *   - Scuttler: leg scurry
- *   - Brute: arm swing + stomp walk
- *   - Wraith: float bob + arm sway + robe sway
- *   - Elite: walk cycle + weapon sway
- *   - Boss: aura + arm slam + breathing
- *   - XP Goblin: hop
- *   - Champions: walk cycles + unique idles
+ *   - Scuttler: leg scurry + lunge strike
+ *   - Brute: arm swing + stomp walk + overhead slam
+ *   - Wraith: float bob + arm sway + robe sway + cast pulse
+ *   - Elite: walk cycle + weapon sway + sword swing
+ *   - Boss: aura + arm slam + breathing + two-handed slam
+ *   - XP Goblin: hop (no attack — non-combat)
+ *   - Warrior Champion: walk cycle + sword swing
+ *   - Mage/Rogue Champion: idle animations (ranged — attack via projectile VFX)
  *   - ALL: spawn scale-in, death shrink+sink, hit flash
  */
 
-import { useRef } from "react";
+import { useRef, type MutableRefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { EnemyRuntime } from "../game/GameScene";
@@ -26,6 +27,46 @@ interface EnemyProps {
 /** Returns a walk speed factor based on enemy velocity. */
 function getWalkSpeed(e: EnemyRuntime): number {
   return Math.sqrt(e.vx * e.vx + e.vz * e.vz);
+}
+
+/**
+ * Compute attack animation state from the raw attackTimer/attackInterval
+ * values threaded from EnemyRuntime. Returns:
+ *   - windup:  0..1, ramps toward 1 as the enemy prepares to strike
+ *   - strike:  0..1, momentary pulse right after an attack fires (decays ~0.2s)
+ *
+ * Detects "attacking" by watching the timer decrease, and "justAttacked" by
+ * the reset jump from ~0 back up to attackInterval. When the enemy is out of
+ * range the timer is frozen by the game loop, so windup decays back to 0.
+ */
+function updateAttackState(
+  attackTimer: number,
+  attackInterval: number,
+  prevRef: MutableRefObject<number>,
+  windupRef: MutableRefObject<number>,
+  strikeRef: MutableRefObject<number>,
+  delta: number,
+): { windup: number; strike: number } {
+  const prev = prevRef.current;
+  // Timer decreasing → enemy is in range and counting down to next attack
+  const attacking = attackTimer < prev - 1e-4;
+  // Timer reset (went from ~0 back up to attackInterval) → an attack just fired
+  const justAttacked = attackTimer > prev + 0.1;
+  prevRef.current = attackTimer;
+
+  const hasValidInterval = attackInterval > 0 && attackInterval < 99;
+  // Windup ramps 0→1 over the last 0.4s before the next strike
+  const windupTarget = attacking && hasValidInterval
+    ? Math.max(0, Math.min(1, 1 - attackTimer / 0.4))
+    : 0;
+  // Smooth lerp so motion blends with existing walk cycle
+  windupRef.current += (windupTarget - windupRef.current) * Math.min(1, delta * 15);
+
+  if (justAttacked) strikeRef.current = 1;
+  // Strike pulse decays over ~0.2s
+  strikeRef.current = Math.max(0, strikeRef.current - delta * 5);
+
+  return { windup: windupRef.current, strike: strikeRef.current };
 }
 
 // ─── Health Bar ──────────────────────────────────────────────────────────────
@@ -48,19 +89,34 @@ function HealthBar({ healthPct }: { healthPct: number }) {
 
 // ─── Scuttler ────────────────────────────────────────────────────────────────
 
-function ScuttlerMesh({ color, emissive, flash }: { color: string; emissive: string; flash: boolean }) {
+function ScuttlerMesh({ color, emissive, flash, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
   const legRefs = useRef<THREE.Mesh[]>([]);
+  const bodyGroupRef = useRef<THREE.Group>(null);
+  // Attack anim state
+  const prevAttackRef = useRef(attackTimer);
+  const windupRef = useRef(0);
+  const strikeRef = useRef(0);
 
   useFrame((_, delta) => {
     t.current += delta;
     legRefs.current.forEach((leg, i) => {
       if (leg) leg.rotation.x = Math.sin(t.current * 12 + i * 1.2) * 0.5;
     });
+
+    const { windup, strike } = updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
+    if (bodyGroupRef.current) {
+      // Windup: coil back slightly (tilt up + pull z). Strike: lunge forward.
+      const crouch = windup * 0.25;
+      const lunge = strike * 0.5 - windup * 0.15;
+      bodyGroupRef.current.position.z = lunge;
+      bodyGroupRef.current.position.y = crouch * 0.1;
+      bodyGroupRef.current.rotation.x = -crouch * 0.3 + strike * 0.2;
+    }
   });
 
   return (
-    <group>
+    <group ref={bodyGroupRef}>
       <mesh castShadow position={[0, 0.35, 0]}>
         <boxGeometry args={[0.8, 0.3, 0.9]} />
         <meshStandardMaterial color={flash ? "#ffffff" : color} emissive={emissive} emissiveIntensity={flash ? 3 : 0.5} roughness={0.6} />
@@ -96,27 +152,41 @@ function ScuttlerMesh({ color, emissive, flash }: { color: string; emissive: str
 
 // ─── Brute (NEW: walk cycle with arm swing + stomp bob) ─────────────────────
 
-function BruteMesh({ color, emissive, flash, walkSpeed }: { color: string; emissive: string; flash: boolean; walkSpeed: number }) {
+function BruteMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
   const bodyRef = useRef<THREE.Mesh>(null);
   const leftArmRef = useRef<THREE.Mesh>(null);
   const rightArmRef = useRef<THREE.Mesh>(null);
   const leftLegRef = useRef<THREE.Mesh>(null);
   const rightLegRef = useRef<THREE.Mesh>(null);
+  const prevAttackRef = useRef(attackTimer);
+  const windupRef = useRef(0);
+  const strikeRef = useRef(0);
 
   useFrame((_, delta) => {
     t.current += delta;
     const moving = walkSpeed > 0.3;
     const freq = 5;
     const swing = moving ? Math.sin(t.current * freq) : 0;
-    // Body sway + stomp bob
+    const { windup, strike } = updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
+    // Body sway + stomp bob + slight lean forward on strike
     if (bodyRef.current) {
       bodyRef.current.rotation.y = swing * 0.08;
+      bodyRef.current.rotation.x = strike * 0.35 - windup * 0.1;
       bodyRef.current.position.y = 1.3 + (moving ? Math.abs(Math.sin(t.current * freq * 2)) * 0.06 : Math.sin(t.current * 0.8) * 0.02);
     }
-    // Arm swing (opposite to legs)
-    if (leftArmRef.current) leftArmRef.current.rotation.x = moving ? -swing * 0.4 : Math.sin(t.current * 1.2) * 0.05;
-    if (rightArmRef.current) rightArmRef.current.rotation.x = moving ? swing * 0.4 : Math.sin(t.current * 1.2 + 0.5) * 0.05;
+    // Arm swing overlaid with overhead slam:
+    //   windup → arms raise up (rotation.x negative = arm goes backward/up with pivot at shoulder)
+    //   strike → arms slam down hard (positive)
+    const slam = -windup * 1.8 + strike * 2.2;
+    if (leftArmRef.current) {
+      const walkSwing = moving ? -swing * 0.4 : Math.sin(t.current * 1.2) * 0.05;
+      leftArmRef.current.rotation.x = walkSwing + slam;
+    }
+    if (rightArmRef.current) {
+      const walkSwing = moving ? swing * 0.4 : Math.sin(t.current * 1.2 + 0.5) * 0.05;
+      rightArmRef.current.rotation.x = walkSwing + slam;
+    }
     // Leg swing
     if (leftLegRef.current) leftLegRef.current.rotation.x = moving ? swing * 0.35 : 0;
     if (rightLegRef.current) rightLegRef.current.rotation.x = moving ? -swing * 0.35 : 0;
@@ -178,7 +248,7 @@ function BruteMesh({ color, emissive, flash, walkSpeed }: { color: string; emiss
 
 // ─── Wraith (IMPROVED: arm sway + robe sway + eye flicker) ──────────────────
 
-function WraithMesh({ color, emissive, flash }: { color: string; emissive: string; flash: boolean }) {
+function WraithMesh({ color, emissive, flash, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
   const groupRef = useRef<THREE.Group>(null);
   const leftArmRef = useRef<THREE.Mesh>(null);
@@ -186,28 +256,34 @@ function WraithMesh({ color, emissive, flash }: { color: string; emissive: strin
   const robeRef = useRef<THREE.Mesh>(null);
   const eyeLeftRef = useRef<THREE.Mesh>(null);
   const eyeRightRef = useRef<THREE.Mesh>(null);
+  const prevAttackRef = useRef(attackTimer);
+  const windupRef = useRef(0);
+  const strikeRef = useRef(0);
 
   useFrame((_, delta) => {
     t.current += delta;
+    const { windup, strike } = updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
     if (groupRef.current) {
-      groupRef.current.position.y = Math.sin(t.current * 2.5) * 0.2;
+      // Float bob + slight rise on windup (gathering energy)
+      groupRef.current.position.y = Math.sin(t.current * 2.5) * 0.2 + windup * 0.25;
     }
-    // Arm sway — ghostly reaching
+    // Arm sway — ghostly reaching; on windup both arms rise forward for cast; on strike they thrust
+    const castRise = windup * 0.9 + strike * 0.4;
     if (leftArmRef.current) {
-      leftArmRef.current.rotation.z = 0.6 + Math.sin(t.current * 1.8) * 0.3;
-      leftArmRef.current.rotation.x = Math.sin(t.current * 1.3 + 1) * 0.2;
+      leftArmRef.current.rotation.z = 0.6 + Math.sin(t.current * 1.8) * 0.3 - castRise * 0.5;
+      leftArmRef.current.rotation.x = Math.sin(t.current * 1.3 + 1) * 0.2 - castRise * 0.7;
     }
     if (rightArmRef.current) {
-      rightArmRef.current.rotation.z = -0.6 - Math.sin(t.current * 1.8 + 2) * 0.3;
-      rightArmRef.current.rotation.x = Math.sin(t.current * 1.3) * 0.2;
+      rightArmRef.current.rotation.z = -0.6 - Math.sin(t.current * 1.8 + 2) * 0.3 + castRise * 0.5;
+      rightArmRef.current.rotation.x = Math.sin(t.current * 1.3) * 0.2 - castRise * 0.7;
     }
     // Robe sway
     if (robeRef.current) {
       robeRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.08;
       robeRef.current.rotation.z = Math.sin(t.current * 1.1) * 0.05;
     }
-    // Eye flicker
-    const flicker = 3 + Math.sin(t.current * 8) * 2;
+    // Eye flicker — intensifies on windup, peaks on strike
+    const flicker = 3 + Math.sin(t.current * 8) * 2 + windup * 4 + strike * 6;
     if (eyeLeftRef.current) (eyeLeftRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity = flicker;
     if (eyeRightRef.current) (eyeRightRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity = flicker;
   });
@@ -248,7 +324,7 @@ function WraithMesh({ color, emissive, flash }: { color: string; emissive: strin
 
 // ─── Elite (NEW: walk cycle + weapon sway + breathing) ──────────────────────
 
-function EliteMesh({ color, emissive, flash, walkSpeed }: { color: string; emissive: string; flash: boolean; walkSpeed: number }) {
+function EliteMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
   const leftLegRef = useRef<THREE.Mesh>(null);
   const rightLegRef = useRef<THREE.Mesh>(null);
@@ -256,26 +332,34 @@ function EliteMesh({ color, emissive, flash, walkSpeed }: { color: string; emiss
   const rightArmRef = useRef<THREE.Mesh>(null);
   const torsoRef = useRef<THREE.Mesh>(null);
   const weaponRef = useRef<THREE.Mesh>(null);
+  const prevAttackRef = useRef(attackTimer);
+  const windupRef = useRef(0);
+  const strikeRef = useRef(0);
 
   useFrame((_, delta) => {
     t.current += delta;
     const moving = walkSpeed > 0.3;
     const freq = 6;
     const swing = moving ? Math.sin(t.current * freq) : 0;
+    const { windup, strike } = updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
     // Legs
     if (leftLegRef.current) leftLegRef.current.rotation.x = swing * 0.3;
     if (rightLegRef.current) rightLegRef.current.rotation.x = -swing * 0.3;
-    // Arms (opposite)
+    // Arms (opposite) — right arm (weapon arm) winds back then swings forward on strike
     if (leftArmRef.current) leftArmRef.current.rotation.x = moving ? -swing * 0.35 : Math.sin(t.current * 1.2) * 0.04;
-    if (rightArmRef.current) rightArmRef.current.rotation.x = moving ? swing * 0.35 : Math.sin(t.current * 1.2 + 1) * 0.04;
-    // Torso breathing + walk bob
+    if (rightArmRef.current) {
+      const walkBase = moving ? swing * 0.35 : Math.sin(t.current * 1.2 + 1) * 0.04;
+      rightArmRef.current.rotation.x = walkBase - windup * 0.8 + strike * 1.4;
+    }
+    // Torso breathing + walk bob + twist into swing
     if (torsoRef.current) {
       torsoRef.current.position.y = 1.4 + (moving ? Math.abs(Math.sin(t.current * freq * 2)) * 0.04 : Math.sin(t.current * 1.5) * 0.02);
-      torsoRef.current.rotation.z = moving ? swing * 0.04 : 0;
+      torsoRef.current.rotation.z = (moving ? swing * 0.04 : 0) - windup * 0.12 + strike * 0.25;
     }
-    // Weapon sway
+    // Weapon sway + diagonal slash on strike (rotate on Z for an arc across the body)
     if (weaponRef.current) {
-      weaponRef.current.rotation.z = 0.3 + Math.sin(t.current * 2) * 0.08;
+      weaponRef.current.rotation.z = 0.3 + Math.sin(t.current * 2) * 0.08 + windup * 1.1 - strike * 2.0;
+      weaponRef.current.rotation.x = 0.2 - windup * 0.4 + strike * 0.8;
     }
   });
 
@@ -349,31 +433,43 @@ function EliteMesh({ color, emissive, flash, walkSpeed }: { color: string; emiss
 
 // ─── Boss (IMPROVED: arm movement + breathing + aura pulse) ─────────────────
 
-function BossMesh({ color, emissive, flash }: { color: string; emissive: string; flash: boolean }) {
+function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
   const auraRef = useRef<THREE.Mesh>(null);
   const leftArmRef = useRef<THREE.Mesh>(null);
   const rightArmRef = useRef<THREE.Mesh>(null);
   const torsoRef = useRef<THREE.Mesh>(null);
+  const prevAttackRef = useRef(attackTimer);
+  const windupRef = useRef(0);
+  const strikeRef = useRef(0);
 
   useFrame((_, delta) => {
     t.current += delta;
+    const { windup, strike } = updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
     if (auraRef.current) {
       auraRef.current.rotation.y = t.current * 0.8;
-      auraRef.current.scale.y = 1 + Math.sin(t.current * 2) * 0.1;
+      // Aura expands on windup, flashes on strike
+      auraRef.current.scale.y = 1 + Math.sin(t.current * 2) * 0.1 + strike * 0.8;
+      const auraSpread = 1 + windup * 0.25 + strike * 0.4;
+      auraRef.current.scale.x = auraSpread;
+      auraRef.current.scale.z = auraSpread;
     }
-    // Breathing — torso scale pulse
+    // Breathing — torso scale pulse + lean forward on strike
     if (torsoRef.current) {
       const breath = 1 + Math.sin(t.current * 1.2) * 0.03;
       torsoRef.current.scale.set(breath, 1, breath);
+      torsoRef.current.rotation.x = strike * 0.3 - windup * 0.08;
     }
-    // Menacing arm sway
+    // Menacing arm sway + overhead slam:
+    //   windup → both arms raise up (negative X = raise)
+    //   strike → slam down hard (positive X)
+    const slam = -windup * 1.6 + strike * 2.4;
     if (leftArmRef.current) {
-      leftArmRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.15;
+      leftArmRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.15 + slam;
       leftArmRef.current.rotation.z = -0.1 + Math.sin(t.current * 0.8) * 0.05;
     }
     if (rightArmRef.current) {
-      rightArmRef.current.rotation.x = Math.sin(t.current * 1.5 + 1.5) * 0.15;
+      rightArmRef.current.rotation.x = Math.sin(t.current * 1.5 + 1.5) * 0.15 + slam;
       rightArmRef.current.rotation.z = 0.1 - Math.sin(t.current * 0.8 + 1) * 0.05;
     }
   });
@@ -497,24 +593,35 @@ function XPGoblinMesh({ color, emissive, flash }: { color: string; emissive: str
 
 // ─── Warrior Champion (IMPROVED: walk cycle + sword swing idle) ─────────────
 
-function WarriorChampionMesh({ color, emissive, flash, walkSpeed }: { color: string; emissive: string; flash: boolean; walkSpeed: number }) {
+function WarriorChampionMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
   const auraRef = useRef<THREE.Mesh>(null);
   const leftLegRef = useRef<THREE.Mesh>(null);
   const rightLegRef = useRef<THREE.Mesh>(null);
   const swordArmRef = useRef<THREE.Mesh>(null);
+  const prevAttackRef = useRef(attackTimer);
+  const windupRef = useRef(0);
+  const strikeRef = useRef(0);
 
   useFrame((_, delta) => {
     t.current += delta;
-    if (auraRef.current) auraRef.current.rotation.y = t.current * 0.6;
+    const { windup, strike } = updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
+    if (auraRef.current) {
+      auraRef.current.rotation.y = t.current * 0.6;
+      // Aura flares on strike
+      const flare = 1 + strike * 0.5 + windup * 0.15;
+      auraRef.current.scale.set(flare, 1, flare);
+    }
     const moving = walkSpeed > 0.3;
     const freq = 5.5;
     const swing = moving ? Math.sin(t.current * freq) : 0;
     if (leftLegRef.current) leftLegRef.current.rotation.x = swing * 0.3;
     if (rightLegRef.current) rightLegRef.current.rotation.x = -swing * 0.3;
-    // Sword arm: idle sway or walk swing
+    // Sword arm: idle sway or walk swing, overlaid with big overhead swing
     if (swordArmRef.current) {
-      swordArmRef.current.rotation.x = moving ? swing * 0.3 : Math.sin(t.current * 1.5) * 0.1;
+      const base = moving ? swing * 0.3 : Math.sin(t.current * 1.5) * 0.1;
+      swordArmRef.current.rotation.x = base - windup * 1.5 + strike * 2.2;
+      swordArmRef.current.rotation.z = -windup * 0.3 + strike * 0.5;
     }
   });
 
@@ -836,19 +943,20 @@ export function Enemy3D({ enemy }: EnemyProps) {
 
   const flash = enemy.hitFlashTimer > 0;
   const meshProps = { color: enemy.color, emissive: enemy.emissive, flash };
+  const attackProps = { attackTimer: enemy.attackTimer, attackInterval: enemy.attackInterval };
   const walkSpeed = getWalkSpeed(enemy);
   const hpBarHeight = enemy.scale * 2.5 + 0.5;
 
   return (
     <group ref={groupRef}>
       <group scale={enemy.scale}>
-        {enemy.type === "scuttler" && <ScuttlerMesh {...meshProps} />}
-        {enemy.type === "brute" && <BruteMesh {...meshProps} walkSpeed={walkSpeed} />}
-        {enemy.type === "wraith" && <WraithMesh {...meshProps} />}
-        {enemy.type === "elite" && <EliteMesh {...meshProps} walkSpeed={walkSpeed} />}
-        {enemy.type === "boss" && <BossMesh {...meshProps} />}
+        {enemy.type === "scuttler" && <ScuttlerMesh {...meshProps} {...attackProps} />}
+        {enemy.type === "brute" && <BruteMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}
+        {enemy.type === "wraith" && <WraithMesh {...meshProps} {...attackProps} />}
+        {enemy.type === "elite" && <EliteMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}
+        {enemy.type === "boss" && <BossMesh {...meshProps} {...attackProps} />}
         {enemy.type === "xp_goblin" && <XPGoblinMesh {...meshProps} />}
-        {enemy.type === "warrior_champion" && <WarriorChampionMesh {...meshProps} walkSpeed={walkSpeed} />}
+        {enemy.type === "warrior_champion" && <WarriorChampionMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}
         {enemy.type === "mage_champion" && <MageChampionMesh {...meshProps} />}
         {enemy.type === "rogue_champion" && <RogueChampionMesh {...meshProps} walkSpeed={walkSpeed} />}
       </group>

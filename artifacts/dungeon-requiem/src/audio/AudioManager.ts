@@ -152,6 +152,8 @@ class AudioManager {
       case "level_up":        this._synthArpeggio(ctx, t, [261, 329, 392, 523], vol);      break;
       case "xp_pickup":       this._synthTone(ctx, t, 880, 1200, 0.01, 0.08, vol * 0.6);  break;
       case "dash":            this._synthNoise(ctx, t, 0.01, 0.14, vol * 0.7, 0.8, 0.1);  break;
+      // Distinct crystalline chime for gear drops — more resonant than pickup, ringing downward
+      case "gear_drop":       this._synthGearDrop(ctx, t, vol);                            break;
       case "boss_spawn":      this._synthBossStab(ctx, t, vol);                             break;
       case "boss_special":    this._synthBossRumble(ctx, t, vol);                          break;
       case "boss_death":      this._synthBossDeath(ctx, t, vol);                           break;
@@ -210,6 +212,15 @@ class AudioManager {
     src.connect(filter).connect(g).connect(this._sfxGain);
     src.start(t);
     src.stop(t + dur + 0.01);
+  }
+
+  /** Crystalline drop chime — two stacked bells with a bright shimmer tail. */
+  private _synthGearDrop(ctx: AudioContext, t: number, vol: number) {
+    // Two bell tones: bright high + mid fundamental, descending pitch for "drop" feel
+    this._synthTone(ctx, t, 1760, 1320, 0.005, 0.45, vol * 0.55, "sine");
+    this._synthTone(ctx, t + 0.02, 880, 660, 0.005, 0.5, vol * 0.45, "triangle");
+    // Short shimmer noise for sparkle
+    this._synthNoise(ctx, t + 0.01, 0.005, 0.15, vol * 0.2, 1.2, 1.6);
   }
 
   /** Rising arpeggio for level-up. */

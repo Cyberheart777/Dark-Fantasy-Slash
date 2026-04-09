@@ -47,6 +47,12 @@ export interface DamagePopup {
   isCrit: boolean;
   isPlayer: boolean;
   spawnTime: number;
+  /** If set, render this text instead of the numeric value (e.g. "Item Dropped!"). */
+  text?: string;
+  /** If set, overrides the default color (hex or CSS color). */
+  color?: string;
+  /** Lifetime in seconds. Defaults to 0.8s for damage numbers. */
+  durationSec?: number;
 }
 
 export interface GameUIState {
