@@ -4,8 +4,9 @@
  * HOW TO SWAP IN YOUR OWN AUDIO
  * ─────────────────────────────
  * 1. Drop your .mp3/.ogg/.wav file into /public/audio/sfx/ or /public/audio/music/.
- * 2. Set the `src` field for the matching key below to "/audio/sfx/yourfile.mp3"
- *    (or /audio/music/yourfile.mp3 for music loops).
+ * 2. Set the `src` field for the matching key below to a path resolved via
+ *    Vite's BASE_URL so the GitHub Pages subpath works in production:
+ *      src: `${import.meta.env.BASE_URL}audio/music/yourfile.mp3`
  * 3. Add an attribution entry to /public/audio/CREDITS.md if the license
  *    requires it (CC-BY, etc.).
  * 4. That's it — AudioManager.preload() fetches + decodes all file-backed
@@ -16,7 +17,15 @@
  * CATEGORIES
  *   sfx   — one-shot effects, respects sfxVolume
  *   music — looping background, respects musicVolume
+ *
+ * MUSIC SELECTION
+ *   `music_menu` and `music_dungeon` each pick ONE file from a pool of
+ *   variants on each play (see _pickMenuTrack / _pickDungeonTrack below).
+ *   Add as many variants as you like — the picker rotates through them
+ *   for variety. Currently 2 menu intros + 2 gameplay tracks.
  */
+
+const BASE = import.meta.env.BASE_URL;
 
 export type SoundKey =
   | "attack_melee"
@@ -46,6 +55,22 @@ export interface SoundDef {
   loop?: boolean;          // only relevant for music
 }
 
+/**
+ * Music variant pools. AudioManager.playMusic() picks one of these per
+ * play. Files live in public/audio/music/ — add more by appending to
+ * the array; no other code change needed.
+ */
+export const MUSIC_VARIANTS = {
+  music_menu: [
+    `${BASE}audio/music/Intro-Song-1.mp3`,
+    `${BASE}audio/music/Intro-Song-2.mp3`,
+  ],
+  music_dungeon: [
+    `${BASE}audio/music/Gameplay-Song-1.mp3`,
+    `${BASE}audio/music/Gameplay-Song-2.mp3`,
+  ],
+} as const;
+
 export const SOUND_REGISTRY: Record<SoundKey, SoundDef> = {
   attack_melee:   { category: "sfx",   src: "", volume: 0.7 },
   attack_orb:     { category: "sfx",   src: "", volume: 0.5 },
@@ -62,6 +87,8 @@ export const SOUND_REGISTRY: Record<SoundKey, SoundDef> = {
   boss_special:   { category: "sfx",   src: "", volume: 0.9 },
   boss_death:     { category: "sfx",   src: "", volume: 1.0 },
   menu_click:     { category: "sfx",   src: "", volume: 0.4 },
-  music_menu:     { category: "music", src: "", volume: 1.0, loop: true },
-  music_dungeon:  { category: "music", src: "", volume: 1.0, loop: true },
+  // Music keys' `src` is set per-play by AudioManager from the variant
+  // pool above. The empty initial values just satisfy the type registry.
+  music_menu:     { category: "music", src: "", volume: 0.65, loop: true },
+  music_dungeon:  { category: "music", src: "", volume: 0.55, loop: true },
 };

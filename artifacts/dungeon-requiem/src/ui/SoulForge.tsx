@@ -257,11 +257,25 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: "auto",
     WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
     // Layered background: dark tint + key art + fallback gradient.
-    // Slightly heavier tint than the main menu because the forge has
-    // dense upgrade cards that need to stay legible.
+    // Same sizing pattern as MainMenu/CharacterSelect for easy iteration.
+    //
+    //   - `auto 108%` shrinks image vs the previous `cover` over-scale
+    //     so the "SOUL FORGE" lettering near the top of the source
+    //     isn't clipped at the viewport's top edge
+    //   - `center 25%` biases image down so the title sits BELOW the
+    //     very top of the viewport with breathing room, and the warrior
+    //     + forge composition remains visible behind the upgrade cards
+    //
+    // Tuning knobs (single-number iteration):
+    //   bigger `auto NNN%` → image larger, more crop
+    //   smaller `center XX%` → biases image content DOWN
+    //   larger `center XX%` → biases image content UP
+    //
+    // Tint is heavier than the main menu (0.6 → 0.85) because the forge
+    // has dense upgrade cards that need to stay legible.
     background: `
       linear-gradient(rgba(6,2,14,0.6), rgba(4,0,10,0.85)),
-      url("${SOUL_FORGE_BG_URL}") center / cover no-repeat,
+      url("${SOUL_FORGE_BG_URL}") center 25% / auto 108% no-repeat,
       linear-gradient(160deg, #04000a 0%, #0a0520 100%)
     `,
     backgroundAttachment: "fixed",

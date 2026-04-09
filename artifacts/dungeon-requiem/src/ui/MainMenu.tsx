@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
 import { audioManager } from "../audio/AudioManager";
+import { SettingsPanel } from "./SettingsPanel";
 
 /** Play the UI click SFX and invoke the given handler. */
 const click = (fn: () => void) => () => { audioManager.play("menu_click"); fn(); };
@@ -37,6 +38,8 @@ function useIsMobile() {
   return mob;
 }
 
+type MenuView = "main" | "settings";
+
 export function MainMenu() {
   const isMobile = useIsMobile();
   const { setPhase, setTrialMode, bestScore, bestWave } = useGameStore();
@@ -44,6 +47,7 @@ export function MainMenu() {
 
   const bossKilled = milestones["boss_kill"] ?? false;
   const anyTrialWin = Object.values(trialWins).some(Boolean);
+  const [view, setView] = useState<MenuView>("main");
 
   const handleTrial = () => {
     setTrialMode(true);
@@ -74,59 +78,71 @@ export function MainMenu() {
 
         <div style={styles.divider} />
 
-        <button style={styles.btnPrimary} onClick={click(() => { setTrialMode(false); setPhase("charselect"); })}>
-          ⚔ BEGIN DESCENT
-        </button>
+        {view === "main" && (
+          <>
+            <button style={styles.btnPrimary} onClick={click(() => { setTrialMode(false); setPhase("charselect"); })}>
+              ⚔ BEGIN DESCENT
+            </button>
 
-        {bossKilled ? (
-          <button style={styles.btnTrial} onClick={click(handleTrial)}>
-            <span style={{ color: "#ffd700", fontSize: 16 }}>🏆</span>
-            {" "}TRIAL OF CHAMPIONS
-            {anyTrialWin && <span style={{ color: "#aa8000", fontSize: 11 }}> · {Object.values(trialWins).filter(Boolean).length}/3 cleared</span>}
-          </button>
-        ) : (
-          <div style={styles.trialLocked}>
-            <span style={{ color: "#4a3030" }}>🔒</span>
-            {" "}TRIAL OF CHAMPIONS
-            <div style={styles.trialLockNote}>Defeat The Warden to unlock</div>
-          </div>
+            {bossKilled ? (
+              <button style={styles.btnTrial} onClick={click(handleTrial)}>
+                <span style={{ color: "#ffd700", fontSize: 16 }}>🏆</span>
+                {" "}TRIAL OF CHAMPIONS
+                {anyTrialWin && <span style={{ color: "#aa8000", fontSize: 11 }}> · {Object.values(trialWins).filter(Boolean).length}/3 cleared</span>}
+              </button>
+            ) : (
+              <div style={styles.trialLocked}>
+                <span style={{ color: "#4a3030" }}>🔒</span>
+                {" "}TRIAL OF CHAMPIONS
+                <div style={styles.trialLockNote}>Defeat The Warden to unlock</div>
+              </div>
+            )}
+
+            <button style={styles.btnForge} onClick={click(() => setPhase("soulforge"))}>
+              <span style={styles.forgeShard}>◈</span>
+              {" "}SOUL FORGE
+              {shards > 0 && (
+                <span style={styles.forgeShardCount}> · {shards.toLocaleString()} shards</span>
+              )}
+            </button>
+
+            <button style={styles.btnSettings} onClick={click(() => setView("settings"))}>
+              ⚙ SETTINGS
+            </button>
+
+            {bestScore > 0 && (
+              <div style={styles.bestScore}>
+                <span style={{ color: "#888" }}>Best Run:</span>
+                <span style={{ color: "#ffcc00" }}> {bestScore.toLocaleString()} pts</span>
+                <span style={{ color: "#888" }}> · Wave {bestWave}</span>
+              </div>
+            )}
+
+            <div style={styles.divider} />
+
+            <div style={styles.controlsList}>
+              <div style={styles.controlsTitle}>CONTROLS</div>
+              {isMobile ? (
+                <div style={styles.controlsGrid}>
+                  <span style={styles.key}>Left</span><span style={styles.action}>Joystick — Move</span>
+                  <span style={styles.key}>Right</span><span style={styles.action}>Hold — Aim &amp; attack</span>
+                  <span style={styles.key}>⚡</span><span style={styles.action}>Dash button</span>
+                </div>
+              ) : (
+                <div style={styles.controlsGrid}>
+                  <span style={styles.key}>W A S D</span><span style={styles.action}>Move</span>
+                  <span style={styles.key}>Mouse</span><span style={styles.action}>Aim &amp; auto-attack</span>
+                  <span style={styles.key}>Shift</span><span style={styles.action}>Dash (invincible)</span>
+                  <span style={styles.key}>ESC</span><span style={styles.action}>Pause</span>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
-        <button style={styles.btnForge} onClick={click(() => setPhase("soulforge"))}>
-          <span style={styles.forgeShard}>◈</span>
-          {" "}SOUL FORGE
-          {shards > 0 && (
-            <span style={styles.forgeShardCount}> · {shards.toLocaleString()} shards</span>
-          )}
-        </button>
-
-        {bestScore > 0 && (
-          <div style={styles.bestScore}>
-            <span style={{ color: "#888" }}>Best Run:</span>
-            <span style={{ color: "#ffcc00" }}> {bestScore.toLocaleString()} pts</span>
-            <span style={{ color: "#888" }}> · Wave {bestWave}</span>
-          </div>
+        {view === "settings" && (
+          <SettingsPanel onClose={() => setView("main")} />
         )}
-
-        <div style={styles.divider} />
-
-        <div style={styles.controlsList}>
-          <div style={styles.controlsTitle}>CONTROLS</div>
-          {isMobile ? (
-            <div style={styles.controlsGrid}>
-              <span style={styles.key}>Left</span><span style={styles.action}>Joystick — Move</span>
-              <span style={styles.key}>Right</span><span style={styles.action}>Hold — Aim &amp; attack</span>
-              <span style={styles.key}>⚡</span><span style={styles.action}>Dash button</span>
-            </div>
-          ) : (
-            <div style={styles.controlsGrid}>
-              <span style={styles.key}>W A S D</span><span style={styles.action}>Move</span>
-              <span style={styles.key}>Mouse</span><span style={styles.action}>Aim &amp; auto-attack</span>
-              <span style={styles.key}>Shift</span><span style={styles.action}>Dash (invincible)</span>
-              <span style={styles.key}>ESC</span><span style={styles.action}>Pause</span>
-            </div>
-          )}
-        </div>
       </div>
 
       <div style={styles.footer}>
@@ -150,22 +166,24 @@ const styles: Record<string, React.CSSProperties> = {
     // AND as tonal tinting) + the key art image on top.
     //
     // Sizing / position notes:
-    //   - `background-size: auto 103%` scales the image to ~3% taller
-    //     than the viewport (was 108%). Smaller overscale = smaller
-    //     image AND less content cropped off the top, which visually
-    //     shifts the composition DOWN compared to the previous tuning.
-    //     One number change addresses both "shrink" and "bring down"
-    //     because with `center bottom` anchoring, all the overflow is
-    //     at the top — reducing overflow automatically reveals more of
-    //     the top of the source.
-    //   - `background-position: center bottom` unchanged — image still
-    //     bottom-pinned.
-    //   - If this is too subtle, nudge to `auto 102%` for even less
-    //     shift. If too much, bump to `auto 104%` or `105%` for a
-    //     smaller down-shift.
+    //   - `background-size: auto 110%` → image is 10% taller than viewport.
+    //     Restored to roughly the previous "shifted up" tuning since the
+    //     intermediate 103% pushed it down too far.
+    //   - `background-position: center 35%` → image content positioned a
+    //     bit above center. The 10% overflow is split unevenly: most of
+    //     it crops off the bottom, less off the top, so the title near
+    //     the top of the source stays fully visible while the
+    //     dungeon/character composition fills the lower half of the
+    //     viewport behind the menu panel.
+    //
+    // Tuning knobs (single-number iteration):
+    //   bigger value of `auto NNN%` → image larger, more crop top/bottom
+    //   smaller `auto NNN%` → image smaller, less crop, more dark margin
+    //   smaller `center XX%` → biases image content DOWN (reveals more top of source)
+    //   larger `center XX%` → biases image content UP (reveals more bottom of source)
     background: `
       linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.55)),
-      url("${MENU_BG_URL}") center bottom / auto 103% no-repeat,
+      url("${MENU_BG_URL}") center 35% / auto 110% no-repeat,
       radial-gradient(ellipse at center, #12001a 0%, #04000a 100%)
     `,
     fontFamily: "'Segoe UI', monospace",
@@ -357,6 +375,20 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#c0a0e0",
     background: "rgba(40,10,70,0.7)",
     border: "1px solid rgba(120,60,160,0.5)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    width: "100%",
+  },
+  btnSettings: {
+    marginTop: 10,
+    padding: "11px 32px",
+    fontSize: 13,
+    fontWeight: "bold",
+    letterSpacing: 2,
+    color: "#a090b0",
+    background: "rgba(20,10,30,0.7)",
+    border: "1px solid rgba(80,50,120,0.5)",
     borderRadius: 8,
     cursor: "pointer",
     fontFamily: "inherit",

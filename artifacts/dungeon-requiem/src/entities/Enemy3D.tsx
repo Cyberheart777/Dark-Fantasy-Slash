@@ -13,14 +13,23 @@
  *   - ALL: spawn scale-in, death shrink+sink, hit flash
  */
 
-import { useRef, type MutableRefObject } from "react";
+import { Component, Suspense, useEffect, useMemo, useRef, type MutableRefObject, type ReactNode } from "react";
 import { useFrame } from "@react-three/fiber";
+import { useAnimations, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
+import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EnemyRuntime } from "../game/GameScene";
 
 interface EnemyProps {
   enemy: EnemyRuntime;
 }
+
+/**
+ * Path to the warrior GLB. Same file the player uses, so useGLTF's cache
+ * means no double-fetch when both player and champion render in the same
+ * scene. Vite's BASE_URL resolves the GitHub Pages subpath.
+ */
+const WARRIOR_GLB_URL = `${import.meta.env.BASE_URL}models/warrior/Character_output.glb`;
 
 // ─── Shared animation helpers ────────────────────────────────────────────────
 
@@ -593,6 +602,88 @@ function XPGoblinMesh({ color, emissive, flash }: { color: string; emissive: str
 
 // ─── Warrior Champion (IMPROVED: walk cycle + sword swing idle) ─────────────
 
+// ─── Warrior Champion (GLB version — bigger version of the player) ──────────
+//
+// Uses the same warrior GLB the player uses (Character_output.glb), cloned
+// via SkeletonUtils so the cloned skinned meshes have their own bones (the
+// classic three.js skinned-mesh clone bug — see Player3D for the long
+// story). All materials are deep-cloned and tinted hostile-red so it
+// reads as an enemy at a glance, while still being clearly the same model
+// as the player's warrior. Plays the same single clip with .position
+// tracks stripped so the mixer can't fight the parent group's transform.
+//
+// Wrapped in a Suspense + ErrorBoundary fallback to the procedural
+// WarriorChampionMesh, so if the GLB ever fails to load the champion
+// still renders something.
+
+function WarriorChampionGLBMesh({ flash }: { flash: boolean }) {
+  const gltf = useGLTF(WARRIOR_GLB_URL);
+
+  // Clone the scene with proper skeleton rebinding (see Player3D.tsx for
+  // the explanation of why .clone(true) is wrong for skinned meshes).
+  // Then deep-clone every material and tint it hostile-red.
+  const scene = useMemo(() => {
+    const cloned = skeletonClone(gltf.scene) as THREE.Group;
+    cloned.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const tintMat = (mat: THREE.Material): THREE.Material => {
+        if (!(mat as THREE.MeshStandardMaterial).color) return mat;
+        // Clone before mutating so we don't poison the shared cache that
+        // the player's warrior also reads from.
+        const m = (mat as THREE.MeshStandardMaterial).clone();
+        m.color = new THREE.Color("#a04030");        // dark crimson
+        m.emissive = new THREE.Color("#400a08");     // dim red glow
+        m.emissiveIntensity = flash ? 4 : 0.6;
+        return m;
+      };
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map(tintMat)
+        : tintMat(mesh.material);
+    });
+    return cloned;
+  }, [gltf.scene, flash]);
+
+  // Strip position tracks like the player does so the mixer can't move
+  // the scene root out from under us.
+  const cleanedClips = useMemo(() => {
+    return gltf.animations.map((clip) => {
+      const copy = clip.clone();
+      copy.tracks = copy.tracks.filter((t) => !/\.position(\[|$)/.test(t.name));
+      return copy;
+    });
+  }, [gltf.animations]);
+
+  const { actions, names } = useAnimations(cleanedClips, scene);
+  useEffect(() => {
+    if (names.length > 0) {
+      actions[names[0]]?.reset().fadeIn(0.25).play();
+    }
+  }, [actions, names]);
+
+  // No useFrame here — the parent <group scale={enemy.scale}> in Enemy3D
+  // already handles position and per-enemy scale via outer transforms.
+  // The cloned scene just renders as a primitive child.
+  return <primitive object={scene} />;
+}
+
+class GLBErrorBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: unknown) {
+    console.error("[WarriorChampionGLB] load failed, using procedural fallback:", error);
+  }
+  render() {
+    return this.state.hasError ? this.props.fallback : this.props.children;
+  }
+}
+
+// Preload alongside the player's preload — same URL, useGLTF dedupes.
+useGLTF.preload(WARRIOR_GLB_URL);
+
 function WarriorChampionMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
   const auraRef = useRef<THREE.Mesh>(null);
@@ -956,7 +1047,13 @@ export function Enemy3D({ enemy }: EnemyProps) {
         {enemy.type === "elite" && <EliteMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}
         {enemy.type === "boss" && <BossMesh {...meshProps} {...attackProps} />}
         {enemy.type === "xp_goblin" && <XPGoblinMesh {...meshProps} />}
-        {enemy.type === "warrior_champion" && <WarriorChampionMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}
+        {enemy.type === "warrior_champion" && (
+          <GLBErrorBoundary fallback={<WarriorChampionMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}>
+            <Suspense fallback={<WarriorChampionMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}>
+              <WarriorChampionGLBMesh flash={flash} />
+            </Suspense>
+          </GLBErrorBoundary>
+        )}
         {enemy.type === "mage_champion" && <MageChampionMesh {...meshProps} />}
         {enemy.type === "rogue_champion" && <RogueChampionMesh {...meshProps} walkSpeed={walkSpeed} />}
       </group>

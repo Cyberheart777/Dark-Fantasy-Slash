@@ -330,13 +330,21 @@ const S: Record<string, React.CSSProperties> = {
   overlay: {
     position: "absolute", inset: 0, overflowY: "auto",
     // Layered background: tonal tint + key art + fallback gradient.
-    // If character-menu-bg.png is missing, the shorthand falls through to
-    // the dark gradient so the screen still reads correctly. Heavier top-to-
-    // bottom tint so the race/class cards (which use their own dark panels)
-    // stay legible over any bright art.
+    // Same sizing pattern as MainMenu for easy iteration.
+    //
+    //   - `auto 110%` scales image 10% taller than viewport
+    //   - `center 60%` biases the composition slightly toward the
+    //     bottom — the character-menu art has the trio of heroes in
+    //     the lower portion, so this lets them sit nicely below the
+    //     race/class panel without being clipped
+    //
+    // Tuning knobs:
+    //   bigger `auto NNN%` → image larger
+    //   smaller `center XX%` → biases image content DOWN
+    //   larger `center XX%` → biases image content UP
     background: `
       linear-gradient(rgba(8,4,18,0.55), rgba(4,0,12,0.8)),
-      url("${CHARSELECT_BG_URL}") center / cover no-repeat,
+      url("${CHARSELECT_BG_URL}") center 60% / auto 110% no-repeat,
       linear-gradient(160deg, #04000a 0%, #0e0620 100%)
     `,
     backgroundAttachment: "fixed",

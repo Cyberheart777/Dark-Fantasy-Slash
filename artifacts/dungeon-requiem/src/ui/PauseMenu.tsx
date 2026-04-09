@@ -3,14 +3,15 @@
  * Pause overlay with three views:
  *   - main       : resume / inventory / extract / settings / main menu
  *   - inventory  : view spare gear from the in-run inventory, equip or sell
- *   - settings   : volume sliders, screen shake / damage-number toggles, keybinds
+ *   - settings   : delegated to the shared SettingsPanel component (also
+ *                  used by MainMenu)
  */
 
 import { useState } from "react";
 import { useGameStore } from "../store/gameStore";
-import { useMetaStore } from "../store/metaStore";
 import { audioManager } from "../audio/AudioManager";
 import { GEAR_RARITY_COLOR, type GearDef } from "../data/GearData";
+import { SettingsPanel } from "./SettingsPanel";
 
 const click = (fn: () => void) => () => { audioManager.play("menu_click"); fn(); };
 
@@ -25,11 +26,8 @@ interface PauseMenuProps {
 export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory }: PauseMenuProps) {
   const {
     setPhase, highestBossWaveCleared, trialMode,
-    masterVolume, sfxVolume, musicVolume, muted, setVolume,
     inventory, equippedWeapon, equippedArmor, equippedTrinket,
   } = useGameStore();
-  const settings = useMetaStore((s) => s.settings);
-  const setSettings = useMetaStore((s) => s.setSettings);
 
   const [view, setView] = useState<PauseView>("main");
 
@@ -104,67 +102,7 @@ export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory
         )}
 
         {view === "settings" && (
-          <>
-            <div style={styles.settingsWrapper}>
-              {/* ── Audio ─────────────────────────────────────────────── */}
-              <div style={styles.sectionTitle}>AUDIO</div>
-
-              <Slider
-                label="Master"
-                value={masterVolume}
-                onChange={(v) => setVolume(v, sfxVolume, musicVolume, muted)}
-                disabled={muted}
-              />
-              <Slider
-                label="SFX"
-                value={sfxVolume}
-                onChange={(v) => setVolume(masterVolume, v, musicVolume, muted)}
-                disabled={muted}
-              />
-              <Slider
-                label="Music"
-                value={musicVolume}
-                onChange={(v) => setVolume(masterVolume, sfxVolume, v, muted)}
-                disabled={muted}
-              />
-              <Toggle
-                label="Mute all audio"
-                value={muted}
-                onChange={(v) => setVolume(masterVolume, sfxVolume, musicVolume, v)}
-              />
-
-              {/* ── Visual ─────────────────────────────────────────────── */}
-              <div style={styles.sectionTitle}>VISUAL</div>
-
-              <Toggle
-                label="Screen shake"
-                value={settings.screenShake}
-                onChange={(v) => setSettings({ screenShake: v })}
-              />
-              <Toggle
-                label="Damage numbers"
-                value={settings.damageNumbers}
-                onChange={(v) => setSettings({ damageNumbers: v })}
-              />
-
-              {/* ── Controls reference ─────────────────────────────────── */}
-              <div style={styles.sectionTitle}>CONTROLS</div>
-              <div style={styles.keybindGrid}>
-                <span style={styles.kbKey}>W A S D</span>
-                <span style={styles.kbLabel}>Move</span>
-                <span style={styles.kbKey}>Mouse</span>
-                <span style={styles.kbLabel}>Aim — auto-attacks</span>
-                <span style={styles.kbKey}>Shift</span>
-                <span style={styles.kbLabel}>Dash (invincible)</span>
-                <span style={styles.kbKey}>ESC</span>
-                <span style={styles.kbLabel}>Pause</span>
-              </div>
-            </div>
-
-            <button style={styles.btnBack} onClick={click(() => setView("main"))}>
-              ← BACK
-            </button>
-          </>
+          <SettingsPanel onClose={() => setView("main")} />
         )}
       </div>
     </div>
@@ -276,54 +214,8 @@ function EquippedSlot({ label, gear }: { label: string; gear: GearDef | null }) 
   );
 }
 
-// ─── Small reusable settings controls ────────────────────────────────────────
-
-function Slider({ label, value, onChange, disabled }: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div style={{ ...styles.row, opacity: disabled ? 0.4 : 1 }}>
-      <span style={styles.rowLabel}>{label}</span>
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.05}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        disabled={disabled}
-        style={styles.slider}
-      />
-      <span style={styles.rowValue}>{Math.round(value * 100)}</span>
-    </div>
-  );
-}
-
-function Toggle({ label, value, onChange }: {
-  label: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div style={styles.row}>
-      <span style={styles.rowLabel}>{label}</span>
-      <button
-        style={{
-          ...styles.toggleBtn,
-          background: value ? "linear-gradient(135deg, #5500aa, #3a0077)" : "rgba(30,15,45,0.8)",
-          borderColor: value ? "#8844cc" : "#3a2050",
-          color: value ? "#e8d0ff" : "#6a5080",
-        }}
-        onClick={() => { audioManager.play("menu_click"); onChange(!value); }}
-      >
-        {value ? "ON" : "OFF"}
-      </button>
-    </div>
-  );
-}
+// Slider, Toggle, and the audio/visual/controls UI all live in
+// SettingsPanel.tsx now (shared by MainMenu + PauseMenu).
 
 const styles: Record<string, React.CSSProperties> = {
   overlay: {

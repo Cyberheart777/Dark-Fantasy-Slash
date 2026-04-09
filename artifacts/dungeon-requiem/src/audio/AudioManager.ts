@@ -10,7 +10,7 @@
  * Volume changes take effect immediately via GainNode.gain.
  */
 
-import { SOUND_REGISTRY, type SoundKey } from "./SoundData";
+import { MUSIC_VARIANTS, SOUND_REGISTRY, type SoundKey } from "./SoundData";
 
 class AudioManager {
   private _ctx: AudioContext | null = null;
@@ -20,10 +20,14 @@ class AudioManager {
 
   /** Decoded AudioBuffer cache for file-backed sounds. */
   private _buffers: Map<SoundKey, AudioBuffer> = new Map();
+  /** Decoded AudioBuffer cache for music VARIANTS, keyed by URL. */
+  private _musicBuffers: Map<string, AudioBuffer> = new Map();
   /** Currently playing music nodes. */
   private _musicNodes: { src: AudioBufferSourceNode | null; osc: OscillatorNode[] } = { src: null, osc: [] };
   /** Currently playing music key (for idempotent playMusic). */
   private _currentMusicKey: SoundKey | null = null;
+  /** Last variant URL we played per music key, for round-robin variety. */
+  private _lastMusicVariant: Partial<Record<keyof typeof MUSIC_VARIANTS, string>> = {};
 
   private _master = 0.6;
   private _sfx = 0.7;
@@ -77,6 +81,20 @@ class AudioManager {
     }
   }
 
+  /** Decode a music variant by URL into _musicBuffers. */
+  private async _loadMusicVariant(url: string): Promise<void> {
+    if (!url || this._musicBuffers.has(url)) return;
+    try {
+      const ctx = this.ctx();
+      const resp = await fetch(url);
+      const ab = await resp.arrayBuffer();
+      const buf = await ctx.decodeAudioData(ab);
+      this._musicBuffers.set(url, buf);
+    } catch {
+      // silently fall back to synth music
+    }
+  }
+
   /** Preload all file-backed sounds. Call once when the game starts. */
   async preload(): Promise<void> {
     const loads: Promise<void>[] = [];
@@ -85,7 +103,28 @@ class AudioManager {
         loads.push(this._loadBuffer(key as SoundKey, def.src));
       }
     }
+    // Also preload every music variant in the pool — small overhead
+    // (~2-4 MP3 fetches at boot) and avoids any stutter on first play.
+    for (const variants of Object.values(MUSIC_VARIANTS)) {
+      for (const url of variants) loads.push(this._loadMusicVariant(url));
+    }
     await Promise.allSettled(loads);
+  }
+
+  /**
+   * Pick a random music variant for a given music key, avoiding repeating
+   * the same one twice in a row when there's more than one option.
+   */
+  private _pickMusicVariant(key: SoundKey): string | null {
+    const pool = (MUSIC_VARIANTS as Record<string, readonly string[]>)[key];
+    if (!pool || pool.length === 0) return null;
+    if (pool.length === 1) return pool[0];
+    const last = this._lastMusicVariant[key as keyof typeof MUSIC_VARIANTS];
+    let pick = pool[Math.floor(Math.random() * pool.length)];
+    // One re-roll if we hit the previous track — keeps the rotation feeling fresh
+    if (pick === last) pick = pool[(pool.indexOf(pick) + 1) % pool.length];
+    this._lastMusicVariant[key as keyof typeof MUSIC_VARIANTS] = pick;
+    return pick;
   }
 
   // ─── Playback ───────────────────────────────────────────────────────────────
@@ -115,6 +154,12 @@ class AudioManager {
    * Play a music loop. Idempotent — if the requested key is already playing,
    * this is a no-op (so calling playMusic on every phase re-render is safe).
    * Passing a different key will cross-stop the current loop and start the new one.
+   *
+   * Variant selection: each music key has a pool of possible files in
+   * MUSIC_VARIANTS. On every distinct play, one is picked at random
+   * (avoiding immediate repeats). If the variant pool is empty OR none of
+   * the variants are decoded yet (loading failed / preload skipped), the
+   * synth fallback kicks in so the menu/dungeon are never silent.
    */
   playMusic(key: SoundKey = "music_dungeon"): void {
     if (this._currentMusicKey === key && (this._musicNodes.src || this._musicNodes.osc.length > 0)) {
@@ -126,9 +171,13 @@ class AudioManager {
       this._currentMusicKey = key;
       const def = SOUND_REGISTRY[key];
       if (!def || def.category !== "music") return;
-      if (def.src && this._buffers.has(key)) {
+
+      const variantUrl = this._pickMusicVariant(key);
+      const buffer = variantUrl ? this._musicBuffers.get(variantUrl) : null;
+
+      if (buffer) {
         const src = ctx.createBufferSource();
-        src.buffer = this._buffers.get(key)!;
+        src.buffer = buffer;
         src.loop = true;
         const g = ctx.createGain();
         g.gain.value = def.volume ?? 1;
@@ -136,6 +185,12 @@ class AudioManager {
         src.start();
         this._musicNodes.src = src;
       } else {
+        // Variant not loaded yet OR no variant in pool — kick off a lazy
+        // load and meanwhile play the synth fallback. The variant will be
+        // ready next time playMusic(key) is called.
+        if (variantUrl && !this._musicBuffers.has(variantUrl)) {
+          void this._loadMusicVariant(variantUrl);
+        }
         this._synthMusic(ctx, key);
       }
     } catch { /* headless */ }
