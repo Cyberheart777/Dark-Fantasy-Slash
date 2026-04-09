@@ -15,6 +15,16 @@ import { DIFFICULTY_DATA, DIFFICULTIES, type DifficultyTier } from "../data/Diff
 
 const clickSfx = () => audioManager.play("menu_click");
 
+/**
+ * Character-select background artwork. Used for BOTH step 1 (race picker) and
+ * step 2 (class picker) as requested — a single piece of key art that covers
+ * the full select flow. File lives at public/images/character-menu-bg.png.
+ * Vite's BASE_URL resolves the GitHub Pages subpath; if the file is missing
+ * the overlay background shorthand falls through to the existing dark
+ * gradient so nothing breaks visually.
+ */
+const CHARSELECT_BG_URL = `${import.meta.env.BASE_URL}images/character-menu-bg.png`;
+
 const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue"];
 
 const CLASS_UNLOCK_CONDITION: Record<CharacterClass, string | null> = {
@@ -319,7 +329,17 @@ function StatBar({ label, value, max, color }: { label: string; value: number; m
 const S: Record<string, React.CSSProperties> = {
   overlay: {
     position: "absolute", inset: 0, overflowY: "auto",
-    background: "linear-gradient(160deg, #04000a 0%, #0e0620 100%)",
+    // Layered background: tonal tint + key art + fallback gradient.
+    // If character-menu-bg.png is missing, the shorthand falls through to
+    // the dark gradient so the screen still reads correctly. Heavier top-to-
+    // bottom tint so the race/class cards (which use their own dark panels)
+    // stay legible over any bright art.
+    background: `
+      linear-gradient(rgba(8,4,18,0.55), rgba(4,0,12,0.8)),
+      url("${CHARSELECT_BG_URL}") center / cover no-repeat,
+      linear-gradient(160deg, #04000a 0%, #0e0620 100%)
+    `,
+    backgroundAttachment: "fixed",
     fontFamily: "'Segoe UI', monospace", userSelect: "none", zIndex: 10,
   },
   panel: {

@@ -13,6 +13,17 @@ import { audioManager } from "../audio/AudioManager";
 
 const clickSfx = () => audioManager.play("menu_click");
 
+/**
+ * Soul Forge background artwork slot. Expected file path:
+ *   public/images/soul-forge-bg.png
+ * The asset hadn't landed on the branch at the time this constant was
+ * written — the CSS background shorthand in styles.overlay falls through
+ * to the existing dark gradient while the file is missing, then flips to
+ * the key art automatically on the next deploy after it's uploaded. No
+ * code change needed when the file appears.
+ */
+const SOUL_FORGE_BG_URL = `${import.meta.env.BASE_URL}images/soul-forge-bg.png`;
+
 export function SoulForge() {
   const { shards, totalShardsEarned, purchased, purchaseRank, trialWins, gearStash, sellGear } = useMetaStore();
   const setPhase = useGameStore((s) => s.setPhase);
@@ -245,7 +256,15 @@ const styles: Record<string, React.CSSProperties> = {
     inset: 0,
     overflowY: "auto",
     WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
-    background: "linear-gradient(160deg, #04000a 0%, #0a0520 100%)",
+    // Layered background: dark tint + key art + fallback gradient.
+    // Slightly heavier tint than the main menu because the forge has
+    // dense upgrade cards that need to stay legible.
+    background: `
+      linear-gradient(rgba(6,2,14,0.6), rgba(4,0,10,0.85)),
+      url("${SOUL_FORGE_BG_URL}") center / cover no-repeat,
+      linear-gradient(160deg, #04000a 0%, #0a0520 100%)
+    `,
+    backgroundAttachment: "fixed",
     fontFamily: "'Segoe UI', monospace",
     userSelect: "none",
   },
