@@ -66,25 +66,41 @@ function WarriorMeshGLB({ gs }: PlayerProps) {
   const groupRef = useRef<THREE.Group>(null);
   const gltf = useGLTF(WARRIOR_GLB_URL);
 
-  // Deep-clone the scene so we don't mutate the shared cached instance —
-  // useGLTF returns a singleton per URL and scaling / rotating it would
-  // affect every consumer.
-  const scene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
+  // Deep-clone the scene so we don't mutate the shared cached instance
+  // (useGLTF returns a singleton per URL), then normalize the root transform:
+  //   - horizontally center the character on its bounding-box center
+  //   - drop it so the bounding-box floor sits at y=0
+  // This protects against GLBs that ship with a baked-in world offset on
+  // their root node (which is why the character was rendering at the scene
+  // origin instead of following the player in the first wiring attempt).
+  const scene = useMemo(() => {
+    const cloned = gltf.scene.clone(true);
+    const bbox = new THREE.Box3().setFromObject(cloned);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    cloned.position.x -= center.x;
+    cloned.position.z -= center.z;
+    cloned.position.y -= bbox.min.y;
+    console.log("[WarriorGLB] bbox", {
+      min: bbox.min.toArray(),
+      max: bbox.max.toArray(),
+      center: center.toArray(),
+      size: new THREE.Vector3().subVectors(bbox.max, bbox.min).toArray(),
+    });
+    return cloned;
+  }, [gltf.scene]);
 
-  // Bind any animation clips shipped with the GLB to the cloned scene.
-  // If the Meshy export included an idle or walk clip, play the first one
-  // so the character isn't stuck in T-pose.
-  const { actions, names } = useAnimations(gltf.animations, scene);
+  // Bind animation clips to the scene so the mixer knows about them, but
+  // do NOT auto-play any clip yet. Many Meshy / Mixamo exports animate the
+  // root bone's position, which overrides the parent group's transform
+  // every frame and makes the character drift away from the player.
+  // Logging the detected clip names so we know which ones exist for the
+  // next iteration, where we'll wire specific clips (walk / attack) to
+  // the gameplay state via actions[clip].play() with root motion disabled.
+  const { names } = useAnimations(gltf.animations, scene);
   useEffect(() => {
-    if (names.length > 0) {
-      const first = names[0];
-      actions[first]?.reset().fadeIn(0.3).play();
-    }
-    // Log what the GLB contained so we can wire specific clips later
-    // (Animation_Left_Slash.glb is a separate file — remapping that clip
-    // onto this skeleton is a follow-up once we know the rig shape).
     console.log("[WarriorGLB] loaded — clips:", names);
-  }, [actions, names]);
+  }, [names]);
 
   useFrame(() => {
     if (!gs.current || !groupRef.current) return;
@@ -93,11 +109,12 @@ function WarriorMeshGLB({ gs }: PlayerProps) {
     groupRef.current.rotation.y = p.angle + Math.PI;
   });
 
-  // The scale + y-offset here are first-guess defaults for a Meshy-exported
-  // character (~1.7 m tall, feet at origin). If the model appears too small,
-  // too tall, or floating, these are the knobs to tune after first playtest.
+  // Outer group: follows the player each frame.
+  // Inner primitive: the normalized scene. Any remaining root-bone motion
+  // from an accidentally-played clip would move the scene locally, but the
+  // outer group still carries it along with the player.
   return (
-    <group ref={groupRef} scale={1.0}>
+    <group ref={groupRef}>
       <primitive object={scene} />
     </group>
   );
