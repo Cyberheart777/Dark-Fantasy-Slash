@@ -90,17 +90,31 @@ function WarriorMeshGLB({ gs }: PlayerProps) {
     return cloned;
   }, [gltf.scene]);
 
-  // Bind animation clips to the scene so the mixer knows about them, but
-  // do NOT auto-play any clip yet. Many Meshy / Mixamo exports animate the
-  // root bone's position, which overrides the parent group's transform
-  // every frame and makes the character drift away from the player.
-  // Logging the detected clip names so we know which ones exist for the
-  // next iteration, where we'll wire specific clips (walk / attack) to
-  // the gameplay state via actions[clip].play() with root motion disabled.
-  const { names } = useAnimations(gltf.animations, scene);
+  // Strip translation tracks from every clip before handing them to the
+  // mixer. The first GLB wiring attempt auto-played the one clip in this
+  // model (Armature|clip0|baselayer), and the clip had .position keyframes
+  // on the root bone — those keyframes overrode groupRef.current.position
+  // every frame, pinning the character at the world origin instead of
+  // following the player. Filtering `.position` tracks leaves quaternion /
+  // scale tracks intact so bone rotations still animate (idle breathing,
+  // any arm sway, etc.) without any unwanted root drift.
+  const cleanedClips = useMemo(() => {
+    return gltf.animations.map((clip) => {
+      const copy = clip.clone();
+      copy.tracks = copy.tracks.filter((t) => !t.name.endsWith(".position"));
+      return copy;
+    });
+  }, [gltf.animations]);
+
+  // Bind cleaned clips to the scene and auto-play the first one.
+  const { actions, names } = useAnimations(cleanedClips, scene);
   useEffect(() => {
     console.log("[WarriorGLB] loaded — clips:", names);
-  }, [names]);
+    if (names.length > 0) {
+      const first = names[0];
+      actions[first]?.reset().fadeIn(0.25).play();
+    }
+  }, [actions, names]);
 
   useFrame(() => {
     if (!gs.current || !groupRef.current) return;
