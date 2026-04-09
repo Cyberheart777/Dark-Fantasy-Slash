@@ -19,14 +19,21 @@ const click = (fn: () => void) => () => { audioManager.play("menu_click"); fn();
 const GAME_VERSION = "v0.1.0";
 
 /**
- * Main menu background artwork. Drop the file at:
- *   artifacts/dungeon-requiem/public/images/main-menu-bg.jpg
- * …and it will auto-load here on the next deploy. Vite's BASE_URL suffix
- * resolves correctly under the GitHub Pages subpath. If the file is
- * missing the CSS falls back to the existing purple radial gradient so
- * nothing breaks visually.
+ * Main menu background artwork.
+ *
+ * Filename is intentionally `main-menu-bg.jpg.png` — the file committed to
+ * public/images/ was uploaded as a PNG via the GitHub web UI with the
+ * upload name `main-menu-bg.jpg`, which GitHub preserved verbatim and then
+ * appended the actual `.png` extension to. Rather than re-upload / rename
+ * the asset, the code just points at the real on-disk filename. If you
+ * ever replace the asset cleanly (rename to `main-menu-bg.jpg` with an
+ * actual JPEG, or swap to a new `.webp`), update this constant.
+ *
+ * Vite's BASE_URL suffix resolves correctly under the GitHub Pages subpath.
+ * If the file is ever missing the CSS background shorthand in styles.overlay
+ * falls back to the purple radial gradient — nothing breaks visually.
  */
-const MENU_BG_URL = `${import.meta.env.BASE_URL}images/main-menu-bg.jpg`;
+const MENU_BG_URL = `${import.meta.env.BASE_URL}images/main-menu-bg.jpg.png`;
 
 function useIsMobile() {
   const [mob, setMob] = useState(() => window.innerWidth < 900);

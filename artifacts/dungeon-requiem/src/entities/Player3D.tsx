@@ -10,6 +10,7 @@ import { Component, Suspense, useEffect, useMemo, useRef, type ReactNode } from 
 import { useFrame } from "@react-three/fiber";
 import { useAnimations, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
+import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { GameState } from "../game/GameScene";
 
 interface PlayerProps {
@@ -65,10 +66,26 @@ class PlayerErrorBoundary extends Component<
 function WarriorMeshGLB({ gs }: PlayerProps) {
   const gltf = useGLTF(WARRIOR_GLB_URL);
 
-  // Deep-clone the scene so we don't mutate the shared cached instance —
-  // useGLTF returns a singleton per URL, and other consumers (preload
-  // hits, re-mounts after reset) would share any mutations we make.
-  const scene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
+  // Clone the scene using SkeletonUtils, NOT the plain Object3D.clone(true).
+  //
+  // The previous attempts used scene.clone(true), which produces the classic
+  // three.js skinned-mesh clone bug: the cloned Object3D hierarchy gets
+  // fresh Groups and SkinnedMesh instances, but those SkinnedMeshes still
+  // reference the ORIGINAL Skeleton's bones. The original skeleton lives in
+  // the original scene (cached by useGLTF at world origin, never moved), so
+  // every frame the visible vertices render at bone_world_position + weight,
+  // where the bones are still sitting at origin — no matter how many times
+  // I set cloned scene.position.
+  //
+  // The last deploy's [WarriorGLB] tick logs confirmed this: scenePos
+  // tracked the player correctly AND sceneWorld matched scenePos, so the
+  // transform hierarchy was healthy — yet the mesh visually stayed put.
+  // That's a skinned-mesh bone-ref bug, not a transform bug.
+  //
+  // SkeletonUtils.clone walks the hierarchy, creates a fresh Skeleton with
+  // cloned bones, then rebinds each SkinnedMesh clone to the new skeleton
+  // so the bones and the mesh move together with the scene root.
+  const scene = useMemo(() => skeletonClone(gltf.scene) as THREE.Group, [gltf.scene]);
 
   // Strip every position track from every animation clip. The first GLB
   // attempt rendered the character pinned at the world origin because the
