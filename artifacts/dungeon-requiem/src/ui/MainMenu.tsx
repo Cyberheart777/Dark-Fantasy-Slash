@@ -147,11 +147,24 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     // Layered background: dark gradient underneath (acts as a fallback
-    // AND as tonal tinting) + the key art image on top. `cover` + `center`
-    // keeps the composition framed whatever the viewport aspect ratio.
+    // AND as tonal tinting) + the key art image on top.
+    //
+    // Sizing / position notes:
+    //   - `background-size: auto 100%` scales the image to EXACTLY viewport
+    //     height instead of `cover` (which was over-scaling and cropping
+    //     the top of the image — the "DUNGEON REQUIEM" title baked into
+    //     the art was getting clipped by the viewport's top edge).
+    //   - `background-position: center 12%` biases the image slightly
+    //     downward (the "bring it down a little" tweak) so the title
+    //     sits below the very top edge with a bit of breathing room,
+    //     and the character composition in the lower half stays
+    //     framed nicely.
+    //   - Because auto-height can leave narrow bars on wider screens,
+    //     the dark fallback gradient underneath fills them without a
+    //     visible seam.
     background: `
       linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.55)),
-      url("${MENU_BG_URL}") center / cover no-repeat,
+      url("${MENU_BG_URL}") center 12% / auto 100% no-repeat,
       radial-gradient(ellipse at center, #12001a 0%, #04000a 100%)
     `,
     fontFamily: "'Segoe UI', monospace",
