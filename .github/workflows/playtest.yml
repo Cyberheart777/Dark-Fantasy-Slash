@@ -22,6 +22,12 @@ permissions:
   pages: write
   id-token: write
 
+# Opt all JavaScript-based actions into the Node 24 runtime now rather than
+# waiting for the June 2026 forced migration. Silences the "Node.js 20
+# actions are deprecated" warning on every run.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 # Only one deploy at a time. cancel-in-progress is intentionally false so a
 # running deploy finishes rather than being aborted by a newer push.
 concurrency:
