@@ -1788,7 +1788,16 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
 
     // ── Spawning (normal mode only) ───────────────────────────────────────
     if (!g.trialMode) {
-      g.waveTimer += delta;
+      // Pause wave progression while a boss is alive. Without this, the wave
+      // clock keeps ticking during boss fights, which:
+      //   1. inflates g.wave past the next boss milestone (so the wave-10 boss
+      //      is skipped entirely if the wave-5 fight lasted >30s),
+      //   2. multiply-reduces g.spawnInterval (faster spawns forever after),
+      //   3. breaks difficulty scaling across the rest of the run.
+      // Regular enemy spawns are already gated on !g.bossAlive below, so
+      // pausing the wave timer gives boss waves the correct "boss fight, then
+      // full 30s of normal wave" structure.
+      if (!g.bossAlive) g.waveTimer += delta;
       if (g.waveTimer >= GAME_CONFIG.DIFFICULTY.WAVE_DURATION) {
         g.waveTimer = 0;
         g.wave += 1;
