@@ -14,15 +14,15 @@ import { audioManager } from "../audio/AudioManager";
 const clickSfx = () => audioManager.play("menu_click");
 
 /**
- * Soul Forge background artwork slot. Expected file path:
- *   public/images/soul-forge-bg.png
- * The asset hadn't landed on the branch at the time this constant was
- * written — the CSS background shorthand in styles.overlay falls through
- * to the existing dark gradient while the file is missing, then flips to
- * the key art automatically on the next deploy after it's uploaded. No
- * code change needed when the file appears.
+ * Soul Forge background artwork. Expected file path:
+ *   public/images/Soul-Forge-bg.png
+ * Filename uses the capitalization you specified in chat. GitHub paths
+ * are case-sensitive, so `soul-forge-bg.png` would NOT resolve to
+ * `Soul-Forge-bg.png`. If the actual uploaded filename ends up different,
+ * just update this constant — the background shorthand in styles.overlay
+ * falls through to the dark gradient while any file is missing.
  */
-const SOUL_FORGE_BG_URL = `${import.meta.env.BASE_URL}images/soul-forge-bg.png`;
+const SOUL_FORGE_BG_URL = `${import.meta.env.BASE_URL}images/Soul-Forge-bg.png`;
 
 export function SoulForge() {
   const { shards, totalShardsEarned, purchased, purchaseRank, trialWins, gearStash, sellGear } = useMetaStore();

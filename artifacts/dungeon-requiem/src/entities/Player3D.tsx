@@ -96,7 +96,18 @@ function WarriorMeshGLB({ gs }: PlayerProps) {
   const cleanedClips = useMemo(() => {
     return gltf.animations.map((clip) => {
       const copy = clip.clone();
+      const beforeCount = copy.tracks.length;
+      // Sample a few track names BEFORE the filter so we can see what the
+      // clip actually keyed — useful for diagnosing "animation not playing"
+      // (maybe all tracks WERE position tracks, in which case the clip is
+      // now empty and nothing will animate).
+      const sampleBefore = copy.tracks.slice(0, 6).map((t) => t.name);
       copy.tracks = copy.tracks.filter((t) => !/\.position(\[|$)/.test(t.name));
+      console.log(
+        `[WarriorGLB] clip "${copy.name}" duration=${copy.duration.toFixed(2)}s ` +
+        `tracks=${beforeCount}→${copy.tracks.length}`,
+        { sampleTracksBefore: sampleBefore },
+      );
       return copy;
     });
   }, [gltf.animations]);
@@ -114,7 +125,13 @@ function WarriorMeshGLB({ gs }: PlayerProps) {
     console.log("[WarriorGLB] loaded — clips:", names);
     if (names.length > 0) {
       const first = names[0];
-      actions[first]?.reset().fadeIn(0.25).play();
+      const action = actions[first];
+      action?.reset().fadeIn(0.25).play();
+      console.log(`[WarriorGLB] playing "${first}"`, {
+        duration: action?.getClip().duration,
+        trackCount: action?.getClip().tracks.length,
+        isRunning: action?.isRunning(),
+      });
     }
   }, [actions, names, scene]);
 
@@ -131,7 +148,13 @@ function WarriorMeshGLB({ gs }: PlayerProps) {
     if (!gs.current) return;
     const p = gs.current.player;
     scene.position.set(p.x, 0, p.z);
-    scene.rotation.y = p.angle + Math.PI;
+    // NOTE: facing fix. Previously used `p.angle + Math.PI` to match the
+    // procedural warrior, but the Meshy GLB exports with its front facing
+    // the opposite direction, so the character was swinging from its back.
+    // Removing the +π offset aligns the GLB's front with the aim vector.
+    // If a future GLB comes in with the opposite convention, add the +π
+    // back — it's a one-line flip.
+    scene.rotation.y = p.angle;
     logCounter.current++;
     if (logCounter.current % 180 === 0) {
       console.log("[WarriorGLB] tick", {
