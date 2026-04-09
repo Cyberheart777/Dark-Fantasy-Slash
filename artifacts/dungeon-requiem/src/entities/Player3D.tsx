@@ -63,75 +63,69 @@ class PlayerErrorBoundary extends Component<
 }
 
 function WarriorMeshGLB({ gs }: PlayerProps) {
-  const groupRef = useRef<THREE.Group>(null);
   const gltf = useGLTF(WARRIOR_GLB_URL);
 
-  // Deep-clone the scene so we don't mutate the shared cached instance
-  // (useGLTF returns a singleton per URL), then normalize the root transform:
-  //   - horizontally center the character on its bounding-box center
-  //   - drop it so the bounding-box floor sits at y=0
-  // This protects against GLBs that ship with a baked-in world offset on
-  // their root node (which is why the character was rendering at the scene
-  // origin instead of following the player in the first wiring attempt).
-  const scene = useMemo(() => {
-    const cloned = gltf.scene.clone(true);
-    const bbox = new THREE.Box3().setFromObject(cloned);
-    const center = new THREE.Vector3();
-    bbox.getCenter(center);
-    cloned.position.x -= center.x;
-    cloned.position.z -= center.z;
-    cloned.position.y -= bbox.min.y;
-    console.log("[WarriorGLB] bbox", {
-      min: bbox.min.toArray(),
-      max: bbox.max.toArray(),
-      center: center.toArray(),
-      size: new THREE.Vector3().subVectors(bbox.max, bbox.min).toArray(),
-    });
-    return cloned;
-  }, [gltf.scene]);
+  // Deep-clone the scene so we don't mutate the shared cached instance —
+  // useGLTF returns a singleton per URL, and other consumers (preload
+  // hits, re-mounts after reset) would share any mutations we make.
+  const scene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
 
-  // Strip translation tracks from every clip before handing them to the
-  // mixer. The first GLB wiring attempt auto-played the one clip in this
-  // model (Armature|clip0|baselayer), and the clip had .position keyframes
-  // on the root bone — those keyframes overrode groupRef.current.position
-  // every frame, pinning the character at the world origin instead of
-  // following the player. Filtering `.position` tracks leaves quaternion /
-  // scale tracks intact so bone rotations still animate (idle breathing,
-  // any arm sway, etc.) without any unwanted root drift.
+  // Strip every position track from every animation clip. The first GLB
+  // attempt rendered the character pinned at the world origin because the
+  // single clip (Armature|clip0|baselayer) contained .position keyframes
+  // on the root bone, and the mixer was overwriting scene.position every
+  // frame *after* my useFrame ran. The regex catches both full-property
+  // tracks ("…position") and per-axis tracks ("…position[x]").
   const cleanedClips = useMemo(() => {
     return gltf.animations.map((clip) => {
       const copy = clip.clone();
-      copy.tracks = copy.tracks.filter((t) => !t.name.endsWith(".position"));
+      copy.tracks = copy.tracks.filter((t) => !/\.position(\[|$)/.test(t.name));
       return copy;
     });
   }, [gltf.animations]);
 
-  // Bind cleaned clips to the scene and auto-play the first one.
   const { actions, names } = useAnimations(cleanedClips, scene);
   useEffect(() => {
+    // Log what we know about the loaded asset for one-shot diagnostics.
+    const bbox = new THREE.Box3().setFromObject(scene);
+    console.log("[WarriorGLB] bbox", {
+      min: bbox.min.toArray(),
+      max: bbox.max.toArray(),
+      center: bbox.getCenter(new THREE.Vector3()).toArray(),
+      size: new THREE.Vector3().subVectors(bbox.max, bbox.min).toArray(),
+    });
     console.log("[WarriorGLB] loaded — clips:", names);
     if (names.length > 0) {
       const first = names[0];
       actions[first]?.reset().fadeIn(0.25).play();
     }
-  }, [actions, names]);
+  }, [actions, names, scene]);
 
+  // Direct mutation approach: set scene.position every frame. No parent
+  // group, no transform composition, no primitive re-parenting.  This is
+  // the dead-simplest possible way to make an Object3D follow a point,
+  // and it rules out every category of transform-hierarchy issue I might
+  // have missed in the previous wrapping attempts.
+  //
+  // Throttled console log every ~3 seconds at 60fps so the next playtest
+  // can confirm scene.position is actually being written.
+  const logCounter = useRef(0);
   useFrame(() => {
-    if (!gs.current || !groupRef.current) return;
+    if (!gs.current) return;
     const p = gs.current.player;
-    groupRef.current.position.set(p.x, 0, p.z);
-    groupRef.current.rotation.y = p.angle + Math.PI;
+    scene.position.set(p.x, 0, p.z);
+    scene.rotation.y = p.angle + Math.PI;
+    logCounter.current++;
+    if (logCounter.current % 180 === 0) {
+      console.log("[WarriorGLB] tick", {
+        playerXZ: [p.x, p.z],
+        scenePos: scene.position.toArray(),
+        sceneWorld: scene.getWorldPosition(new THREE.Vector3()).toArray(),
+      });
+    }
   });
 
-  // Outer group: follows the player each frame.
-  // Inner primitive: the normalized scene. Any remaining root-bone motion
-  // from an accidentally-played clip would move the scene locally, but the
-  // outer group still carries it along with the player.
-  return (
-    <group ref={groupRef}>
-      <primitive object={scene} />
-    </group>
-  );
+  return <primitive object={scene} />;
 }
 
 // Preload the GLB so the first character-select → playing transition doesn't

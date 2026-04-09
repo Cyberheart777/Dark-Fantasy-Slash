@@ -18,6 +18,16 @@ const click = (fn: () => void) => () => { audioManager.play("menu_click"); fn();
  */
 const GAME_VERSION = "v0.1.0";
 
+/**
+ * Main menu background artwork. Drop the file at:
+ *   artifacts/dungeon-requiem/public/images/main-menu-bg.jpg
+ * …and it will auto-load here on the next deploy. Vite's BASE_URL suffix
+ * resolves correctly under the GitHub Pages subpath. If the file is
+ * missing the CSS falls back to the existing purple radial gradient so
+ * nothing breaks visually.
+ */
+const MENU_BG_URL = `${import.meta.env.BASE_URL}images/main-menu-bg.jpg`;
+
 function useIsMobile() {
   const [mob, setMob] = useState(() => window.innerWidth < 900);
   useEffect(() => {
@@ -137,13 +147,23 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "radial-gradient(ellipse at center, #12001a 0%, #04000a 100%)",
+    // Layered background: dark gradient underneath (acts as a fallback
+    // AND as tonal tinting) + the key art image on top. `cover` + `center`
+    // keeps the composition framed whatever the viewport aspect ratio.
+    background: `
+      linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.55)),
+      url("${MENU_BG_URL}") center / cover no-repeat,
+      radial-gradient(ellipse at center, #12001a 0%, #04000a 100%)
+    `,
     fontFamily: "'Segoe UI', monospace",
   },
   vignette: {
     position: "absolute",
     inset: 0,
-    background: "radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.8) 100%)",
+    // Stronger vignette over the key art so the menu panel reads clearly
+    // against any bright highlights in the background (torches / portal).
+    background:
+      "radial-gradient(ellipse at center, transparent 25%, rgba(0,0,0,0.65) 70%, rgba(0,0,0,0.9) 100%)",
     pointerEvents: "none",
   },
   panel: {
