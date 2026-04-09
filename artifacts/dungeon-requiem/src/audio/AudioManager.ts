@@ -22,6 +22,8 @@ class AudioManager {
   private _buffers: Map<SoundKey, AudioBuffer> = new Map();
   /** Currently playing music nodes. */
   private _musicNodes: { src: AudioBufferSourceNode | null; osc: OscillatorNode[] } = { src: null, osc: [] };
+  /** Currently playing music key (for idempotent playMusic). */
+  private _currentMusicKey: SoundKey | null = null;
 
   private _master = 0.6;
   private _sfx = 0.7;
@@ -109,14 +111,24 @@ class AudioManager {
     }
   }
 
-  playMusic(): void {
+  /**
+   * Play a music loop. Idempotent — if the requested key is already playing,
+   * this is a no-op (so calling playMusic on every phase re-render is safe).
+   * Passing a different key will cross-stop the current loop and start the new one.
+   */
+  playMusic(key: SoundKey = "music_dungeon"): void {
+    if (this._currentMusicKey === key && (this._musicNodes.src || this._musicNodes.osc.length > 0)) {
+      return; // already playing this track
+    }
     try {
       const ctx = this.ctx();
       this.stopMusic();
-      const def = SOUND_REGISTRY["music_dungeon"];
-      if (def.src && this._buffers.has("music_dungeon")) {
+      this._currentMusicKey = key;
+      const def = SOUND_REGISTRY[key];
+      if (!def || def.category !== "music") return;
+      if (def.src && this._buffers.has(key)) {
         const src = ctx.createBufferSource();
-        src.buffer = this._buffers.get("music_dungeon")!;
+        src.buffer = this._buffers.get(key)!;
         src.loop = true;
         const g = ctx.createGain();
         g.gain.value = def.volume ?? 1;
@@ -124,7 +136,7 @@ class AudioManager {
         src.start();
         this._musicNodes.src = src;
       } else {
-        this._synthMusic(ctx);
+        this._synthMusic(ctx, key);
       }
     } catch { /* headless */ }
   }
@@ -135,6 +147,19 @@ class AudioManager {
       this._musicNodes.src = null;
       for (const o of this._musicNodes.osc) { try { o.stop(); } catch {} }
       this._musicNodes.osc = [];
+      this._currentMusicKey = null;
+    } catch {}
+  }
+
+  /**
+   * Resume the audio context. Browsers block the AudioContext from starting
+   * until a user gesture — call this from a click/keydown handler to unlock
+   * audio playback at app boot.
+   */
+  resume(): void {
+    try {
+      const ctx = this.ctx();
+      if (ctx.state === "suspended") void ctx.resume();
     } catch {}
   }
 
@@ -154,6 +179,8 @@ class AudioManager {
       case "dash":            this._synthNoise(ctx, t, 0.01, 0.14, vol * 0.7, 0.8, 0.1);  break;
       // Distinct crystalline chime for gear drops — more resonant than pickup, ringing downward
       case "gear_drop":       this._synthGearDrop(ctx, t, vol);                            break;
+      // Soft chime marking a wave transition
+      case "wave_clear":      this._synthArpeggio(ctx, t, [392, 523, 659], vol * 0.75);    break;
       case "boss_spawn":      this._synthBossStab(ctx, t, vol);                             break;
       case "boss_special":    this._synthBossRumble(ctx, t, vol);                          break;
       case "boss_death":      this._synthBossDeath(ctx, t, vol);                           break;
@@ -255,9 +282,15 @@ class AudioManager {
     });
   }
 
-  /** Procedural ambient dungeon music — slow drones with LFO. */
-  private _synthMusic(ctx: AudioContext) {
-    const freqs = [55, 82.4, 110, 130.8]; // A1, E2, A2, C3 — dark minor drone
+  /**
+   * Procedural ambient music fallback.
+   * Menu track is slightly lighter (higher drone + softer whisper), dungeon
+   * track is the original dark minor drone.
+   */
+  private _synthMusic(ctx: AudioContext, key: SoundKey = "music_dungeon") {
+    const freqs = key === "music_menu"
+      ? [73.4, 98, 146.8, 220]       // D2, G2, D3, A3 — slightly brighter minor
+      : [55, 82.4, 110, 130.8];      // A1, E2, A2, C3 — dark minor drone
     const oscs: OscillatorNode[] = [];
 
     freqs.forEach((freq, i) => {

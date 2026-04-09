@@ -9,6 +9,9 @@ import { useMetaStore, TRIAL_BUFFS, getEarnedTrialBuffs } from "../store/metaSto
 import { META_UPGRADES, nextRankCost, nextRankLine } from "../data/MetaUpgradeData";
 import { DIFFICULTIES, DIFFICULTY_DATA } from "../data/DifficultyData";
 import { useGameStore } from "../store/gameStore";
+import { audioManager } from "../audio/AudioManager";
+
+const clickSfx = () => audioManager.play("menu_click");
 
 export function SoulForge() {
   const { shards, totalShardsEarned, purchased, purchaseRank, trialWins, gearStash, sellGear } = useMetaStore();
@@ -16,6 +19,7 @@ export function SoulForge() {
   const [flash, setFlash] = useState<string | null>(null);
 
   const handleBuy = (id: string, cost: number, maxRanks: number) => {
+    clickSfx();
     const ok = purchaseRank(id, cost, maxRanks);
     setFlash(ok ? id : "__denied__");
     setTimeout(() => setFlash(null), 600);
@@ -26,7 +30,7 @@ export function SoulForge() {
       <div style={styles.panel}>
 
         {/* Header */}
-        <button style={styles.backBtn} onClick={() => setPhase("menu")}>← BACK</button>
+        <button style={styles.backBtn} onClick={() => { clickSfx(); setPhase("menu"); }}>← BACK</button>
 
         <div style={styles.titleRow}>
           <div style={styles.title}>SOUL FORGE</div>
@@ -198,7 +202,7 @@ export function SoulForge() {
                 return (
                   <button
                     key={`${item.id}-${i}`}
-                    onClick={() => sellGear(i)}
+                    onClick={() => { clickSfx(); sellGear(i); }}
                     style={{
                       display: "flex", flexDirection: "column" as const, alignItems: "center",
                       gap: 3, padding: "8px 10px",
@@ -225,7 +229,7 @@ export function SoulForge() {
 
         <button
           style={styles.playBtn}
-          onClick={() => setPhase("charselect")}
+          onClick={() => { clickSfx(); setPhase("charselect"); }}
         >
           ⚔ DESCEND INTO THE DUNGEON
         </button>

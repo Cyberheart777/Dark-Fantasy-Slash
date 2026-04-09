@@ -1695,13 +1695,17 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           g.enemies.push(spawnGoblin());
         }
         // Boss wave trigger
-        if (g.wave % GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL === 0 && !g.bossAlive) {
+        const isBossWave = g.wave % GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL === 0 && !g.bossAlive;
+        if (isBossWave) {
           const boss = spawnBoss(g.wave);
           g.enemies.push(boss);
           g.bossAlive = true;
           g.bossId = boss.id;
           store.setBossState(boss.maxHp, boss.maxHp, ENEMY_DATA.boss.displayName, true);
           audioManager.play("boss_spawn");
+        } else {
+          // Regular wave advance — short chime for feedback
+          audioManager.play("wave_clear");
         }
       }
       // During boss wave, pause regular spawning while boss is alive
@@ -2221,7 +2225,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
   useEffect(() => {
     const g = gsRef.current!;
     if (phase === "playing") {
-      audioManager.playMusic();
+      // Music is centrally managed in App.tsx — no playMusic() here.
       // If the player is dead (e.g. restart after game-over), do a full reset
       if (g.player.dead) {
         const cls = useGameStore.getState().selectedClass;

@@ -4,6 +4,9 @@
  */
 
 import { useGameStore } from "../store/gameStore";
+import { audioManager } from "../audio/AudioManager";
+
+const click = (fn: () => void) => () => { audioManager.play("menu_click"); fn(); };
 
 interface PauseMenuProps {
   onExtract?: () => void;
@@ -37,17 +40,17 @@ export function PauseMenu({ onExtract }: PauseMenuProps) {
         <div style={styles.divider} />
 
         <div style={styles.btnCol}>
-          <button style={styles.btnPrimary} onClick={() => setPhase("playing")}>
+          <button style={styles.btnPrimary} onClick={click(() => setPhase("playing"))}>
             ▶ RESUME
           </button>
 
           {showExtract && (
-            <button style={styles.btnExtract} onClick={onExtract}>
+            <button style={styles.btnExtract} onClick={click(() => onExtract?.())}>
               ↑ EXTRACT RUN — Keep {extractLabel} of shards
             </button>
           )}
 
-          <button style={styles.btnSecondary} onClick={handleMainMenu}>
+          <button style={styles.btnSecondary} onClick={click(handleMainMenu)}>
             ⌂ MAIN MENU
           </button>
         </div>

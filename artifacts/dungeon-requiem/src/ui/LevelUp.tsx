@@ -5,6 +5,7 @@
  */
 
 import { useGameStore } from "../store/gameStore";
+import { audioManager } from "../audio/AudioManager";
 import type { UpgradeDef, UpgradeRarity } from "../data/UpgradeData";
 
 // ─── Rarity color theming ────────────────────────────────────────────────────
@@ -58,7 +59,11 @@ export function LevelUp({ onChoice }: LevelUpProps) {
 
         <div style={styles.choices}>
           {levelUpChoices.map((choice) => (
-            <UpgradeCard key={choice.id} upgrade={choice} onSelect={() => onChoice(choice.id)} />
+            <UpgradeCard
+              key={choice.id}
+              upgrade={choice}
+              onSelect={() => { audioManager.play("menu_click"); onChoice(choice.id); }}
+            />
           ))}
         </div>
       </div>

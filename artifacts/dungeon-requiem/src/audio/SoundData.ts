@@ -3,16 +3,19 @@
  *
  * HOW TO SWAP IN YOUR OWN AUDIO
  * ─────────────────────────────
- * 1. Drop your .mp3/.ogg/.wav file into the /public/audio/ folder.
- * 2. Set the `src` field for the matching key to "/audio/your-file.mp3".
- * 3. That's it — the AudioManager will load the file and use it instead of
- *    the procedural synth fallback.
+ * 1. Drop your .mp3/.ogg/.wav file into /public/audio/sfx/ or /public/audio/music/.
+ * 2. Set the `src` field for the matching key below to "/audio/sfx/yourfile.mp3"
+ *    (or /audio/music/yourfile.mp3 for music loops).
+ * 3. Add an attribution entry to /public/audio/CREDITS.md if the license
+ *    requires it (CC-BY, etc.).
+ * 4. That's it — AudioManager.preload() fetches + decodes all file-backed
+ *    sounds at app boot and swaps them in automatically. Any key with an
+ *    empty `src` uses the procedural synth fallback so the game is always
+ *    playable, even with no audio assets shipped.
  *
  * CATEGORIES
  *   sfx   — one-shot effects, respects sfxVolume
  *   music — looping background, respects musicVolume
- *
- * If `src` is empty string or undefined, procedural synthesis is used as fallback.
  */
 
 export type SoundKey =
@@ -26,10 +29,12 @@ export type SoundKey =
   | "xp_pickup"
   | "dash"
   | "gear_drop"
+  | "wave_clear"
   | "boss_spawn"
   | "boss_special"
   | "boss_death"
   | "menu_click"
+  | "music_menu"
   | "music_dungeon";
 
 export type SoundCategory = "sfx" | "music";
@@ -52,9 +57,11 @@ export const SOUND_REGISTRY: Record<SoundKey, SoundDef> = {
   xp_pickup:      { category: "sfx",   src: "", volume: 0.3 },
   dash:           { category: "sfx",   src: "", volume: 0.5 },
   gear_drop:      { category: "sfx",   src: "", volume: 0.85 },
+  wave_clear:     { category: "sfx",   src: "", volume: 0.6 },
   boss_spawn:     { category: "sfx",   src: "", volume: 1.0 },
   boss_special:   { category: "sfx",   src: "", volume: 0.9 },
   boss_death:     { category: "sfx",   src: "", volume: 1.0 },
   menu_click:     { category: "sfx",   src: "", volume: 0.4 },
+  music_menu:     { category: "music", src: "", volume: 1.0, loop: true },
   music_dungeon:  { category: "music", src: "", volume: 1.0, loop: true },
 };

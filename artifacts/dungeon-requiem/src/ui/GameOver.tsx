@@ -6,6 +6,9 @@
 
 import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
+import { audioManager } from "../audio/AudioManager";
+
+const click = (fn: () => void) => () => { audioManager.play("menu_click"); fn(); };
 
 interface GameOverProps {
   onRestart: () => void;
@@ -102,28 +105,28 @@ export function GameOver({ onRestart }: GameOverProps) {
         <div style={styles.divider} />
 
         <div style={styles.btnCol}>
-          <button style={styles.btnForge} onClick={() => useGameStore.getState().setPhase("soulforge")}>
+          <button style={styles.btnForge} onClick={click(() => useGameStore.getState().setPhase("soulforge"))}>
             ◈ SOUL FORGE — Spend {shards.toLocaleString()} Shards
           </button>
 
           <div style={styles.btnRow}>
             {trialMode ? (
-              <button style={styles.btnTrial} onClick={handleRetryTrial}>
+              <button style={styles.btnTrial} onClick={click(handleRetryTrial)}>
                 🏆 RETRY TRIAL
               </button>
             ) : (
-              <button style={styles.btnPrimary} onClick={onRestart}>
+              <button style={styles.btnPrimary} onClick={click(onRestart)}>
                 ↻ DESCEND AGAIN
               </button>
             )}
-            <button style={styles.btnSecondary} onClick={() => {
+            <button style={styles.btnSecondary} onClick={click(() => {
               const s = useGameStore.getState();
               const prevBest = s.bestScore;
               const prevWave = s.bestWave;
               s.resetGame();
               s.setBestScore(prevBest, prevWave);
               s.setPhase("menu");
-            }}>
+            })}>
               ⌂ MAIN MENU
             </button>
           </div>

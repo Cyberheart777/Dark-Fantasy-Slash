@@ -8,9 +8,12 @@
 import { useState } from "react";
 import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
+import { audioManager } from "../audio/AudioManager";
 import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
 import { RACE_DATA, RACES, type RaceType } from "../data/RaceData";
 import { DIFFICULTY_DATA, DIFFICULTIES, type DifficultyTier } from "../data/DifficultyData";
+
+const clickSfx = () => audioManager.play("menu_click");
 
 const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue"];
 
@@ -36,12 +39,14 @@ export function CharacterSelect() {
 
   const confirmRace = (r: RaceType) => {
     if (!isRaceUnlocked(r)) return;
+    clickSfx();
     setRace(r);
     setStep("class");
   };
 
   const confirmClass = (c: CharacterClass) => {
     if (!isClassUnlocked(c)) return;
+    clickSfx();
     if (cls === c) {
       // Reset all run state (shardsThisRun, extraction fields, etc.) before a new run
       const store = useGameStore.getState();
@@ -77,7 +82,7 @@ export function CharacterSelect() {
       <div style={S.panel}>
         {/* Header */}
         <div style={S.header}>
-          <button style={S.backBtn} onClick={() => step === "class" ? setStep("race") : setPhase("menu")}>
+          <button style={S.backBtn} onClick={() => { clickSfx(); step === "class" ? setStep("race") : setPhase("menu"); }}>
             ← BACK
           </button>
           {trialMode && (
@@ -139,7 +144,7 @@ export function CharacterSelect() {
                     )}
 
                     {isSelected && !locked && (
-                      <div style={S.enterBtn} onClick={() => setStep("class")}>
+                      <div style={S.enterBtn} onClick={(e) => { e.stopPropagation(); clickSfx(); setStep("class"); }}>
                         ▶ CONTINUE AS {def.name}
                       </div>
                     )}
@@ -193,7 +198,7 @@ export function CharacterSelect() {
                         background: active ? `${d.color}18` : "#0a0614",
                         boxShadow: active ? `0 0 12px ${d.color}44` : "none",
                       }}
-                      onClick={() => setDifficulty(tier)}
+                      onClick={() => { clickSfx(); setDifficulty(tier); }}
                     >
                       <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, fontFamily: "monospace" }}>
                         {d.label}

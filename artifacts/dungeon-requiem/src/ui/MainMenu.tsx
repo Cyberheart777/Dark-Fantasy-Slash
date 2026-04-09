@@ -6,6 +6,10 @@
 import { useEffect, useState } from "react";
 import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
+import { audioManager } from "../audio/AudioManager";
+
+/** Play the UI click SFX and invoke the given handler. */
+const click = (fn: () => void) => () => { audioManager.play("menu_click"); fn(); };
 
 function useIsMobile() {
   const [mob, setMob] = useState(() => window.innerWidth < 900);
@@ -46,12 +50,12 @@ export function MainMenu() {
 
         <div style={styles.divider} />
 
-        <button style={styles.btnPrimary} onClick={() => { setTrialMode(false); setPhase("charselect"); }}>
+        <button style={styles.btnPrimary} onClick={click(() => { setTrialMode(false); setPhase("charselect"); })}>
           ⚔ BEGIN DESCENT
         </button>
 
         {bossKilled ? (
-          <button style={styles.btnTrial} onClick={handleTrial}>
+          <button style={styles.btnTrial} onClick={click(handleTrial)}>
             <span style={{ color: "#ffd700", fontSize: 16 }}>🏆</span>
             {" "}TRIAL OF CHAMPIONS
             {anyTrialWin && <span style={{ color: "#aa8000", fontSize: 11 }}> · {Object.values(trialWins).filter(Boolean).length}/3 cleared</span>}
@@ -64,7 +68,7 @@ export function MainMenu() {
           </div>
         )}
 
-        <button style={styles.btnForge} onClick={() => setPhase("soulforge")}>
+        <button style={styles.btnForge} onClick={click(() => setPhase("soulforge"))}>
           <span style={styles.forgeShard}>◈</span>
           {" "}SOUL FORGE
           {shards > 0 && (
