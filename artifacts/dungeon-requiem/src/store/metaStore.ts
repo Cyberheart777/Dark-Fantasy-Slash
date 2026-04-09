@@ -99,6 +99,9 @@ export interface MetaState {
   // Gear stash — gear carried out of runs, sellable at forge
   gearStash: Array<{ id: string; name: string; icon: string; rarity: string; slot: string }>;
 
+  // First-run onboarding flag — set once the player has seen the HUD tutorial
+  hasSeenTutorial: boolean;
+
   // Actions
   addShards: (amount: number) => void;
   spendShards: (amount: number) => boolean;
@@ -113,6 +116,7 @@ export interface MetaState {
   completeTrial: (cls: string, difficulty?: string) => void;
   addGearToStash: (gear: { id: string; name: string; icon: string; rarity: string; slot: string }) => void;
   sellGear: (index: number) => void;
+  markTutorialSeen: () => void;
 }
 
 /** Shard value when selling gear at the forge. Intentionally low. */
@@ -133,6 +137,7 @@ const DEFAULT_STATE = {
   unlockedRaces: ["human"] as string[],
   trialWins: {} as Record<string, string>,
   gearStash: [] as Array<{ id: string; name: string; icon: string; rarity: string; slot: string }>,
+  hasSeenTutorial: false,
 };
 
 export const useMetaStore = create<MetaState>()(
@@ -237,22 +242,30 @@ export const useMetaStore = create<MetaState>()(
           totalShardsEarned: s.totalShardsEarned + value,
         });
       },
+
+      markTutorialSeen: () => set({ hasSeenTutorial: true }),
     }),
     {
       name: "dungeon-requiem-meta",
-      version: 3, // bumped from 2 — triggers migration
+      version: 4, // bumped from 3 — triggers migration
       migrate: (persisted: any, version: number) => {
+        let state = persisted ?? {};
         if (version < 3) {
           // Migrate old boolean trialWins to difficulty strings
-          const oldWins = persisted?.trialWins ?? {};
+          const oldWins = state?.trialWins ?? {};
           const newWins: Record<string, string> = {};
           for (const [cls, val] of Object.entries(oldWins)) {
             if (val === true) newWins[cls] = "normal";
             else if (typeof val === "string") newWins[cls] = val;
           }
-          return { ...persisted, trialWins: newWins };
+          state = { ...state, trialWins: newWins };
         }
-        return persisted as MetaState;
+        if (version < 4) {
+          // Returning players have already learned the controls — skip the
+          // tutorial overlay for them. Only fresh installs see it.
+          state = { ...state, hasSeenTutorial: true };
+        }
+        return state as MetaState;
       },
     },
   ),

@@ -5,6 +5,7 @@
  */
 
 import { useGameStore } from "../store/gameStore";
+import { useMetaStore } from "../store/metaStore";
 import { useEffect, useRef, useState } from "react";
 
 function useIsMobile() {
@@ -32,6 +33,25 @@ export function HUD({ onExtract }: HUDProps) {
     equippedWeapon, equippedArmor, equippedTrinket,
     damagePopups, playerX, playerZ,
   } = useGameStore();
+
+  // First-run tutorial — show the large prompt panel until the player either
+  // (a) levels up for the first time, (b) 20 seconds elapse, or (c) pauses.
+  // Desktop only — mobile has its own MobileControls UI.
+  const hasSeenTutorial = useMetaStore((s) => s.hasSeenTutorial);
+  const markTutorialSeen = useMetaStore((s) => s.markTutorialSeen);
+  const showTutorial = !hasSeenTutorial && !isMobile;
+
+  useEffect(() => {
+    if (!showTutorial) return;
+    const timer = setTimeout(() => markTutorialSeen(), 20000);
+    return () => clearTimeout(timer);
+  }, [showTutorial, markTutorialSeen]);
+
+  useEffect(() => {
+    // Dismiss early on first level-up — the LevelUp overlay itself is the
+    // next thing the player will see, so the tutorial is done doing its job.
+    if (showTutorial && level > 1) markTutorialSeen();
+  }, [level, showTutorial, markTutorialSeen]);
 
   // Boss arrival announcement
   const prevBossAlive = useRef(false);
@@ -111,13 +131,39 @@ export function HUD({ onExtract }: HUDProps) {
         </div>
       </div>
 
-      {/* Controls hint — desktop only */}
-      {!isMobile && (
+      {/* Controls hint — desktop only, hidden while first-run tutorial is visible */}
+      {!isMobile && !showTutorial && (
         <div style={styles.controls}>
           <span>WASD Move</span>
           <span>Mouse Aim &amp; auto-attack</span>
           <span>Shift Dash</span>
           <span>ESC Pause</span>
+        </div>
+      )}
+
+      {/* First-run tutorial — prominent bottom-center prompt panel */}
+      {showTutorial && (
+        <div style={styles.tutorial}>
+          <div style={styles.tutorialTitle}>YOUR FIRST DESCENT</div>
+          <div style={styles.tutorialRow}>
+            <span style={styles.tutorialKey}>W A S D</span>
+            <span style={styles.tutorialLabel}>Move</span>
+          </div>
+          <div style={styles.tutorialRow}>
+            <span style={styles.tutorialKey}>Mouse</span>
+            <span style={styles.tutorialLabel}>Aim — you auto-attack in that direction</span>
+          </div>
+          <div style={styles.tutorialRow}>
+            <span style={styles.tutorialKey}>Shift</span>
+            <span style={styles.tutorialLabel}>Dash — brief invincibility</span>
+          </div>
+          <div style={styles.tutorialRow}>
+            <span style={styles.tutorialKey}>ESC</span>
+            <span style={styles.tutorialLabel}>Pause</span>
+          </div>
+          <div style={styles.tutorialFoot}>
+            Walk over items to pick them up · This panel fades after your first level-up
+          </div>
         </div>
       )}
 
@@ -340,6 +386,67 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "6px 16px",
     borderRadius: 20,
     border: "1px solid rgba(255,255,255,0.08)",
+  },
+  tutorial: {
+    position: "absolute",
+    bottom: 24,
+    left: "50%",
+    transform: "translateX(-50%)",
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    gap: 8,
+    padding: "18px 32px 14px",
+    background: "rgba(10,5,20,0.88)",
+    border: "1px solid rgba(140,60,200,0.55)",
+    borderRadius: 12,
+    boxShadow: "0 0 32px rgba(100,0,160,0.35), inset 0 0 20px rgba(80,0,120,0.15)",
+    backdropFilter: "blur(6px)",
+    fontFamily: "'Segoe UI', monospace",
+    minWidth: 360,
+    animation: "tutorialPulse 2.4s ease-in-out infinite",
+  },
+  tutorialTitle: {
+    color: "#cc88ff",
+    fontSize: 11,
+    letterSpacing: 4,
+    fontWeight: 900,
+    textTransform: "uppercase" as const,
+    textShadow: "0 0 10px rgba(180,80,255,0.6)",
+    marginBottom: 4,
+  },
+  tutorialRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 14,
+    width: "100%",
+  },
+  tutorialKey: {
+    display: "inline-block",
+    minWidth: 72,
+    textAlign: "center" as const,
+    background: "linear-gradient(135deg, rgba(80,30,140,0.6), rgba(40,10,80,0.6))",
+    border: "1px solid rgba(180,100,255,0.5)",
+    borderRadius: 5,
+    padding: "4px 10px",
+    fontSize: 12,
+    fontWeight: "bold" as const,
+    letterSpacing: 1.5,
+    color: "#e8d0ff",
+    boxShadow: "0 0 8px rgba(120,40,200,0.3)",
+  },
+  tutorialLabel: {
+    color: "rgba(210,190,230,0.9)",
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
+  tutorialFoot: {
+    marginTop: 6,
+    color: "rgba(160,140,200,0.55)",
+    fontSize: 10,
+    fontStyle: "italic" as const,
+    letterSpacing: 0.5,
+    textAlign: "center" as const,
   },
   upgradePanel: {
     position: "absolute",

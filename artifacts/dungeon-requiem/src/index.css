@@ -27,3 +27,15 @@ canvas {
   /* Prevent default touch behaviours on the 3D canvas */
   touch-action: none;
 }
+
+/* First-run HUD tutorial panel pulse — draws the eye without being obnoxious */
+@keyframes tutorialPulse {
+  0%, 100% {
+    box-shadow: 0 0 32px rgba(100, 0, 160, 0.35), inset 0 0 20px rgba(80, 0, 120, 0.15);
+    border-color: rgba(140, 60, 200, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 48px rgba(160, 40, 220, 0.55), inset 0 0 28px rgba(120, 20, 180, 0.25);
+    border-color: rgba(180, 100, 240, 0.85);
+  }
+}
