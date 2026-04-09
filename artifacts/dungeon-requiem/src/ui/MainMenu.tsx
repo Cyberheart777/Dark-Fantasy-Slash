@@ -150,21 +150,21 @@ const styles: Record<string, React.CSSProperties> = {
     // AND as tonal tinting) + the key art image on top.
     //
     // Sizing / position notes:
-    //   - `background-size: auto 100%` scales the image to EXACTLY viewport
-    //     height instead of `cover` (which was over-scaling and cropping
-    //     the top of the image — the "DUNGEON REQUIEM" title baked into
-    //     the art was getting clipped by the viewport's top edge).
-    //   - `background-position: center 12%` biases the image slightly
-    //     downward (the "bring it down a little" tweak) so the title
-    //     sits below the very top edge with a bit of breathing room,
-    //     and the character composition in the lower half stays
-    //     framed nicely.
-    //   - Because auto-height can leave narrow bars on wider screens,
-    //     the dark fallback gradient underneath fills them without a
-    //     visible seam.
+    //   - `background-size: auto 108%` scales the image to ~8% taller
+    //     than the viewport. That gives us vertical "room" to shift the
+    //     image without leaving a gap at the top or bottom.
+    //   - `background-position: center bottom` pins the bottom of the
+    //     image to the bottom of the viewport, so the ~8% of extra
+    //     height overflows off the TOP of the viewport. Visually this
+    //     shifts the entire composition UP by ~50-80px depending on
+    //     window size — roughly the "like an inch" tweak you asked for
+    //     on top of the previous position fix.
+    //   - The dark fallback gradient underneath still covers any
+    //     horizontal margin on very wide monitors, so nothing shows
+    //     through on either side.
     background: `
       linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.55)),
-      url("${MENU_BG_URL}") center 12% / auto 100% no-repeat,
+      url("${MENU_BG_URL}") center bottom / auto 108% no-repeat,
       radial-gradient(ellipse at center, #12001a 0%, #04000a 100%)
     `,
     fontFamily: "'Segoe UI', monospace",
