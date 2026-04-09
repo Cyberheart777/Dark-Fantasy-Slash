@@ -30,9 +30,13 @@ export const GAME_CONFIG = {
   },
 
   XP: {
-    BASE: 60,
-    EXPONENT: 1.4,
-    MAX_LEVEL: 50,
+    // Tuned for a ~wave 40 max-level target at +50% XP multiplier gear.
+    // Earlier numbers (BASE 60, EXPONENT 1.4, MAX 50) produced level 50 by
+    // wave ~12 with stacked XP boosts. See ProgressionManager.calcXpThreshold
+    // for the per-10-level 1.15x slowdown multiplier applied on top.
+    BASE: 70,
+    EXPONENT: 1.45,
+    MAX_LEVEL: 60,
   },
 
   DIFFICULTY: {

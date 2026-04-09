@@ -13,7 +13,7 @@ const CLASS_GROWTH: Record<CharacterClass, (s: PlayerStats) => void> = {
     s.damage     += 1;
     s.maxHealth  += 3;
     s.currentHealth = Math.min(s.currentHealth + 1, s.maxHealth);
-    s.armor      += 0.4;
+    s.armor      += 0.25; // was 0.4 — armor was overscaling at high levels
   },
   mage: (s) => {
     s.damage     += 2;
@@ -77,9 +77,26 @@ export class ProgressionManager {
     return this._xp / this._xpToNextLevel;
   }
 
-  /** Formula: BASE * level ^ EXPONENT */
+  /**
+   * XP required to advance from `level` to `level+1`.
+   *
+   *   threshold = BASE * level^EXPONENT * 1.15^floor(level/10)
+   *
+   * The per-10-level 1.15x multiplier progressively slows the curve in bands:
+   *   levels  1..9  → x1.00 baseline
+   *   levels 10..19 → x1.15
+   *   levels 20..29 → x1.32
+   *   levels 30..39 → x1.52
+   *   levels 40..49 → x1.75
+   *   levels 50..59 → x2.01
+   * Combined with the bumped BASE/EXPONENT in GameConfig, this targets
+   * level 60 around wave ~40 with stacked XP-multiplier gear, vs the old
+   * ~wave 12 level 50 cap.
+   */
   private calcXpThreshold(level: number): number {
-    return Math.round(GAME_CONFIG.XP.BASE * Math.pow(level, GAME_CONFIG.XP.EXPONENT));
+    const band = Math.floor(level / 10);
+    const bandMultiplier = Math.pow(1.15, band);
+    return Math.round(GAME_CONFIG.XP.BASE * Math.pow(level, GAME_CONFIG.XP.EXPONENT) * bandMultiplier);
   }
 
   reset(): void {

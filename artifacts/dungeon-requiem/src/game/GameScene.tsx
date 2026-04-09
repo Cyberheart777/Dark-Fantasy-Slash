@@ -247,6 +247,25 @@ function gearId()  { return `g${_gid++}`; }
 let _dpid = 1;
 function popupId() { return `dp${_dpid++}`; }
 
+/**
+ * Apply armor to an incoming damage value with a soft cap at 80% reduction.
+ *
+ * The previous formula (`max(1, raw - armor) * mult`) treated armor as flat
+ * subtraction, which made the player functionally invincible past ~80 armor
+ * since enemies couldn't scale up fast enough to punch through. This helper
+ * caps absorption at 80% of the raw hit, so even a tank build with 300 armor
+ * still eats 20% of the damage.
+ *
+ *   absorbed = min(armor, raw * 0.80)
+ *   effective = max(minDmg, (raw - absorbed) * incomingMult)
+ *
+ * `minDmg` preserves the existing `Math.max(100, …)` floor on the boss slam.
+ */
+function applyArmor(rawDmg: number, armor: number, incomingMult: number, minDmg = 1): number {
+  const absorbed = Math.min(armor, rawDmg * 0.80);
+  return Math.max(minDmg, (rawDmg - absorbed) * incomingMult);
+}
+
 /** Spawn a floating damage number. */
 function spawnDmgPopup(x: number, z: number, value: number, isCrit: boolean, isPlayer: boolean): void {
   useGameStore.getState().addDamagePopup({
@@ -1058,7 +1077,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           p.fortressStillTimer += delta;
           if (p.fortressStillTimer >= 1) {
             p.fortressStillTimer = 0;
-            p.fortressBonusArmor = Math.min(30, p.fortressBonusArmor + stats.fortressArmorPerSec);
+            p.fortressBonusArmor = Math.min(20, p.fortressBonusArmor + stats.fortressArmorPerSec);
             stats.armor += stats.fortressArmorPerSec; // directly modify; reset on move
           }
         } else {
@@ -1226,7 +1245,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               // Mana Shield absorption
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
               const afterShield = rawDmg - shielded;
-              const effective = Math.max(1, (afterShield - stats.armor) * stats.incomingDamageMult);
+              const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.8;
               // Iron Reprisal
@@ -1276,7 +1295,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               // Mana Shield absorption
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
               const afterShield = rawDmg - shielded;
-              const effective = Math.max(1, (afterShield - stats.armor) * stats.incomingDamageMult);
+              const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
               // Iron Reprisal shockwave
@@ -1462,7 +1481,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const rawDmg = ep.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
           const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
           if (!isDodged) {
-            const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
+            const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
             p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.6;
             if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
@@ -1537,7 +1556,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const dist = Math.sqrt((p.x - e.x) ** 2 + (p.z - e.z) ** 2);
           if (dist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
             const rawDmg = e.damage * 3;
-            const effective = Math.max(100, (rawDmg - stats.armor) * stats.incomingDamageMult);
+            const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult, 100);
             p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
             if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
@@ -1640,7 +1659,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             store.setBossSpecialWarn(false);
             if (cDist <= e.attackRange * 1.3 && p.invTimer <= 0 && !p.dead) {
               const rawDmg = e.damage * 1.5 * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE * 0.3);
-              const effective = Math.max(1, (rawDmg - stats.armor) * stats.incomingDamageMult);
+              const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
               if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }

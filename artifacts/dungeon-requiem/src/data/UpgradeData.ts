@@ -256,15 +256,15 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   lifesteal_start: {
     id: "lifesteal_start", name: "Blood Price",
-    description: "Gain 6% lifesteal on hits",
+    description: "Gain 4% lifesteal on hits",
     icon: "🩸", maxStacks: 1, rarity: "rare", classes: "all",
-    apply: (s) => { s.lifesteal += 0.06; },
+    apply: (s) => { s.lifesteal += 0.04; }, // was 0.06 — total lifesteal was too high
   },
   lifesteal_boost: {
     id: "lifesteal_boost", name: "Bloodlord",
-    description: "+4% lifesteal",
+    description: "+2% lifesteal",
     icon: "🩸", maxStacks: 5, rarity: "common", classes: "all",
-    apply: (s) => { s.lifesteal += 0.04; },
+    apply: (s) => { s.lifesteal += 0.02; }, // was 0.04 — max stack gave +20% alone
   },
   double_strike: {
     id: "double_strike", name: "Twin Fang",
@@ -274,15 +274,15 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   armor_boost: {
     id: "armor_boost", name: "Tempered Plate",
-    description: "+8 armor (reduces incoming damage)",
+    description: "+5 armor (reduces incoming damage)",
     icon: "🛡️", maxStacks: 6, rarity: "common", classes: "all",
-    apply: (s) => { s.armor += 8; },
+    apply: (s) => { s.armor += 5; }, // was 8 — max stack gave +48 alone
   },
   health_regen: {
     id: "health_regen", name: "Troll's Blood",
-    description: "+1.5 HP regen per second",
+    description: "+1.0 HP regen per second",
     icon: "✨", maxStacks: 5, rarity: "common", classes: "all",
-    apply: (s) => { s.healthRegen += 1.5; },
+    apply: (s) => { s.healthRegen += 1.0; }, // was 1.5 — max stack gave +7.5/sec
   },
   dash_cooldown: {
     id: "dash_cooldown", name: "Phantom Step",
@@ -326,9 +326,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   wraithplate: {
     id: "wraithplate", name: "Wraithplate",
-    description: "+15 armor",
+    description: "+10 armor",
     icon: "🦴", maxStacks: 4, rarity: "common", classes: "all",
-    apply: (s) => { s.armor += 15; },
+    apply: (s) => { s.armor += 10; }, // was 15 — max stack gave +60 alone
   },
   overclock: {
     id: "overclock", name: "Overclock",
@@ -375,9 +375,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   fortress: {
     id: "fortress", name: "Fortress",
-    description: "Gain +3 armor/sec while standing still (max +30).",
+    description: "Gain +2 armor/sec while standing still (max +20).",
     icon: "🏰", maxStacks: 1, rarity: "rare", classes: ["warrior"],
-    apply: (s) => { s.fortressArmorPerSec = 3; },
+    apply: (s) => { s.fortressArmorPerSec = 2; }, // was 3 (+30 cap) — reduced in GameScene too
   },
   war_cry: {
     id: "war_cry", name: "Battle Roar",
@@ -543,9 +543,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   relic_vampiric: {
     id: "relic_vampiric", name: "Vampiric Shroud",
-    description: "+6% lifesteal. Heal 3 HP on kill.",
+    description: "+4% lifesteal. Heal 2 HP on kill.",
     icon: "🧛", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
-    apply: (s) => { s.lifesteal += 0.06; s.onKillHeal += 3; },  // was 12% + 5
+    apply: (s) => { s.lifesteal += 0.04; s.onKillHeal += 2; }, // was 6% + 3 (was 12% + 5)
   },
   relic_phantom_echo: {
     id: "relic_phantom_echo", name: "Phantom Echo",
@@ -586,11 +586,11 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   relic_iron_oath: {
     id: "relic_iron_oath", name: "Iron Oath",
-    description: "+40 armor and +25% max HP. Your dash is disabled.",
+    description: "+25 armor and +20% max HP. Your dash is disabled.",
     icon: "⚙️", maxStacks: 1, rarity: "epic", classes: ["warrior"], isRelic: true,
     apply: (s) => {
-      s.armor += 40;  // was 80
-      const bonus = Math.round(s.maxHealth * 0.25);  // was 0.40
+      s.armor += 25; // was 40 (orig 80) — still the biggest armor pick, balanced vs 80% cap
+      const bonus = Math.round(s.maxHealth * 0.20); // was 0.25 (orig 0.40)
       s.maxHealth += bonus;
       s.currentHealth = Math.min(s.currentHealth + bonus, s.maxHealth);
       s.dashCooldown = 9999;
