@@ -163,6 +163,23 @@ export interface GameState {
   // Gear drops
   gearDrops: GearDropRuntime[];
   equippedGear: Record<string, GearDef | null>; // keyed by slot: weapon, armor, trinket
+  // Game feel — surfaced on GameState so both GameLoop and CameraController can read/write
+  shakeTimer: number;  // remaining shake duration (seconds)
+  shakeAmp: number;    // current shake amplitude (world units, 0..~1)
+  shakeDur: number;    // initial duration of the active shake (for decay envelope)
+  freezeUntil: number; // performance.now() timestamp — main loop freezes updates until this time
+  deathFx: DeathFx[];  // active enemy death particle bursts
+}
+
+/** A single enemy-death particle burst. Short-lived, 7 puffs + flash. */
+export interface DeathFx {
+  id: string;
+  x: number; z: number;
+  age: number;     // seconds since spawn
+  duration: number; // total lifetime in seconds
+  color: string;   // primary tint (enemy color)
+  /** Per-puff initial velocity vectors. Length must equal PUFF_COUNT. */
+  puffs: { vx: number; vy: number; vz: number }[];
 }
 
 export interface GearDropRuntime {
@@ -236,6 +253,56 @@ function spawnDmgPopup(x: number, z: number, value: number, isCrit: boolean, isP
     id: popupId(), x, z, value, isCrit, isPlayer,
     spawnTime: performance.now(),
   });
+}
+
+// ─── Game feel helpers ────────────────────────────────────────────────────────
+
+/**
+ * Trigger camera shake. Larger amplitude wins if multiple shakes fire in the
+ * same frame (don't stack — that produces muddy cam noise).
+ * Typical values: normal hit 0.12, crit 0.22, kill 0.18, boss slam 0.55.
+ */
+function triggerShake(g: GameState, amp: number, dur = 0.18): void {
+  if (amp <= g.shakeAmp && g.shakeTimer > 0) return;
+  g.shakeAmp = amp;
+  g.shakeTimer = dur;
+  g.shakeDur = dur;
+}
+
+/**
+ * Hit-stop: freeze the main update loop for a short duration to sell the
+ * impact of big hits. Rendering continues so the world doesn't disappear.
+ * Always extends rather than truncating an existing freeze.
+ */
+function triggerFreeze(g: GameState, ms: number): void {
+  const until = performance.now() + ms;
+  if (until > g.freezeUntil) g.freezeUntil = until;
+}
+
+let _fxid = 1;
+function deathFxId() { return `fx${_fxid++}`; }
+
+/** Number of particle puffs per death burst. */
+const PUFF_COUNT = 7;
+
+/** Spawn a brief particle burst at an enemy death location. */
+function spawnDeathFx(g: GameState, x: number, z: number, color: string): void {
+  const puffs: { vx: number; vy: number; vz: number }[] = [];
+  for (let i = 0; i < PUFF_COUNT; i++) {
+    // Random direction in a hemisphere (up + horizontal)
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2.2 + Math.random() * 1.4;
+    puffs.push({
+      vx: Math.sin(angle) * speed,
+      vy: 1.4 + Math.random() * 1.6,
+      vz: Math.cos(angle) * speed,
+    });
+  }
+  g.deathFx.push({
+    id: deathFxId(), x, z, age: 0, duration: 0.55, color, puffs,
+  });
+  // Cap to avoid runaway cost if something goes wild
+  if (g.deathFx.length > 40) g.deathFx.splice(0, g.deathFx.length - 40);
 }
 
 /** Spawn a floating text popup (e.g. "Item Dropped!") with a custom color + duration. */
@@ -511,8 +578,6 @@ function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult =
 function CameraController({ gs }: { gs: React.RefObject<GameState | null> }) {
   const { camera } = useThree();
   const target = useRef(new THREE.Vector3());
-  const shakeTimer = useRef(0);
-  const shakeAmp = useRef(0);
   const lastHp = useRef(-1);
 
   useEffect(() => {
@@ -522,25 +587,29 @@ function CameraController({ gs }: { gs: React.RefObject<GameState | null> }) {
 
   useFrame((_, delta) => {
     if (!gs.current) return;
-    const p = gs.current.player;
+    const g = gs.current;
+    const p = g.player;
 
-    // Detect HP loss → subtle shake
+    // Detect HP loss → subtle shake (proportional to damage taken).
+    // Shake state lives on GameState so other code paths (boss slam, crits,
+    // kills) can also write to it via triggerShake().
     if (lastHp.current >= 0 && p.hp < lastHp.current) {
       const pct = (lastHp.current - p.hp) / p.maxHp;
-      shakeAmp.current = Math.min(0.35, pct * 2); // very gentle cap
-      shakeTimer.current = 0.18;
+      triggerShake(g, Math.min(0.35, pct * 2), 0.18);
     }
     lastHp.current = p.hp;
 
     target.current.set(p.x, 28, p.z + 22);
 
-    // Apply shake — decays quickly, small offset
-    if (shakeTimer.current > 0) {
-      shakeTimer.current -= delta;
-      const decay = Math.max(0, shakeTimer.current / 0.18);
-      const a = shakeAmp.current * decay;
+    // Apply shake — decays via the per-shake duration so larger triggers
+    // shake longer in addition to harder.
+    if (g.shakeTimer > 0) {
+      g.shakeTimer -= delta;
+      const decay = Math.max(0, g.shakeTimer / Math.max(0.0001, g.shakeDur));
+      const a = g.shakeAmp * decay;
       target.current.x += (Math.random() - 0.5) * a;
       target.current.z += (Math.random() - 0.5) * a;
+      if (g.shakeTimer <= 0) g.shakeAmp = 0;
     }
 
     camera.position.lerp(target.current, 0.08);
@@ -583,6 +652,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     if (!gs.current || !gs.current.running) return;
     if (phase === "paused" || phase === "levelup") return;
     if (phase !== "playing") return;
+
+    // ── Hit stop ────────────────────────────────────────────────────────────
+    // freezeUntil is set by triggerFreeze() on big hits. We skip the entire
+    // update tick (movement, AI, physics, timers) until the freeze expires,
+    // but rendering / camera shake / death FX particles continue running so
+    // the world doesn't visibly disappear.
+    if (performance.now() < gs.current.freezeUntil) return;
 
     const delta = Math.min(rawDelta, 0.05);
     const g = gs.current;
@@ -755,6 +831,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             e.hp -= dmg;
             e.hitFlashTimer = 0.15;
             spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
+            // Crit hit juice — small shake + brief freeze (skipped if it kills,
+            // since the centralized kill-FX scan will fire bigger juice).
+            if (isCrit && e.hp > 0) { triggerShake(g, 0.22, 0.16); triggerFreeze(g, 22); }
             meleeHitsThisSwing++;
 
             if (stats.doubleStrikeChance > 0 && Math.random() < stats.doubleStrikeChance) {
@@ -1217,8 +1296,31 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       e.z = Math.max(-ARENA - 2, Math.min(ARENA + 2, e.z));
     }
 
-    // Remove dead enemies after a moment
+    // ── Death FX + kill juice ───────────────────────────────────────────────
+    // Centralized: any enemy that's been marked dead (by melee, projectile,
+    // DoT, AoE, etc.) gets one particle burst + a small shake/freeze pulse
+    // before being removed. Boss/champion kills get a much harder hit.
+    // Each enemy only triggers once because it's removed in the same frame.
+    for (const e of g.enemies) {
+      if (!e.dead) continue;
+      spawnDeathFx(g, e.x, e.z, e.color);
+      const isBigKill = e.type === "boss" || e.type.endsWith("_champion");
+      if (isBigKill) {
+        triggerShake(g, 0.55, 0.35);
+        triggerFreeze(g, 80);
+      } else {
+        triggerShake(g, 0.18, 0.14);
+        triggerFreeze(g, 28);
+      }
+    }
     g.enemies = g.enemies.filter((e) => !e.dead);
+
+    // ── Death FX update ─────────────────────────────────────────────────────
+    // Advance age on each active particle burst, drop expired ones.
+    if (g.deathFx.length > 0) {
+      for (const fx of g.deathFx) fx.age += delta;
+      g.deathFx = g.deathFx.filter((fx) => fx.age < fx.duration);
+    }
 
     // ── Projectiles ───────────────────────────────────────────────────────
     for (const proj of g.projectiles) {
@@ -1244,6 +1346,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         e.hp -= dmg;
         e.hitFlashTimer = 0.15;
         spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
+        // Crit hit juice — see melee swing for the same pattern
+        if (isCrit && e.hp > 0) { triggerShake(g, 0.22, 0.16); triggerFreeze(g, 22); }
         if (stats.lifesteal > 0) {
           p.hp = Math.min(p.maxHp, p.hp + dmg * stats.lifesteal);
         }
@@ -1419,6 +1523,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (e.specialWarnTimer <= 0) {
           e.specialWarning = false;
           store.setBossSpecialWarn(false);
+          // Boss slam landing — biggest shake in the game, fires whether the
+          // player is in range or not (it's a visible event, not a hit reaction).
+          triggerShake(g, 0.65, 0.4);
+          triggerFreeze(g, 60);
           // AoE damage lands
           const dist = Math.sqrt((p.x - e.x) ** 2 + (p.z - e.z) ** 2);
           if (dist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
@@ -1785,9 +1893,92 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       {gs.current?.gearDrops.map((gd) => (
         <GearDrop3D key={gd.id} drop={gd} />
       ))}
+      {gs.current?.deathFx.map((fx) => (
+        <DeathFx3D key={fx.id} fx={fx} />
+      ))}
       {/* Ability visual effects */}
       <AbilityEffects gs={gs} />
     </>
+  );
+}
+
+// ─── Death FX renderer ───────────────────────────────────────────────────────
+
+/**
+ * Per-burst component: 7 puffs travelling along their assigned vectors plus a
+ * brief expanding white flash plane. All animation is derived from `fx.age`,
+ * which is advanced by the GameLoop (so it pauses naturally during hit-stop).
+ */
+function DeathFx3D({ fx }: { fx: DeathFx }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const flashRef = useRef<THREE.Mesh>(null);
+  const puffRefs = useRef<THREE.Mesh[]>([]);
+
+  useFrame(() => {
+    if (!groupRef.current) return;
+    const t = fx.age;
+    const u = Math.min(1, t / fx.duration); // normalized 0..1
+    // ── Puffs: travel outward, gravity pulls down, fade out ──
+    puffRefs.current.forEach((mesh, i) => {
+      if (!mesh) return;
+      const p = fx.puffs[i];
+      if (!p) return;
+      const gravity = -3.5;
+      mesh.position.set(
+        p.vx * t,
+        Math.max(0.1, p.vy * t + 0.5 * gravity * t * t),
+        p.vz * t,
+      );
+      const s = (1 - u) * 0.32 + 0.04;
+      mesh.scale.setScalar(s);
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      mat.opacity = Math.max(0, 1 - u);
+      mat.emissiveIntensity = 2 + (1 - u) * 3;
+    });
+    // ── White flash plane: expand quickly then fade ──
+    if (flashRef.current) {
+      const fu = Math.min(1, t / 0.2); // 0.2s flash
+      const flashScale = 0.4 + fu * 2.4;
+      flashRef.current.scale.set(flashScale, flashScale, flashScale);
+      const fmat = flashRef.current.material as THREE.MeshStandardMaterial;
+      fmat.opacity = Math.max(0, 1 - fu);
+    }
+  });
+
+  return (
+    <group ref={groupRef} position={[fx.x, 0, fx.z]}>
+      {/* White expanding flash disk on the ground */}
+      <mesh ref={flashRef} position={[0, 0.1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.7, 16]} />
+        <meshStandardMaterial
+          color="#ffffff"
+          emissive="#ffffff"
+          emissiveIntensity={5}
+          transparent
+          opacity={1}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      {/* Puff cloud */}
+      {fx.puffs.map((_p, i) => (
+        <mesh
+          key={i}
+          ref={(el) => { if (el) puffRefs.current[i] = el; }}
+          position={[0, 0.5, 0]}
+        >
+          <sphereGeometry args={[1, 6, 6]} />
+          <meshStandardMaterial
+            color={fx.color}
+            emissive={fx.color}
+            emissiveIntensity={3}
+            transparent
+            opacity={1}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
@@ -2212,6 +2403,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       difficultySpeedMult: diff.enemySpeedMult,
       difficultyShardMult: diff.shardBonusMult,
       highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
+      shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [],
     };
     progression.onLevelUp = (_lvl, choices) => {
       audioManager.play("level_up");
@@ -2268,6 +2460,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           difficultySpeedMult: resetDiff.enemySpeedMult,
           difficultyShardMult: resetDiff.shardBonusMult,
           highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
+          shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [],
         };
         _eid = 1; _oid = 1; _pid = 1; _epid = 1;
       } else {
