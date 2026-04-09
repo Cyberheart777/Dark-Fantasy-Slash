@@ -1,13 +1,14 @@
 /**
  * Player3D.tsx
  * Class-specific player meshes.
- * All three classes use low-poly procedural geometry during development.
- * Real Meshy GLB models (assets saved in public/models/) will be wired in
- * during the Electron/Steam packaging phase where GPU limits don't apply.
+ * Warrior now loads a Meshy-exported GLB (public/models/warrior/) with a
+ * procedural low-poly fallback if the model fails to load or is still
+ * streaming. Mage and Rogue remain procedural for now.
  */
 
-import { useRef } from "react";
+import { Component, Suspense, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useFrame } from "@react-three/fiber";
+import { useAnimations, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import type { GameState } from "../game/GameScene";
 
@@ -15,13 +16,96 @@ interface PlayerProps {
   gs: React.RefObject<GameState | null>;
 }
 
+// ─── Warrior GLB URL ──────────────────────────────────────────────────────────
+// Vite exposes the public-asset base path via import.meta.env.BASE_URL. On a
+// GitHub Pages build this is `/Dark-Fantasy-Slash/`; locally it's `/`. Both
+// forms end in `/`, so concatenating the relative path below resolves cleanly
+// without double slashes.
+const WARRIOR_GLB_URL = `${import.meta.env.BASE_URL}models/warrior/Character_output.glb`;
+
 export function Player3D({ gs }: PlayerProps) {
   const charClass = gs.current?.charClass ?? "warrior";
 
   if (charClass === "mage")  return <MageMeshAnimated  gs={gs} />;
   if (charClass === "rogue") return <RogueMeshAnimated gs={gs} />;
-  return <WarriorMeshAnimated gs={gs} />;
+  return <WarriorMeshWithGLB gs={gs} />;
 }
+
+// ─── Warrior: GLB loader with procedural fallback ────────────────────────────
+// Wraps the actual GLB loader in <Suspense> (for loading state) AND an
+// <ErrorBoundary> (for fetch / parse failures). If either the network is
+// offline or the model is missing, the player still sees the procedural
+// warrior instead of an empty scene.
+
+function WarriorMeshWithGLB({ gs }: PlayerProps) {
+  return (
+    <PlayerErrorBoundary fallback={<WarriorMeshAnimated gs={gs} />}>
+      <Suspense fallback={<WarriorMeshAnimated gs={gs} />}>
+        <WarriorMeshGLB gs={gs} />
+      </Suspense>
+    </PlayerErrorBoundary>
+  );
+}
+
+class PlayerErrorBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: unknown) {
+    // Don't crash the whole scene — log once and fall back to procedural.
+    console.error("[WarriorGLB] load failed, using procedural fallback:", error);
+  }
+  render() {
+    return this.state.hasError ? this.props.fallback : this.props.children;
+  }
+}
+
+function WarriorMeshGLB({ gs }: PlayerProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const gltf = useGLTF(WARRIOR_GLB_URL);
+
+  // Deep-clone the scene so we don't mutate the shared cached instance —
+  // useGLTF returns a singleton per URL and scaling / rotating it would
+  // affect every consumer.
+  const scene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
+
+  // Bind any animation clips shipped with the GLB to the cloned scene.
+  // If the Meshy export included an idle or walk clip, play the first one
+  // so the character isn't stuck in T-pose.
+  const { actions, names } = useAnimations(gltf.animations, scene);
+  useEffect(() => {
+    if (names.length > 0) {
+      const first = names[0];
+      actions[first]?.reset().fadeIn(0.3).play();
+    }
+    // Log what the GLB contained so we can wire specific clips later
+    // (Animation_Left_Slash.glb is a separate file — remapping that clip
+    // onto this skeleton is a follow-up once we know the rig shape).
+    console.log("[WarriorGLB] loaded — clips:", names);
+  }, [actions, names]);
+
+  useFrame(() => {
+    if (!gs.current || !groupRef.current) return;
+    const p = gs.current.player;
+    groupRef.current.position.set(p.x, 0, p.z);
+    groupRef.current.rotation.y = p.angle + Math.PI;
+  });
+
+  // The scale + y-offset here are first-guess defaults for a Meshy-exported
+  // character (~1.7 m tall, feet at origin). If the model appears too small,
+  // too tall, or floating, these are the knobs to tune after first playtest.
+  return (
+    <group ref={groupRef} scale={1.0}>
+      <primitive object={scene} />
+    </group>
+  );
+}
+
+// Preload the GLB so the first character-select → playing transition doesn't
+// hitch waiting on an 8MB fetch. Safe to call at module scope.
+useGLTF.preload(WARRIOR_GLB_URL);
 
 // ─── Warrior — low-poly geometry (GLBs load at Electron/Steam package time) ───
 
