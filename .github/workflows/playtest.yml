@@ -1,0 +1,75 @@
+# Build the dungeon-requiem artifact and deploy it to GitHub Pages so the
+# game can be playtested directly from a live URL — no Replit pull needed.
+#
+# After the first successful run, visit the repo Settings → Pages and set
+# "Source" to "GitHub Actions". From then on every push to the branches
+# below will rebuild and redeploy the site automatically.
+#
+# Published URL: https://cyberheart777.github.io/Dark-Fantasy-Slash/
+
+name: Playtest Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - claude/upload-hero-glb-files-HzrBb
+  workflow_dispatch:
+
+# Minimum permissions needed for GitHub Pages deployment via Actions.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deploy at a time. cancel-in-progress is intentionally false so a
+# running deploy finishes rather than being aborted by a newer push.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build dungeon-requiem
+        env:
+          # vite.config.ts requires both of these. BASE_PATH must match the
+          # GitHub Pages subdirectory, which for a repo named "Dark-Fantasy-Slash"
+          # served from cyberheart777.github.io is `/Dark-Fantasy-Slash/`.
+          PORT: "5173"
+          BASE_PATH: /Dark-Fantasy-Slash/
+        run: pnpm --filter @workspace/dungeon-requiem build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: artifacts/dungeon-requiem/dist/public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
