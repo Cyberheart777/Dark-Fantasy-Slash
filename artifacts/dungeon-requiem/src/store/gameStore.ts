@@ -125,6 +125,9 @@ export interface GameUIState {
   equippedWeapon: GearDef | null;
   equippedArmor: GearDef | null;
   equippedTrinket: GearDef | null;
+  /** In-run spare gear — duplicates that didn't auto-equip. UI mirror of
+   *  GameState.inventory maintained by GameScene on pickup / equip / sell. */
+  inventory: GearDef[];
 
   // Actions
   setPhase: (phase: GamePhase) => void;
@@ -152,6 +155,7 @@ export interface GameUIState {
   setRunExtracted: (extracted: boolean) => void;
   setExtractedBonusShards: (n: number) => void;
   setGearEquipped: (slot: string, gear: GearDef | null) => void;
+  setInventory: (items: GearDef[]) => void;
   resetGame: () => void;
 }
 
@@ -199,6 +203,7 @@ const initialState = {
   equippedWeapon: null as GearDef | null,
   equippedArmor: null as GearDef | null,
   equippedTrinket: null as GearDef | null,
+  inventory: [] as GearDef[],
 };
 
 export const useGameStore = create<GameUIState>((set) => ({
@@ -259,6 +264,8 @@ export const useGameStore = create<GameUIState>((set) => ({
     slot === "armor"  ? { equippedArmor: gear } :
                         { equippedTrinket: gear }
   ),
+
+  setInventory: (inventory) => set({ inventory }),
 
   resetGame: () =>
     set((s) => ({

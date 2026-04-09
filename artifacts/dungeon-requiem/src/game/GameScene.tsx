@@ -163,6 +163,14 @@ export interface GameState {
   // Gear drops
   gearDrops: GearDropRuntime[];
   equippedGear: Record<string, GearDef | null>; // keyed by slot: weapon, armor, trinket
+  /**
+   * In-run spare gear. When a pickup lands on an already-occupied slot, the
+   * item goes here instead of auto-replacing the equipped gear. Player can
+   * equip from / sell from this list via the pause menu inventory view.
+   * On run end (death or extraction) everything here is transferred to the
+   * persistent meta stash.
+   */
+  inventory: GearDef[];
   // Game feel — surfaced on GameState so both GameLoop and CameraController can read/write
   shakeTimer: number;  // remaining shake duration (seconds)
   shakeAmp: number;    // current shake amplitude (world units, 0..~1)
@@ -1526,19 +1534,43 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     }
 
     // ── Gear Drops — pickup + despawn ──────────────────────────────────────
+    // Behavior:
+    //   1. Empty slot   → auto-equip the new gear (bonuses applied immediately)
+    //   2. Occupied slot → push to in-run inventory (view/equip/sell in pause menu)
+    //   3. Inventory full (>20) → auto-sell the oldest common item for shards
+    //      as an overflow safety valve so runs can't snowball into runaway
+    //      inventories. Epic and rare items are preserved.
+    let inventoryChanged = false;
     for (const gd of g.gearDrops) {
       gd.lifetime -= delta;
       if (gd.lifetime <= 0) continue; // will be filtered out
       const gdx = p.x - gd.x, gdz = p.z - gd.z;
       if (Math.sqrt(gdx * gdx + gdz * gdz) <= GAME_CONFIG.PLAYER.PICKUP_RADIUS) {
-        equipGear(gd.gear, g);
         gd.lifetime = -1; // mark for removal
         audioManager.play("level_up"); // satisfying pickup sound
-        // Notify store for UI
-        store.setGearEquipped(gd.gear.slot, gd.gear);
+        const slot = gd.gear.slot;
+        if (!g.equippedGear[slot]) {
+          // Empty slot — auto-equip
+          equipGear(gd.gear, g);
+          store.setGearEquipped(slot, gd.gear);
+        } else {
+          // Occupied — inventory
+          g.inventory.push(gd.gear);
+          inventoryChanged = true;
+          // Overflow: if we're above 20, drop the oldest common for shards.
+          // Preserves rares/epics so players don't lose meaningful loot.
+          while (g.inventory.length > 20) {
+            const commonIdx = g.inventory.findIndex((it) => it.rarity === "common");
+            if (commonIdx < 0) break; // no commons to cull — let it ride
+            const culled = g.inventory.splice(commonIdx, 1)[0];
+            store.addRunShards(5);
+            spawnTextPopup(p.x, p.z, `Auto-sold ${culled.icon} +5 shards`, "#aaaaaa", 2.0);
+          }
+        }
       }
     }
     g.gearDrops = g.gearDrops.filter((gd) => gd.lifetime > 0);
+    if (inventoryChanged) store.setInventory([...g.inventory]);
 
     // ── Boss special attack ────────────────────────────────────────────────
     for (const e of g.enemies) {
@@ -1887,7 +1919,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     if (p.dead) {
       g.running = false;
       if (g.score > store.bestScore) store.setBestScore(g.score, g.wave);
-      // Transfer equipped gear to persistent stash
+      // Transfer all gear to persistent stash — equipped + spare inventory
       const meta = useMetaStore.getState();
       for (const slot of ["weapon", "armor", "trinket"] as const) {
         const gear = g.equippedGear[slot];
@@ -1895,6 +1927,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           meta.addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
         }
       }
+      for (const gear of g.inventory) {
+        meta.addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
+      }
+      g.inventory = [];
+      store.setInventory([]);
       store.setPhase("gameover");
     }
   });
@@ -2431,6 +2468,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       difficultySpeedMult: diff.enemySpeedMult,
       difficultyShardMult: diff.shardBonusMult,
       highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
+      inventory: [],
       shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [],
     };
     progression.onLevelUp = (_lvl, choices) => {
@@ -2488,6 +2526,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           difficultySpeedMult: resetDiff.enemySpeedMult,
           difficultyShardMult: resetDiff.shardBonusMult,
           highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
+          inventory: [],
           shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [],
         };
         _eid = 1; _oid = 1; _pid = 1; _epid = 1;
@@ -2518,11 +2557,16 @@ export function GameScene({ onRestart }: GameSceneProps) {
       useMetaStore.getState().addShards(bonus);
     }
     useGameStore.getState().setRunExtracted(true);
-    // Transfer gear to stash on extraction
+    // Transfer gear to stash on extraction — both equipped and spare inventory
     for (const slot of ["weapon", "armor", "trinket"] as const) {
       const gear = g.equippedGear[slot];
       if (gear) useMetaStore.getState().addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
     }
+    for (const gear of g.inventory) {
+      useMetaStore.getState().addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
+    }
+    g.inventory = [];
+    useGameStore.getState().setInventory([]);
     // Mark player as dead so the restart useEffect triggers a full reset
     g.player.dead = true;
     g.running = false;
@@ -2542,6 +2586,48 @@ export function GameScene({ onRestart }: GameSceneProps) {
     g.player.hp = Math.min(g.player.hp, g.player.maxHp);
     useGameStore.getState().applyUpgrade(id);
     useGameStore.getState().setPhase("playing");
+  }, []);
+
+  // Equip an item from the in-run inventory. If the target slot is already
+  // occupied, the currently-equipped item goes back to the inventory (swap).
+  // Safe to call while paused — pause menu is the only trigger path.
+  const handleEquipFromInventory = useCallback((index: number) => {
+    const g = gsRef.current;
+    if (!g) return;
+    const item = g.inventory[index];
+    if (!item) return;
+    const slot = item.slot;
+    const previouslyEquipped = g.equippedGear[slot];
+    // Remove the item from inventory first so equipGear doesn't see two refs
+    const newInventory = [...g.inventory];
+    newInventory.splice(index, 1);
+    g.inventory = newInventory;
+    // equipGear handles stat bonus math: subtracts old, applies new
+    equipGear(item, g);
+    // Put the previously-equipped item back into inventory if there was one
+    if (previouslyEquipped) {
+      g.inventory.push(previouslyEquipped);
+    }
+    const store = useGameStore.getState();
+    store.setGearEquipped(slot, item);
+    store.setInventory([...g.inventory]);
+  }, []);
+
+  // Sell a spare inventory item for shards (common 5 / rare 15 / epic 35).
+  // Uses the same shard values as the Soul Forge gear stash so in-run and
+  // extracted sells have consistent economy.
+  const handleSellFromInventory = useCallback((index: number) => {
+    const g = gsRef.current;
+    if (!g) return;
+    const item = g.inventory[index];
+    if (!item) return;
+    const value = item.rarity === "epic" ? 35 : item.rarity === "rare" ? 15 : 5;
+    const newInventory = [...g.inventory];
+    newInventory.splice(index, 1);
+    g.inventory = newInventory;
+    const store = useGameStore.getState();
+    store.addRunShards(value);
+    store.setInventory([...g.inventory]);
   }, []);
 
   // ESC → pause
@@ -2575,7 +2661,13 @@ export function GameScene({ onRestart }: GameSceneProps) {
 
       {(phase === "playing" || phase === "paused" || phase === "levelup") && <HUD onExtract={handleExtract} />}
       {phase === "playing" && <MobileControls gsRef={gsRef} />}
-      {phase === "paused" && <PauseMenu onExtract={handleExtract} />}
+      {phase === "paused" && (
+        <PauseMenu
+          onExtract={handleExtract}
+          onEquipFromInventory={handleEquipFromInventory}
+          onSellFromInventory={handleSellFromInventory}
+        />
+      )}
       {phase === "levelup" && <LevelUp onChoice={handleUpgrade} />}
     </div>
   );
