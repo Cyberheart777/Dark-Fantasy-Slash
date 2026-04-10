@@ -49,3 +49,6 @@ Thumbs.db
 .local/
 *.backup
 *.bak
+
+Dungeon_Requiem_Power_Ups.xlsx
+generate_upgrades_sheet.py
