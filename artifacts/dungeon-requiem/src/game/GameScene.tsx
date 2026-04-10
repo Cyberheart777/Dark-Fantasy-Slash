@@ -1408,9 +1408,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         e.z += e.vz * delta;
       }
 
-      // Attack player (ranged champions handle all damage via their own AI — skip generic melee for them)
-      const isRangedChampion = e.type === "mage_champion" || e.type === "rogue_champion";
-      if (!isRangedChampion && dist <= e.attackRange) {
+      // Attack player (champions with custom AI handle damage themselves — skip generic melee)
+      const skipGenericMelee = e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "warrior_champion";
+      if (!skipGenericMelee && dist <= e.attackRange) {
         e.attackTimer -= delta;
         if (e.attackTimer <= 0) {
           e.attackTimer = e.attackInterval;
