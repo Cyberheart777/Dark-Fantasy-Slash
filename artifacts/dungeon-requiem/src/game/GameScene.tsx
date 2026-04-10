@@ -1646,18 +1646,32 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           store.setBossSpecialWarn(true);
         }
       }
-      // Boss radial projectile burst every 5s
+      // Boss enrage at 75% / 50% / 25% HP — boosts speed, damage, and projectile intensity
+      const bossHpPct = e.hp / e.maxHp;
+      const newBossEnrage = bossHpPct <= 0.25 ? 3 : bossHpPct <= 0.50 ? 2 : bossHpPct <= 0.75 ? 1 : 0;
+      if (newBossEnrage > e.enragePhase) {
+        e.enragePhase = newBossEnrage;
+        e.moveSpeed = e.baseMoveSpeed * (1 + newBossEnrage * 0.15);
+        e.damage = Math.round(e.baseDamage * (1 + newBossEnrage * 0.20));
+        e.hitFlashTimer = 0.5;
+        if (newBossEnrage >= 2) { e.emissive = "#660000"; }
+        if (newBossEnrage >= 3) { e.emissive = "#aa0000"; }
+        audioManager.play("boss_special");
+      }
+      // Boss radial projectile burst — scales with enrage phase
       e.radialTimer -= delta;
+      const burstInterval = e.enragePhase >= 3 ? 3.5 : e.enragePhase >= 2 ? 4.0 : 5.0;
       if (e.radialTimer <= 0) {
-        e.radialTimer = 5.0;
-        const BURST_COUNT = 10;
+        e.radialTimer = burstInterval;
+        const BURST_COUNT = e.enragePhase >= 3 ? 16 : e.enragePhase >= 2 ? 12 : 10;
+        const projSpeed = e.enragePhase >= 3 ? 11 : e.enragePhase >= 2 ? 10 : 9;
         for (let i = 0; i < BURST_COUNT; i++) {
           const angle = (i / BURST_COUNT) * Math.PI * 2;
           g.enemyProjectiles.push({
             id: eprojId(), x: e.x, z: e.z,
-            vx: Math.sin(angle) * 9,
-            vz: Math.cos(angle) * 9,
-            damage: e.damage * 0.75,
+            vx: Math.sin(angle) * projSpeed,
+            vz: Math.cos(angle) * projSpeed,
+            damage: e.damage * 0.5,
             lifetime: 4.5, dead: false, style: "default" as const,
           });
         }

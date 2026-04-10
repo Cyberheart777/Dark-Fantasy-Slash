@@ -984,6 +984,88 @@ function RogueChampionMesh({ color, emissive, flash, walkSpeed }: { color: strin
   );
 }
 
+// ─── Status Effect Visuals ───────────────────────────────────────────────────
+
+const _poisonGeo = new THREE.SphereGeometry(0.06, 4, 4);
+const _bleedGeo = new THREE.SphereGeometry(0.05, 4, 4);
+const _frostGeo = new THREE.OctahedronGeometry(0.08, 0);
+const _poisonMat = new THREE.MeshBasicMaterial({ color: "#00ff40", transparent: true, opacity: 0.8 });
+const _bleedMat = new THREE.MeshBasicMaterial({ color: "#ff2020", transparent: true, opacity: 0.8 });
+const _frostMat = new THREE.MeshBasicMaterial({ color: "#80ddff", transparent: true, opacity: 0.7 });
+
+function StatusFxLayer({ poisonStacks, bleedTimer, slowTimer }: { poisonStacks: number; bleedTimer: number; slowTimer: number }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const t = useRef(Math.random() * 100);
+
+  useFrame((_, delta) => {
+    if (!groupRef.current) return;
+    t.current += delta;
+    const time = t.current;
+    const children = groupRef.current.children;
+
+    // Poison drip particles (indices 0-2)
+    for (let i = 0; i < 3; i++) {
+      const m = children[i] as THREE.Mesh;
+      if (!m) continue;
+      m.visible = poisonStacks > 0;
+      if (!m.visible) continue;
+      const phase = (time * 1.5 + i * 1.3) % 2.0;
+      m.position.set(
+        Math.sin(i * 2.1) * 0.3,
+        1.2 - phase * 0.8,
+        Math.cos(i * 2.1) * 0.3,
+      );
+      const scale = Math.min(1, poisonStacks / 3) * (1 - phase / 2);
+      m.scale.setScalar(scale);
+    }
+
+    // Bleed trail droplets (indices 3-4)
+    for (let i = 0; i < 2; i++) {
+      const m = children[3 + i] as THREE.Mesh;
+      if (!m) continue;
+      m.visible = bleedTimer > 0;
+      if (!m.visible) continue;
+      const phase = (time * 2.0 + i * 1.5) % 1.5;
+      m.position.set(
+        Math.sin(time * 3 + i * 4) * 0.2,
+        0.8 - phase * 0.6,
+        Math.cos(time * 3 + i * 4) * 0.2,
+      );
+      m.scale.setScalar(1 - phase / 1.5);
+    }
+
+    // Frost crystals orbiting (indices 5-6)
+    for (let i = 0; i < 2; i++) {
+      const m = children[5 + i] as THREE.Mesh;
+      if (!m) continue;
+      m.visible = slowTimer > 0;
+      if (!m.visible) continue;
+      const orbitAngle = time * 2 + i * Math.PI;
+      m.position.set(
+        Math.sin(orbitAngle) * 0.6,
+        0.5 + Math.sin(time * 3 + i) * 0.15,
+        Math.cos(orbitAngle) * 0.6,
+      );
+      m.rotation.set(time * 2, time * 3, 0);
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      {/* Poison drip (3 particles) */}
+      <mesh geometry={_poisonGeo} material={_poisonMat} visible={false} />
+      <mesh geometry={_poisonGeo} material={_poisonMat} visible={false} />
+      <mesh geometry={_poisonGeo} material={_poisonMat} visible={false} />
+      {/* Bleed droplets (2 particles) */}
+      <mesh geometry={_bleedGeo} material={_bleedMat} visible={false} />
+      <mesh geometry={_bleedGeo} material={_bleedMat} visible={false} />
+      {/* Frost crystals (2 orbiting) */}
+      <mesh geometry={_frostGeo} material={_frostMat} visible={false} />
+      <mesh geometry={_frostGeo} material={_frostMat} visible={false} />
+    </group>
+  );
+}
+
 // ─── Main Enemy3D Export (with spawn scale-in + death shrink) ────────────────
 
 export function Enemy3D({ enemy }: EnemyProps) {
@@ -1057,6 +1139,9 @@ export function Enemy3D({ enemy }: EnemyProps) {
         {enemy.type === "mage_champion" && <MageChampionMesh {...meshProps} />}
         {enemy.type === "rogue_champion" && <RogueChampionMesh {...meshProps} walkSpeed={walkSpeed} />}
       </group>
+
+      {/* Status effect visuals */}
+      <StatusFxLayer poisonStacks={enemy.poisonStacks} bleedTimer={enemy.bleedTimer} slowTimer={enemy.slowTimer} />
 
       {/* Health bar */}
       <group ref={healthBarGroupRef} position={[0, hpBarHeight, 0]}>
