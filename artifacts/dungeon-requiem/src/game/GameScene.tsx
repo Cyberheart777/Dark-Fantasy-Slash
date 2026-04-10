@@ -34,6 +34,7 @@ import { HUD } from "../ui/HUD";
 import { LevelUp } from "../ui/LevelUp";
 import { PauseMenu } from "../ui/PauseMenu";
 import { MobileControls } from "../ui/MobileControls";
+import { DevHUD } from "../ui/DevHUD";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -2660,6 +2661,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       </Canvas>
 
       {(phase === "playing" || phase === "paused" || phase === "levelup") && <HUD onExtract={handleExtract} />}
+      {(phase === "playing" || phase === "paused" || phase === "levelup") && <DevHUD gsRef={gsRef} />}
       {phase === "playing" && <MobileControls gsRef={gsRef} />}
       {phase === "paused" && (
         <PauseMenu
