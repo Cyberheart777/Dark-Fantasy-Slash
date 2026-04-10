@@ -118,7 +118,7 @@ export interface EnemyProjectile {
   damage: number;
   lifetime: number;
   dead: boolean;
-  style: "default" | "orb" | "dagger" | "sword";
+  style: "default" | "orb" | "dagger" | "sword" | "crescent";
 }
 
 export interface Projectile {
@@ -1612,7 +1612,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (!p.dead && p.invTimer <= 0 && !p.isDashing) {
         const hdx = p.x - ep.x;
         const hdz = p.z - ep.z;
-        if (Math.sqrt(hdx * hdx + hdz * hdz) < 0.9) {
+        const hitRadius = ep.style === "crescent" ? 1.8 : 0.9;
+        if (Math.sqrt(hdx * hdx + hdz * hdz) < hitRadius) {
           ep.dead = true;
           const rawDmg = ep.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
           const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
@@ -1825,22 +1826,21 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           e.radialTimer -= delta;
           e.vx = 0; e.vz = 0;
           if (e.radialTimer <= 0) {
-            // Fire arc slash: semi-circle of sword projectiles toward player
+            // Fire arc slash: crescent energy blade(s) toward player
             store.setBossSpecialWarn(false);
             const baseAngle = Math.atan2(cx, cz);
-            const arcSpread = Math.PI * 0.75; // 135° arc
-            const projCount = e.enragePhase >= 2 ? 9 : e.enragePhase >= 1 ? 7 : 5;
-            const projSpeed = 10 + e.enragePhase * 1.5;
-            const projDmg = e.damage * 0.8;
-            for (let k = 0; k < projCount; k++) {
-              const t = projCount > 1 ? k / (projCount - 1) : 0.5;
-              const shotAngle = baseAngle + (t - 0.5) * arcSpread;
+            const crescentCount = e.enragePhase >= 2 ? 3 : e.enragePhase >= 1 ? 2 : 1;
+            const projSpeed = 8 + e.enragePhase * 1.5;
+            const projDmg = e.damage * 1.2;
+            for (let k = 0; k < crescentCount; k++) {
+              const spread = crescentCount > 1 ? (k - (crescentCount - 1) / 2) * 0.4 : 0;
+              const shotAngle = baseAngle + spread;
               g.enemyProjectiles.push({
                 id: eprojId(), x: e.x, z: e.z,
                 vx: Math.sin(shotAngle) * projSpeed,
                 vz: Math.cos(shotAngle) * projSpeed,
                 damage: projDmg,
-                lifetime: 2.0, dead: false, style: "sword" as const,
+                lifetime: 2.5, dead: false, style: "crescent" as const,
               });
             }
             audioManager.play("boss_special");
@@ -2514,12 +2514,16 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
   useFrame((_, delta) => {
     t.current += delta;
     if (!ref.current) return;
-    ref.current.position.set(ep.x, ep.style === "sword" ? 1.2 : 0.9 + Math.sin(t.current * 8) * 0.08, ep.z);
-    if (ep.style === "dagger" || ep.style === "sword") {
-      // Align to travel direction + spin
+    const yOff = ep.style === "crescent" ? 1.4 : 0.9 + Math.sin(t.current * 8) * 0.08;
+    ref.current.position.set(ep.x, yOff, ep.z);
+    if (ep.style === "dagger") {
       const angle = Math.atan2(ep.vx, ep.vz);
       ref.current.rotation.y = angle;
-      ref.current.rotation.z = ep.style === "dagger" ? t.current * 12 : t.current * 1.5;
+      ref.current.rotation.z = t.current * 12;
+    } else if (ep.style === "crescent") {
+      // Face travel direction, tilt forward slightly
+      ref.current.rotation.y = Math.atan2(ep.vx, ep.vz);
+      ref.current.rotation.x = -0.3;
     } else {
       ref.current.rotation.y = t.current * 6;
     }
@@ -2541,26 +2545,39 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
     );
   }
 
-  // ── Warrior champion arc slash — massive energy blade ──
+  // ── Warrior champion crescent arc slash ──
+  if (ep.style === "crescent") {
+    return (
+      <group ref={ref}>
+        {/* Core crescent — partial torus (bright inner edge) */}
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[1.3, 0.18, 8, 32, Math.PI * 0.75]} />
+          <meshStandardMaterial color="#ff4400" emissive="#ff2200" emissiveIntensity={8} roughness={0.05} metalness={0.9} />
+        </mesh>
+        {/* Outer glow shell — larger, softer */}
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[1.3, 0.35, 6, 32, Math.PI * 0.75]} />
+          <meshStandardMaterial color="#ff6600" emissive="#ff4400" emissiveIntensity={3} transparent opacity={0.3} side={THREE.DoubleSide} />
+        </mesh>
+        {/* Inner bright edge — thinner, hotter core */}
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[1.3, 0.06, 6, 32, Math.PI * 0.75]} />
+          <meshStandardMaterial color="#ffaa44" emissive="#ffcc66" emissiveIntensity={12} />
+        </mesh>
+        <pointLight color="#ff4400" intensity={6} distance={10} decay={2} />
+      </group>
+    );
+  }
+
+  // ── Legacy sword style (boss radial burst) ──
   if (ep.style === "sword") {
     return (
       <group ref={ref}>
-        {/* Main blade — large, bright, unmissable */}
-        <mesh position={[0, 0, -0.5]}>
-          <boxGeometry args={[0.25, 0.5, 1.8]} />
-          <meshStandardMaterial color="#ff3300" emissive="#ff2200" emissiveIntensity={6} metalness={0.9} roughness={0.05} />
+        <mesh position={[0, 0, -0.3]}>
+          <boxGeometry args={[0.08, 0.14, 0.6]} />
+          <meshStandardMaterial color="#ff4400" emissive="#ff2200" emissiveIntensity={4} metalness={0.8} roughness={0.1} />
         </mesh>
-        {/* Blade edge glow */}
-        <mesh position={[0, 0, -0.5]}>
-          <boxGeometry args={[0.35, 0.6, 2.0]} />
-          <meshStandardMaterial color="#ff6600" emissive="#ff4400" emissiveIntensity={3} transparent opacity={0.35} side={THREE.BackSide} />
-        </mesh>
-        {/* Trailing energy wake */}
-        <mesh position={[0, 0, 0.8]}>
-          <boxGeometry args={[0.15, 0.3, 1.0]} />
-          <meshStandardMaterial color="#ff8844" emissive="#ff4400" emissiveIntensity={2} transparent opacity={0.25} />
-        </mesh>
-        <pointLight color="#ff3300" intensity={5} distance={8} decay={2} />
+        <pointLight color="#ff4400" intensity={2} distance={4} decay={2} />
       </group>
     );
   }
