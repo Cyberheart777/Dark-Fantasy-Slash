@@ -2514,12 +2514,12 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
   useFrame((_, delta) => {
     t.current += delta;
     if (!ref.current) return;
-    ref.current.position.set(ep.x, 0.9 + Math.sin(t.current * 8) * 0.08, ep.z);
+    ref.current.position.set(ep.x, ep.style === "sword" ? 1.2 : 0.9 + Math.sin(t.current * 8) * 0.08, ep.z);
     if (ep.style === "dagger" || ep.style === "sword") {
       // Align to travel direction + spin
       const angle = Math.atan2(ep.vx, ep.vz);
       ref.current.rotation.y = angle;
-      ref.current.rotation.z = ep.style === "dagger" ? t.current * 12 : t.current * 4;
+      ref.current.rotation.z = ep.style === "dagger" ? t.current * 12 : t.current * 1.5;
     } else {
       ref.current.rotation.y = t.current * 6;
     }
@@ -2541,26 +2541,26 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
     );
   }
 
-  // ── Warrior champion arc slash blade ──
+  // ── Warrior champion arc slash — massive energy blade ──
   if (ep.style === "sword") {
     return (
       <group ref={ref}>
-        {/* Blade body — elongated box */}
-        <mesh position={[0, 0, -0.25]}>
-          <boxGeometry args={[0.08, 0.14, 0.55]} />
-          <meshStandardMaterial color="#ff4400" emissive="#ff2200" emissiveIntensity={4} metalness={0.8} roughness={0.1} />
+        {/* Main blade — large, bright, unmissable */}
+        <mesh position={[0, 0, -0.5]}>
+          <boxGeometry args={[0.25, 0.5, 1.8]} />
+          <meshStandardMaterial color="#ff3300" emissive="#ff2200" emissiveIntensity={6} metalness={0.9} roughness={0.05} />
         </mesh>
-        {/* Blade tip — tapered */}
-        <mesh position={[0, 0, -0.56]}>
-          <coneGeometry args={[0.07, 0.16, 4]} />
-          <meshStandardMaterial color="#ff6600" emissive="#ff4400" emissiveIntensity={5} metalness={0.9} roughness={0.05} />
+        {/* Blade edge glow */}
+        <mesh position={[0, 0, -0.5]}>
+          <boxGeometry args={[0.35, 0.6, 2.0]} />
+          <meshStandardMaterial color="#ff6600" emissive="#ff4400" emissiveIntensity={3} transparent opacity={0.35} side={THREE.BackSide} />
         </mesh>
-        {/* Trail glow */}
-        <mesh position={[0, 0, 0.05]}>
-          <boxGeometry args={[0.04, 0.08, 0.35]} />
-          <meshStandardMaterial color="#ff8844" emissive="#ff4400" emissiveIntensity={2} transparent opacity={0.4} />
+        {/* Trailing energy wake */}
+        <mesh position={[0, 0, 0.8]}>
+          <boxGeometry args={[0.15, 0.3, 1.0]} />
+          <meshStandardMaterial color="#ff8844" emissive="#ff4400" emissiveIntensity={2} transparent opacity={0.25} />
         </mesh>
-        <pointLight color="#ff4400" intensity={3} distance={4} decay={2} />
+        <pointLight color="#ff3300" intensity={5} distance={8} decay={2} />
       </group>
     );
   }
