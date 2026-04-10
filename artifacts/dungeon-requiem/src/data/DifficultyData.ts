@@ -14,6 +14,7 @@ export interface DifficultyDef {
   enemyDamageMult: number;
   enemySpeedMult: number;
   shardBonusMult: number;
+  gearDropMult: number;
   color: string;
   accentColor: string;
 }
@@ -27,6 +28,7 @@ export const DIFFICULTY_DATA: Record<DifficultyTier, DifficultyDef> = {
     enemyDamageMult: 1.0,
     enemySpeedMult: 1.0,
     shardBonusMult: 1.0,
+    gearDropMult: 1.0,
     color: "#60c040",
     accentColor: "#80e060",
   },
@@ -38,6 +40,7 @@ export const DIFFICULTY_DATA: Record<DifficultyTier, DifficultyDef> = {
     enemyDamageMult: 1.3,
     enemySpeedMult: 1.15,
     shardBonusMult: 1.5,
+    gearDropMult: 1.15,
     color: "#e08020",
     accentColor: "#ffaa40",
   },
@@ -49,6 +52,7 @@ export const DIFFICULTY_DATA: Record<DifficultyTier, DifficultyDef> = {
     enemyDamageMult: 1.7,
     enemySpeedMult: 1.3,
     shardBonusMult: 2.5,
+    gearDropMult: 1.30,
     color: "#cc2020",
     accentColor: "#ff4444",
   },

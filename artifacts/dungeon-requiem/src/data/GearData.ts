@@ -97,14 +97,15 @@ export const GEAR_DROP_RATES: Record<string, Record<GearRarity, number>> = {
 
 /**
  * Attempt a gear drop. Rolls epic first, then rare, then common.
+ * dropMult scales all drop chances (e.g. 1.15 for Hard difficulty).
  * Returns null if nothing drops.
  */
-export function tryRollGear(enemyType: string): GearDef | null {
+export function tryRollGear(enemyType: string, dropMult = 1.0): GearDef | null {
   const rates = GEAR_DROP_RATES[enemyType];
   if (!rates) return null;
-  // Roll highest rarity first
-  if (rates.epic > 0 && Math.random() < rates.epic) return rollGearDrop("epic");
-  if (rates.rare > 0 && Math.random() < rates.rare) return rollGearDrop("rare");
-  if (rates.common > 0 && Math.random() < rates.common) return rollGearDrop("common");
+  // Roll highest rarity first, applying difficulty multiplier
+  if (rates.epic > 0 && Math.random() < rates.epic * dropMult) return rollGearDrop("epic");
+  if (rates.rare > 0 && Math.random() < rates.rare * dropMult) return rollGearDrop("rare");
+  if (rates.common > 0 && Math.random() < rates.common * dropMult) return rollGearDrop("common");
   return null;
 }

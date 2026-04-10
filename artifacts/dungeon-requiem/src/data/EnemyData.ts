@@ -117,7 +117,7 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     displayName: "Gold Hoarder",
     health: 22,
     damage: 0,
-    moveSpeed: 13.0,
+    moveSpeed: 9.5,
     xpReward: GREEN_XP * 40,     // 400 — massive XP jackpot
     crystalTier: "orange",
     attackRange: 0,

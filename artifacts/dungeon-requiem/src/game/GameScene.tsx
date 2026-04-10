@@ -159,6 +159,7 @@ export interface GameState {
   difficultyDmgMult: number;
   difficultySpeedMult: number;
   difficultyShardMult: number;
+  difficultyGearMult: number;
   // Extraction
   highestBossWaveCleared: number;
   // Gear drops
@@ -395,6 +396,8 @@ function spawnGoblin(): EnemyRuntime {
     case 2: x = -half; z = Math.random() * half * 2 - half; break;
     case 3: x =  half; z = Math.random() * half * 2 - half; break;
   }
+  // Spawn banner so the player notices
+  spawnTextPopup(x, z, "TREASURE GOBLIN!", "#ffcc00", 3.0);
   return {
     id: enemyId(), type: "xp_goblin", x, z,
     hp: def.health, maxHp: def.health,
@@ -405,9 +408,9 @@ function spawnGoblin(): EnemyRuntime {
     dead: false, hitFlashTimer: 0,
     scale: def.scale, color: def.color, emissive: def.emissive,
     vx: 0, vz: 0, phasing: false, phaseTimer: 0,
-    specialTimer: 15.0, // despawn countdown
+    specialTimer: 25.0, // despawn countdown
     specialWarning: false, specialWarnTimer: 0,
-    minionTimer: 0, radialTimer: 0,
+    minionTimer: 0, radialTimer: 3.8, // taunt cycle timer
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: 0,
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
   };
@@ -440,7 +443,7 @@ function handlePlayerFatalDmg(p: PlayerRuntime, g: GameState): boolean {
 
 /** Try to spawn a gear drop at the given position based on enemy type. */
 function trySpawnGear(enemyType: string, x: number, z: number, g: GameState): void {
-  const gear = tryRollGear(enemyType);
+  const gear = tryRollGear(enemyType, g.difficultyGearMult);
   if (!gear) return;
   const dropX = x + (Math.random() - 0.5) * 1.5;
   const dropZ = z + (Math.random() - 0.5) * 1.5;
@@ -1118,10 +1121,40 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const ox = e.x - p.x, oz = e.z - p.z;
           if (Math.sqrt(ox * ox + oz * oz) <= 2.5) {
             e.hp -= orbitDmg;
+            // Throttled hit flash (only triggers when previous flash expired)
+            if (e.hitFlashTimer <= 0) e.hitFlashTimer = 0.12;
             if (e.hp <= 0 && !e.dead) {
               e.dead = true; g.kills++; g.score += e.scoreValue;
+              if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
+              useGameStore.getState().addRunShards(5);
               if (stats.dashResetOnKill) p.dashCooldown = 0;
               if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              if (stats.soulfireChance > 0) triggerSoulfire(e, g);
+              // Venom spread on kill
+              if (stats.venomStackDps > 0) {
+                for (const nearby of g.enemies) {
+                  if (nearby.dead || nearby.id === e.id) continue;
+                  const nx = nearby.x - e.x, nz = nearby.z - e.z;
+                  if (Math.sqrt(nx * nx + nz * nz) <= 3.5) {
+                    nearby.poisonStacks = Math.min(nearby.poisonStacks + 1, 5);
+                    nearby.poisonDps = stats.venomStackDps;
+                  }
+                }
+              }
+              const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
+              g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
+              spawnDeathFx(g, e.x, e.z, e.color);
+              if (e.type === "boss") {
+                g.bossAlive = false; g.bossId = null;
+                g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
+                store.setBossState(0, 0, "", false);
+                store.setBossSpecialWarn(false);
+                audioManager.play("boss_death"); trySpawnGear(e.type, e.x, e.z, g);
+                useMetaStore.getState().unlockMilestone("boss_kill");
+                useMetaStore.getState().checkUnlocks();
+              } else {
+                audioManager.play("enemy_death"); trySpawnGear(e.type, e.x, e.z, g);
+              }
             }
           }
         }
@@ -1163,16 +1196,23 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       const edz = p.z - e.z;
       const dist = Math.sqrt(edx * edx + edz * edz);
 
-      // XP Goblin: flees player, despawns after 15s without dropping XP
+      // XP Goblin: flees player, despawns after 25s, taunts every ~3s
       if (e.type === "xp_goblin") {
         e.specialTimer -= delta;
         if (e.specialTimer <= 0) { e.dead = true; continue; }
-        if (dist > 0.1) {
+        // Taunt pause: radialTimer counts down a 3s cycle, goblin freezes for 0.8s
+        e.radialTimer -= delta;
+        if (e.radialTimer <= 0) e.radialTimer = 3.8; // reset cycle: 3s run + 0.8s pause
+        const isTaunting = e.radialTimer <= 0.8;
+        if (!isTaunting && dist > 0.1) {
           const speed = e.moveSpeed;
           e.vx = THREE.MathUtils.lerp(e.vx, -(edx / dist) * speed, 0.12);
           e.vz = THREE.MathUtils.lerp(e.vz, -(edz / dist) * speed, 0.12);
           e.x += e.vx * delta;
           e.z += e.vz * delta;
+        } else if (isTaunting) {
+          // Freeze in place during taunt
+          e.vx = 0; e.vz = 0;
         }
         e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
         e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
@@ -2468,6 +2508,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       difficultyDmgMult: diff.enemyDamageMult,
       difficultySpeedMult: diff.enemySpeedMult,
       difficultyShardMult: diff.shardBonusMult,
+      difficultyGearMult: diff.gearDropMult,
       highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
       inventory: [],
       shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [],
@@ -2526,6 +2567,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           difficultyDmgMult: resetDiff.enemyDamageMult,
           difficultySpeedMult: resetDiff.enemySpeedMult,
           difficultyShardMult: resetDiff.shardBonusMult,
+          difficultyGearMult: resetDiff.gearDropMult,
           highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
           inventory: [],
           shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [],
