@@ -1,14 +1,13 @@
 /**
  * MobileControls.tsx
- * Vampire Survivors-style mobile input: full-screen floating joystick + dash.
+ * Twin-stick mobile input: left = move, right = aim, bottom = dash.
  *
- * Touch anywhere → joystick spawns at finger position.
- * Drag to move. Release → joystick vanishes, player stops.
- * Attacks are fully automatic — no attack button needed.
- * Aim is handled by auto-aim (nearest enemy / movement direction).
+ * Left half:  touch → floating movement joystick. Drag to walk.
+ * Right half: touch → floating aim joystick. Drag to set facing/attack direction.
+ * Dash:       always-visible opaque button, bottom-center.
+ * Pause:      top-right corner.
  *
- * Dash button: bottom-right, always visible.
- * Pause button: top-right corner.
+ * Attacks are automatic — the aim stick controls DIRECTION, not triggering.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -44,69 +43,112 @@ export function MobileControls({ gsRef }: Props) {
     };
   }, [visible, gsRef]);
 
-  // ── Floating joystick state ──────────────────────────────────────────────
-  const joystickId = useRef<number | null>(null);
-  const [joystickOrigin, setJoystickOrigin] = useState<{ x: number; y: number } | null>(null);
-  const [knobOffset, setKnobOffset] = useState({ x: 0, y: 0 });
+  // ── Movement joystick (left half) ────────────────────────────────────────
+  const moveId = useRef<number | null>(null);
+  const [moveOrigin, setMoveOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [moveKnob, setMoveKnob] = useState({ x: 0, y: 0 });
+
+  // ── Aim joystick (right half) ────────────────────────────────────────────
+  const aimId = useRef<number | null>(null);
+  const [aimOrigin, setAimOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [aimKnob, setAimKnob] = useState({ x: 0, y: 0 });
+
   const [dashFlash, setDashFlash] = useState(false);
 
-  const updateJoystick = useCallback((cx: number, cy: number, ox: number, oy: number) => {
+  // ── Shared joystick math ─────────────────────────────────────────────────
+  function computeStick(cx: number, cy: number, ox: number, oy: number) {
     const dx = cx - ox;
     const dy = cy - oy;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const clamped = Math.min(dist, JOYSTICK_RADIUS);
     const angle = Math.atan2(dy, dx);
-    setKnobOffset({ x: Math.cos(angle) * clamped, y: Math.sin(angle) * clamped });
-
+    const knob = { x: Math.cos(angle) * clamped, y: Math.sin(angle) * clamped };
     const t = clamped / JOYSTICK_RADIUS;
-    if (t < DEAD_ZONE) {
-      gsRef.current?.input.setMobileMovement(false, false, false, false);
-      return;
-    }
-    const nx = dx / Math.max(dist, 1);
-    const ny = dy / Math.max(dist, 1);
-    gsRef.current?.input.setMobileMovement(ny < -0.4, ny > 0.4, nx < -0.4, nx > 0.4);
-  }, [gsRef]);
+    const nx = dist > 0 ? dx / dist : 0;
+    const ny = dist > 0 ? dy / dist : 0;
+    return { knob, t, nx, ny };
+  }
 
-  // ── Touch handlers for full-screen joystick ──────────────────────────────
+  // ── Touch dispatcher ─────────────────────────────────────────────────────
   const onTouchStart = useCallback((e: React.TouchEvent) => {
-    // Don't intercept touches on dash or pause buttons
     const target = e.target as HTMLElement;
     if (target.closest("[data-ctrl]")) return;
-
     e.preventDefault();
-    if (joystickId.current !== null) return; // already tracking a joystick touch
 
-    const t = e.changedTouches[0];
-    joystickId.current = t.identifier;
-    const origin = { x: t.clientX, y: t.clientY };
-    setJoystickOrigin(origin);
-    setKnobOffset({ x: 0, y: 0 });
+    const halfW = window.innerWidth / 2;
+
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.clientX < halfW) {
+        // Left half → movement
+        if (moveId.current === null) {
+          moveId.current = t.identifier;
+          setMoveOrigin({ x: t.clientX, y: t.clientY });
+          setMoveKnob({ x: 0, y: 0 });
+        }
+      } else {
+        // Right half → aim
+        if (aimId.current === null) {
+          aimId.current = t.identifier;
+          setAimOrigin({ x: t.clientX, y: t.clientY });
+          setAimKnob({ x: 0, y: 0 });
+        }
+      }
+    }
   }, []);
 
   const onTouchMove = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
-    if (joystickId.current === null || !joystickOrigin) return;
     for (let i = 0; i < e.changedTouches.length; i++) {
-      if (e.changedTouches[i].identifier === joystickId.current) {
-        updateJoystick(
-          e.changedTouches[i].clientX,
-          e.changedTouches[i].clientY,
-          joystickOrigin.x,
-          joystickOrigin.y,
-        );
+      const t = e.changedTouches[i];
+
+      // Movement stick
+      if (t.identifier === moveId.current && moveOrigin) {
+        const s = computeStick(t.clientX, t.clientY, moveOrigin.x, moveOrigin.y);
+        setMoveKnob(s.knob);
+        if (s.t < DEAD_ZONE) {
+          gsRef.current?.input.setMobileMovement(false, false, false, false);
+        } else {
+          gsRef.current?.input.setMobileMovement(s.ny < -0.4, s.ny > 0.4, s.nx < -0.4, s.nx > 0.4);
+        }
+      }
+
+      // Aim stick
+      if (t.identifier === aimId.current && aimOrigin) {
+        const s = computeStick(t.clientX, t.clientY, aimOrigin.x, aimOrigin.y);
+        setAimKnob(s.knob);
+        if (s.t >= DEAD_ZONE) {
+          // Set worldAim to a point far in the aim direction from the player
+          const g = gsRef.current;
+          if (g) {
+            const px = g.player.x;
+            const pz = g.player.z;
+            // Map screen-space aim to world-space: screen X → world X, screen Y → world Z
+            g.input.worldAimX = px + s.nx * 20;
+            g.input.worldAimZ = pz + s.ny * 20;
+          }
+        }
       }
     }
-  }, [joystickOrigin, updateJoystick]);
+  }, [moveOrigin, aimOrigin, gsRef]);
 
   const onTouchEnd = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
-      if (e.changedTouches[i].identifier === joystickId.current) {
-        joystickId.current = null;
-        setJoystickOrigin(null);
-        setKnobOffset({ x: 0, y: 0 });
+      const t = e.changedTouches[i];
+
+      if (t.identifier === moveId.current) {
+        moveId.current = null;
+        setMoveOrigin(null);
+        setMoveKnob({ x: 0, y: 0 });
         gsRef.current?.input.setMobileMovement(false, false, false, false);
+      }
+
+      if (t.identifier === aimId.current) {
+        aimId.current = null;
+        setAimOrigin(null);
+        setAimKnob({ x: 0, y: 0 });
+        // Keep last aim direction — don't reset worldAimX/Z
       }
     }
   }, [gsRef]);
@@ -137,32 +179,60 @@ export function MobileControls({ gsRef }: Props) {
       onTouchEnd={onTouchEnd}
       onTouchCancel={onTouchEnd}
     >
-      {/* Floating joystick — appears where you touch */}
-      {joystickOrigin && (
+      {/* Left — movement joystick (floating) */}
+      {moveOrigin && (
         <div
           style={{
             ...styles.joystickBase,
-            left: joystickOrigin.x - JOYSTICK_RADIUS,
-            top: joystickOrigin.y - JOYSTICK_RADIUS,
+            left: moveOrigin.x - JOYSTICK_RADIUS,
+            top: moveOrigin.y - JOYSTICK_RADIUS,
+            borderColor: "rgba(180,120,255,0.4)",
+            background: "rgba(180,120,255,0.10)",
           }}
         >
-          <div
-            style={{
-              ...styles.joystickKnob,
-              transform: `translate(calc(-50% + ${knobOffset.x}px), calc(-50% + ${knobOffset.y}px))`,
-            }}
-          />
+          <div style={{
+            ...styles.joystickKnob,
+            transform: `translate(calc(-50% + ${moveKnob.x}px), calc(-50% + ${moveKnob.y}px))`,
+            background: "rgba(210,160,255,0.75)",
+            borderColor: "rgba(230,200,255,0.85)",
+            boxShadow: "0 0 14px rgba(180,100,255,0.6)",
+          }} />
         </div>
       )}
 
-      {/* Dash button — bottom-right */}
+      {/* Right — aim joystick (floating) */}
+      {aimOrigin && (
+        <div
+          style={{
+            ...styles.joystickBase,
+            left: aimOrigin.x - JOYSTICK_RADIUS,
+            top: aimOrigin.y - JOYSTICK_RADIUS,
+            borderColor: "rgba(255,120,80,0.4)",
+            background: "rgba(255,120,80,0.10)",
+          }}
+        >
+          <div style={{
+            ...styles.joystickKnob,
+            transform: `translate(calc(-50% + ${aimKnob.x}px), calc(-50% + ${aimKnob.y}px))`,
+            background: "rgba(255,160,120,0.75)",
+            borderColor: "rgba(255,200,180,0.85)",
+            boxShadow: "0 0 14px rgba(255,100,60,0.6)",
+          }} />
+        </div>
+      )}
+
+      {/* Subtle zone hints — always visible */}
+      <div style={styles.moveHint}>MOVE</div>
+      <div style={styles.aimHint}>AIM</div>
+
+      {/* Dash button — bottom-center, always visible, opaque */}
       <div
         data-ctrl="dash"
         style={{
           ...styles.dashBtn,
           background: dashFlash
-            ? "rgba(120,200,255,0.9)"
-            : "rgba(30,70,170,0.65)",
+            ? "rgba(120,200,255,1)"
+            : "rgba(25,55,140,0.85)",
         }}
         onTouchStart={onDash}
       >
@@ -197,8 +267,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: JOYSTICK_RADIUS * 2,
     height: JOYSTICK_RADIUS * 2,
     borderRadius: "50%",
-    background: "rgba(180,120,255,0.12)",
-    border: "2px solid rgba(180,120,255,0.4)",
+    border: "2px solid",
     pointerEvents: "none",
   },
   joystickKnob: {
@@ -208,19 +277,42 @@ const styles: Record<string, React.CSSProperties> = {
     width: KNOB_RADIUS * 2,
     height: KNOB_RADIUS * 2,
     borderRadius: "50%",
-    background: "rgba(210,160,255,0.75)",
-    border: "2px solid rgba(230,200,255,0.85)",
-    boxShadow: "0 0 14px rgba(180,100,255,0.6)",
+    border: "2px solid",
+    pointerEvents: "none",
+  },
+  moveHint: {
+    position: "absolute",
+    bottom: 10,
+    left: "25%",
+    transform: "translateX(-50%)",
+    fontSize: 10,
+    fontWeight: "bold",
+    letterSpacing: 3,
+    color: "rgba(180,140,255,0.15)",
+    fontFamily: "monospace",
+    pointerEvents: "none",
+  },
+  aimHint: {
+    position: "absolute",
+    bottom: 10,
+    right: "25%",
+    transform: "translateX(50%)",
+    fontSize: 10,
+    fontWeight: "bold",
+    letterSpacing: 3,
+    color: "rgba(255,140,100,0.15)",
+    fontFamily: "monospace",
     pointerEvents: "none",
   },
   dashBtn: {
     position: "absolute",
-    bottom: 30,
-    right: 30,
-    width: 68,
-    height: 68,
-    borderRadius: 16,
-    border: "2px solid rgba(100,170,255,0.6)",
+    bottom: 24,
+    left: "50%",
+    transform: "translateX(-50%)",
+    width: 72,
+    height: 72,
+    borderRadius: 18,
+    border: "2px solid rgba(100,170,255,0.7)",
     display: "flex",
     flexDirection: "column" as const,
     alignItems: "center",
@@ -228,10 +320,10 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 2,
     pointerEvents: "auto",
     touchAction: "none",
-    boxShadow: "0 0 18px rgba(60,130,255,0.4)",
+    boxShadow: "0 2px 16px rgba(60,130,255,0.5)",
   },
   dashIcon: {
-    fontSize: 24,
+    fontSize: 26,
     lineHeight: 1,
   },
   dashLabel: {
