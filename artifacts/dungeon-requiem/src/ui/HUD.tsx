@@ -204,10 +204,12 @@ export function HUD({ onExtract }: HUDProps) {
         ))}
       </div>
 
-      {/* Dash cooldown indicator */}
-      <div style={{ ...styles.actionIndicator, opacity: isDashing ? 1 : 0.3 }}>
-        <span style={{ color: isDashing ? "#88aaff" : "#666" }}>◈ DASH</span>
-      </div>
+      {/* Dash cooldown indicator — desktop only (mobile has its own dash button) */}
+      {!isMobile && (
+        <div style={{ ...styles.actionIndicator, opacity: isDashing ? 1 : 0.3 }}>
+          <span style={{ color: isDashing ? "#88aaff" : "#666" }}>◈ DASH</span>
+        </div>
+      )}
 
       {/* Extract Run button — shown only after first boss kill, normal mode */}
       {showExtract && (
@@ -502,16 +504,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
   extractWrapper: {
     position: "absolute",
-    top: 20,
-    right: 20,
+    top: 64,
+    right: 16,
     pointerEvents: "auto",
   },
   extractBtn: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    padding: "10px 18px",
+    padding: "12px 20px",
     fontSize: 13,
+    minHeight: 48,
     fontWeight: "bold",
     letterSpacing: 2,
     color: "#aaff88",
@@ -610,7 +613,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   gearPanel: {
     position: "absolute",
-    top: 80,
+    top: 120,
     right: 12,
     display: "flex",
     gap: 6,

@@ -217,6 +217,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 20,
     padding: "18px 24px",
+    minHeight: 56,
     background: "rgba(40,20,60,0.6)",
     border: "1px solid rgba(120,80,160,0.35)",
     borderRadius: 10,

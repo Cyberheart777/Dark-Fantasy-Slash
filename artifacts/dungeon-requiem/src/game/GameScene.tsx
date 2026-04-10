@@ -2671,7 +2671,7 @@ function SceneContent({ gs }: { gs: React.RefObject<GameState | null> }) {
   return (
     <>
       <Lighting />
-      <fog attach="fog" color="#050008" near={55} far={95} />
+      <fog attach="fog" args={["#050008", 55, 95]} />
       <DungeonRoom />
       {TORCH_POSITIONS.map((pos, i) => (
         <Torch3D key={i} position={pos} />

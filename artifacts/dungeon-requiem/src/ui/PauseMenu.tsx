@@ -82,7 +82,7 @@ export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory
             </div>
 
             <div style={styles.controls}>
-              <span style={{ color: "rgba(180,160,200,0.4)" }}>Press ESC to resume</span>
+              <span style={{ color: "rgba(180,160,200,0.4)" }}>Tap RESUME or press ESC</span>
             </div>
           </>
         )}
