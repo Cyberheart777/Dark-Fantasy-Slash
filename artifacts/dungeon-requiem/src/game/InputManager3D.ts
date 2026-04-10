@@ -29,6 +29,9 @@ export class InputManager3D {
   public worldAimX = 0;
   public worldAimZ = 0;
 
+  /** True when mobile touch controls are active (set by MobileControls). */
+  public isMobile = false;
+
   private _attackConsumed = false;
   private _dashConsumed = false;
   private _pauseConsumed = false;
@@ -80,6 +83,7 @@ export class InputManager3D {
   setMobileMovement(up: boolean, down: boolean, left: boolean, right: boolean) {
     this._mUp = up; this._mDown = down;
     this._mLeft = left; this._mRight = right;
+    this.isMobile = true;
   }
 
   setMobileAim(mx: number, my: number) {

@@ -793,11 +793,41 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (p.dashCooldown > 0) p.dashCooldown -= delta;
       if (p.attackTimer > 0) p.attackTimer -= delta;
 
-      // Aim
-      const dx = input.worldAimX - p.x;
-      const dz = input.worldAimZ - p.z;
-      if (Math.abs(dx) > 0.1 || Math.abs(dz) > 0.1) {
-        p.angle = Math.atan2(dx, dz);
+      // Aim — desktop uses mouse cursor, mobile auto-aims nearest enemy
+      if (g.input.isMobile) {
+        // Auto-aim: face nearest living enemy within 12 units
+        let nearestDist = 12;
+        let aimX = 0, aimZ = 0;
+        let hasTarget = false;
+        for (const e of g.enemies) {
+          if (e.dead) continue;
+          const ex = e.x - p.x, ez = e.z - p.z;
+          const ed = Math.sqrt(ex * ex + ez * ez);
+          if (ed < nearestDist) {
+            nearestDist = ed;
+            aimX = ex; aimZ = ez;
+            hasTarget = true;
+          }
+        }
+        if (hasTarget) {
+          p.angle = Math.atan2(aimX, aimZ);
+        } else {
+          // No enemy nearby — face movement direction
+          let mx = 0, mz = 0;
+          if (input.up) mz -= 1;
+          if (input.down) mz += 1;
+          if (input.left) mx -= 1;
+          if (input.right) mx += 1;
+          if (Math.abs(mx) > 0.01 || Math.abs(mz) > 0.01) {
+            p.angle = Math.atan2(mx, mz);
+          }
+        }
+      } else {
+        const dx = input.worldAimX - p.x;
+        const dz = input.worldAimZ - p.z;
+        if (Math.abs(dx) > 0.1 || Math.abs(dz) > 0.1) {
+          p.angle = Math.atan2(dx, dz);
+        }
       }
 
       // Dash

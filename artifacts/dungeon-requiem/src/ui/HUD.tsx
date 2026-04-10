@@ -325,6 +325,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute",
     inset: 0,
     pointerEvents: "none",
+    zIndex: 10,
     fontFamily: "'Segoe UI', monospace",
     userSelect: "none",
   },
