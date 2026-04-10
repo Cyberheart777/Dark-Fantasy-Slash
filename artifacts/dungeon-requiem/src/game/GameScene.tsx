@@ -651,9 +651,9 @@ function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult =
     dead: false, hitFlashTimer: 0,
     scale: def.scale, color: def.color, emissive: def.emissive,
     vx: 0, vz: 0, phasing: false, phaseTimer: 0,
-    specialTimer: 4.0,
+    specialTimer: cls === "warrior" ? 10.0 : 4.0,
     specialWarning: false, specialWarnTimer: 0,
-    minionTimer: 3.0,
+    minionTimer: cls === "warrior" ? 2.0 : 3.0, // warrior fires first arc slash faster
     radialTimer: cls === "mage" ? 2.2 : cls === "rogue" ? 0.75 : 0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
@@ -1856,20 +1856,20 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
 
           // Start arc slash charge-up when in range
           e.minionTimer -= delta;
-          if (e.minionTimer <= 0 && cDist <= 10) {
-            e.minionTimer = 3.5 - e.enragePhase * 0.4; // faster at higher enrage
-            e.radialTimer = 1.4; // 1.4s charge-up (clear dodge window)
+          if (e.minionTimer <= 0 && cDist <= 12) {
+            e.minionTimer = 2.8 - e.enragePhase * 0.5; // much faster at higher enrage (2.8 / 2.3 / 1.8 / 1.3)
+            e.radialTimer = 1.2; // 1.2s charge-up
             store.setBossSpecialWarn(true);
             audioManager.play("boss_special");
           }
         }
 
-        // ── Ground slam special every 7s — separate from arc slash ──
+        // ── Ground slam special every 10s — secondary threat, arc slash is primary
         // Only triggers when NOT already charging an arc slash
         if (e.radialTimer <= 0) {
           e.specialTimer -= delta;
           if (e.specialTimer <= 0) {
-            e.specialTimer = 7.0;
+            e.specialTimer = 10.0;
             // Reuse the existing boss slam mechanic: warn → AoE damage
             e.specialWarning = true;
             e.specialWarnTimer = 1.5;
@@ -1886,8 +1886,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             triggerShake(g, 0.55, 0.35);
             triggerFreeze(g, 45);
             if (cDist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
-              const rawDmg = e.damage * 2.5;
-              const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult, 50);
+              const rawDmg = e.damage * 1.5;
+              const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
               if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
