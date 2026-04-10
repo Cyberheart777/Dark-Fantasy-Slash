@@ -29,6 +29,7 @@ export function HUD({ onExtract }: HUDProps) {
     wave, score, kills, survivalTime,
     acquiredUpgrades, isDashing,
     bossHP, bossMaxHP, bossName, bossAlive, bossSpecialWarn,
+    nemesisAnnounce,
     highestBossWaveCleared, trialMode,
     equippedWeapon, equippedArmor, equippedTrinket,
     damagePopups, playerX, playerZ,
@@ -246,6 +247,13 @@ export function HUD({ onExtract }: HUDProps) {
         <div style={styles.bossAnnounce}>
           <div style={styles.bossAnnounceTop}>⚠ BOSS APPROACHES ⚠</div>
           <div style={styles.bossAnnounceBottom}>{bossName}</div>
+        </div>
+      )}
+
+      {/* Nemesis announcement */}
+      {nemesisAnnounce && (
+        <div style={{ ...styles.bossAnnounce, background: "radial-gradient(ellipse at center, rgba(180,40,20,0.85), rgba(80,10,0,0.6) 70%, transparent 100%)" }}>
+          <div style={{ ...styles.bossAnnounceTop, color: "#ff6030" }}>⚔ {nemesisAnnounce} ⚔</div>
         </div>
       )}
 

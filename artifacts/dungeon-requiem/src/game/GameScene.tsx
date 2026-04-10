@@ -22,7 +22,7 @@ import { createDefaultStats, type PlayerStats } from "../data/UpgradeData";
 import { buildMetaModifiers, buildTrialModifiers } from "../data/MetaUpgradeData";
 import { resolveStats } from "../data/StatModifier";
 import { InputManager3D } from "./InputManager3D";
-import { tryRollGear, GEAR_RARITY_COLOR, type GearDef } from "../data/GearData";
+import { tryRollGear, rollGearDrop, GEAR_RARITY_COLOR, type GearDef } from "../data/GearData";
 import { DungeonRoom } from "../world/DungeonRoom";
 import { Torch3D } from "../world/Torch3D";
 import { Player3D } from "../entities/Player3D";
@@ -151,6 +151,8 @@ export interface GameState {
   bossAlive: boolean;
   bossId: string | null;
   goblinWaveSpawned: number;
+  nemesisSpawned: boolean;
+  nemesisId: string | null;
   stormCallTimer: number;
   // Trial & Difficulty
   trialMode: boolean;
@@ -602,6 +604,30 @@ function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult =
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
   };
+}
+
+/**
+ * Spawn a nemesis — a weaker, character-sized version of the trial champion
+ * matching the player's class. Spawns at a random arena edge.
+ */
+function spawnNemesis(cls: CharacterClass, hpMult: number, dmgMult: number, speedMult: number): EnemyRuntime {
+  const nemesis = spawnChampion(cls, hpMult * 0.5, dmgMult * 0.6, speedMult);
+  // Override scale to character-sized (not the giant 1.8× trial champion)
+  nemesis.scale = 1.0;
+  // Spawn at arena edge instead of center
+  const half = GAME_CONFIG.ARENA_HALF - 4;
+  const edge = Math.floor(Math.random() * 4);
+  switch (edge) {
+    case 0: nemesis.x = Math.random() * half * 2 - half; nemesis.z = -half; break;
+    case 1: nemesis.x = Math.random() * half * 2 - half; nemesis.z =  half; break;
+    case 2: nemesis.x = -half; nemesis.z = Math.random() * half * 2 - half; break;
+    case 3: nemesis.x =  half; nemesis.z = Math.random() * half * 2 - half; break;
+  }
+  // Give it meaningful rewards (the champion defaults have 0 XP/score)
+  const champDef = ENEMY_DATA[`${cls}_champion` as keyof typeof ENEMY_DATA];
+  nemesis.xpReward = champDef.xpReward || Math.round(50 * hpMult);
+  nemesis.scoreValue = champDef.scoreValue || 200;
+  return nemesis;
 }
 
 // ─── Camera + AimResolver ─────────────────────────────────────────────────────
@@ -1898,6 +1924,38 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       store.setPhase("trialvictory");
     }
 
+    // ── Nemesis kill detection ────────────────────────────────────────────
+    if (g.nemesisId) {
+      const nem = g.enemies.find(e => e.id === g.nemesisId);
+      if (nem && nem.dead) {
+        g.nemesisId = null;
+        store.setNemesisState(false, "NEMESIS DEFEATED!");
+        setTimeout(() => { store.setNemesisState(false, ""); }, 3500);
+        // Bonus rewards: 25 shards + 3 purple XP crystals
+        useGameStore.getState().addRunShards(25);
+        const purpleXp = Math.round(50 * stats.xpMultiplier);
+        for (let i = 0; i < 3; i++) {
+          g.xpOrbs.push({
+            id: orbId(), x: nem.x + (Math.random() - 0.5) * 2, z: nem.z + (Math.random() - 0.5) * 2,
+            value: purpleXp, collected: false, floatOffset: Math.random() * Math.PI * 2,
+            crystalTier: "purple", collectTimer: 0,
+          });
+        }
+        // Guaranteed common gear + low odds rare (8%) / epic (1.5%)
+        const nemRoll = Math.random();
+        const nemRarity = nemRoll < 0.015 ? "epic" as const : nemRoll < 0.095 ? "rare" as const : "common" as const;
+        const nemGear = rollGearDrop(nemRarity);
+        const dropX = nem.x + (Math.random() - 0.5) * 1.5;
+        const dropZ = nem.z + (Math.random() - 0.5) * 1.5;
+        g.gearDrops.push({
+          id: gearId(), x: dropX, z: dropZ, gear: nemGear, floatOffset: Math.random() * Math.PI * 2, lifetime: 30,
+        });
+        const rarityColor = GEAR_RARITY_COLOR[nemRarity].text;
+        spawnTextPopup(dropX, dropZ, `${nemGear.icon} ${nemGear.name}`, rarityColor, 2.5);
+        audioManager.play("gear_drop");
+      }
+    }
+
     // ── Spawning (normal mode only) ───────────────────────────────────────
     if (!g.trialMode) {
       // Pause wave progression while a boss is alive. Without this, the wave
@@ -1922,6 +1980,16 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (g.wave % 7 === 0 && g.goblinWaveSpawned !== g.wave) {
           g.goblinWaveSpawned = g.wave;
           g.enemies.push(spawnGoblin());
+        }
+        // Nemesis: 15% chance per wave after wave 10, max 1 per run
+        if (g.wave >= 10 && !g.nemesisSpawned && Math.random() < 0.15) {
+          g.nemesisSpawned = true;
+          const nemesis = spawnNemesis(g.charClass, g.difficultyHpMult, g.difficultyDmgMult, g.difficultySpeedMult);
+          g.nemesisId = nemesis.id;
+          g.enemies.push(nemesis);
+          store.setNemesisState(true, "YOUR NEMESIS APPROACHES!");
+          audioManager.play("boss_spawn");
+          setTimeout(() => { store.setNemesisState(useGameStore.getState().nemesisAlive, ""); }, 3500);
         }
         // Boss wave trigger
         const isBossWave = g.wave % GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL === 0 && !g.bossAlive;
@@ -2515,6 +2583,8 @@ export function GameScene({ onRestart }: GameSceneProps) {
       bossId: null,
       enemyProjectiles: [],
       goblinWaveSpawned: 0,
+      nemesisSpawned: false,
+      nemesisId: null,
       stormCallTimer: 0,
       trialMode,
       trialChampionDefeated: false,
@@ -2574,6 +2644,8 @@ export function GameScene({ onRestart }: GameSceneProps) {
           bossId: null,
           enemyProjectiles: [],
           goblinWaveSpawned: 0,
+          nemesisSpawned: false,
+          nemesisId: null,
           stormCallTimer: 0,
           trialMode: resetTrialMode,
           trialChampionDefeated: false,

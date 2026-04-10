@@ -116,6 +116,10 @@ export interface GameUIState {
   bossAlive: boolean;
   bossSpecialWarn: boolean;
 
+  // Nemesis state
+  nemesisAlive: boolean;
+  nemesisAnnounce: string; // "" = no announcement, non-empty = show banner text
+
   // Extraction system
   highestBossWaveCleared: number;
   runExtracted: boolean;
@@ -151,6 +155,7 @@ export interface GameUIState {
   setAttackState: (attackTrigger: number, isDashing: boolean) => void;
   setVolume: (master: number, sfx: number, music: number, muted: boolean) => void;
   setBestScore: (score: number, wave: number) => void;
+  setNemesisState: (alive: boolean, announce: string) => void;
   setHighestBossWaveCleared: (wave: number) => void;
   setRunExtracted: (extracted: boolean) => void;
   setExtractedBonusShards: (n: number) => void;
@@ -197,6 +202,8 @@ const initialState = {
   bossName: "",
   bossAlive: false,
   bossSpecialWarn: false,
+  nemesisAlive: false,
+  nemesisAnnounce: "",
   highestBossWaveCleared: 0,
   runExtracted: false,
   extractedBonusShards: 0,
@@ -217,6 +224,7 @@ export const useGameStore = create<GameUIState>((set) => ({
   addRunShards: (n) => set((s) => ({ shardsThisRun: s.shardsThisRun + n })),
   setBossState: (hp, maxHp, name, alive) => set({ bossHP: hp, bossMaxHP: maxHp, bossName: name, bossAlive: alive }),
   setBossSpecialWarn: (active) => set({ bossSpecialWarn: active }),
+  setNemesisState: (alive, announce) => set({ nemesisAlive: alive, nemesisAnnounce: announce }),
   setHighestBossWaveCleared: (wave) => set({ highestBossWaveCleared: wave }),
   setRunExtracted: (extracted) => set({ runExtracted: extracted }),
   setExtractedBonusShards: (n) => set({ extractedBonusShards: n }),
