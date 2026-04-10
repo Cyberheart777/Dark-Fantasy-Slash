@@ -2194,6 +2194,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         g.waveTimer = 0;
         g.wave += 1;
         { const meta = useMetaStore.getState(); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
+        useGameStore.getState().addRunShards(25); // 25 soul shards per wave completed
         g.spawnInterval = Math.max(
           GAME_CONFIG.DIFFICULTY.MIN_SPAWN_INTERVAL,
           g.spawnInterval - GAME_CONFIG.DIFFICULTY.SPAWN_REDUCTION
