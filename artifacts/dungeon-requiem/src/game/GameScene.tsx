@@ -654,7 +654,7 @@ function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult =
     specialTimer: 4.0,
     specialWarning: false, specialWarnTimer: 0,
     minionTimer: 3.0,
-    radialTimer: cls === "mage" ? 2.2 : cls === "rogue" ? 0.75 : 5.0,
+    radialTimer: cls === "mage" ? 2.2 : cls === "rogue" ? 0.75 : 0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
     affix: "none" as const, shieldHp: 0,
@@ -1811,54 +1811,89 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       const cDist = Math.sqrt(cdx * cdx + cdz * cdz);
 
       if (e.type === "warrior_champion") {
-        // ── Warrior Champion: stalks player, telegraphed overhead swing ───
+        // ── Warrior Champion: stalks player, charged arc slash ────────────
+        // Pursues the player, then STOPS and charges up a semi-circle
+        // projectile burst (arc slash). Player must strafe to dodge.
+        // minionTimer = arc slash cooldown (reused, unused otherwise)
+        // specialTimer = ground slam cooldown (kept separate)
         const cx = p.x - e.x, cz = p.z - e.z;
         const clen = Math.sqrt(cx * cx + cz * cz) || 1;
 
-        // Slower pursuit — walks menacingly, doesn't sprint
-        const pursuitSpeed = e.moveSpeed * 0.65;
-        e.x += (cx / clen) * pursuitSpeed * delta;
-        e.z += (cz / clen) * pursuitSpeed * delta;
-        e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
-        e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
+        // Arc slash charge-up state: radialTimer > 0 means currently charging
+        if (e.radialTimer > 0) {
+          // ── Charging — STAND STILL, face the player ──
+          e.radialTimer -= delta;
+          e.vx = 0; e.vz = 0;
+          if (e.radialTimer <= 0) {
+            // Fire arc slash: semi-circle of sword projectiles toward player
+            store.setBossSpecialWarn(false);
+            const baseAngle = Math.atan2(cx, cz);
+            const arcSpread = Math.PI * 0.75; // 135° arc
+            const projCount = e.enragePhase >= 2 ? 9 : e.enragePhase >= 1 ? 7 : 5;
+            const projSpeed = 10 + e.enragePhase * 1.5;
+            const projDmg = e.damage * 0.8;
+            for (let k = 0; k < projCount; k++) {
+              const t = projCount > 1 ? k / (projCount - 1) : 0.5;
+              const shotAngle = baseAngle + (t - 0.5) * arcSpread;
+              g.enemyProjectiles.push({
+                id: eprojId(), x: e.x, z: e.z,
+                vx: Math.sin(shotAngle) * projSpeed,
+                vz: Math.cos(shotAngle) * projSpeed,
+                damage: projDmg,
+                lifetime: 2.0, dead: false, style: "sword" as const,
+              });
+            }
+            audioManager.play("boss_special");
+            triggerShake(g, 0.35, 0.25);
+          }
+        } else {
+          // ── Pursuit phase — walk toward player ──
+          const pursuitSpeed = e.moveSpeed * 0.65;
+          e.x += (cx / clen) * pursuitSpeed * delta;
+          e.z += (cz / clen) * pursuitSpeed * delta;
+          e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
+          e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
 
-        // ── Telegraphed melee swing (replaces instant damage) ──
-        // Phase 1: wind-up (specialWarning=true, 1.2s) — player can see and dodge
-        // Phase 2: swing lands — wide arc damage
+          // Start arc slash charge-up when in range
+          e.minionTimer -= delta;
+          if (e.minionTimer <= 0 && cDist <= 10) {
+            e.minionTimer = 3.5 - e.enragePhase * 0.4; // faster at higher enrage
+            e.radialTimer = 1.4; // 1.4s charge-up (clear dodge window)
+            store.setBossSpecialWarn(true);
+            audioManager.play("boss_special");
+          }
+        }
+
+        // ── Ground slam special every 7s — separate from arc slash ──
+        // Only triggers when NOT already charging an arc slash
+        if (e.radialTimer <= 0) {
+          e.specialTimer -= delta;
+          if (e.specialTimer <= 0) {
+            e.specialTimer = 7.0;
+            // Reuse the existing boss slam mechanic: warn → AoE damage
+            e.specialWarning = true;
+            e.specialWarnTimer = 1.5;
+            store.setBossSpecialWarn(true);
+          }
+        }
+        // Ground slam landing (from specialWarning)
         if (e.specialWarning) {
           e.specialWarnTimer -= delta;
+          e.vx = 0; e.vz = 0; // stand still during slam too
           if (e.specialWarnTimer <= 0) {
-            // Swing lands!
             e.specialWarning = false;
             store.setBossSpecialWarn(false);
-            if (cDist <= e.attackRange * 1.3 && p.invTimer <= 0 && !p.dead) {
-              const rawDmg = e.damage * 1.5 * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE * 0.3);
-              const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
+            triggerShake(g, 0.55, 0.35);
+            triggerFreeze(g, 45);
+            if (cDist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
+              const rawDmg = e.damage * 2.5;
+              const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult, 50);
               p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
               if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
             }
             audioManager.play("boss_special");
           }
-        } else {
-          e.attackTimer -= delta;
-          if (e.attackTimer <= 0 && cDist <= e.attackRange * 1.5) {
-            // Start wind-up — telegraph the attack
-            e.attackTimer = e.attackInterval + 1.0; // longer between swings
-            e.specialWarning = true;
-            e.specialWarnTimer = 1.2; // 1.2s warning before damage
-            store.setBossSpecialWarn(true);
-          }
-        }
-
-        // ── Ground slam special every 6s (was 4s) — big AoE with 1.5s warning ──
-        e.specialTimer -= delta;
-        if (e.specialTimer <= 0 && !e.specialWarning) {
-          e.specialTimer = 6.0;
-          // Slam uses the boss AoE ring for visual warning
-          e.specialWarning = true;
-          e.specialWarnTimer = 1.5;
-          store.setBossSpecialWarn(true);
         }
 
       } else if (e.type === "mage_champion") {
