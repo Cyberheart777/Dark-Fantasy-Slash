@@ -2515,11 +2515,11 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
     t.current += delta;
     if (!ref.current) return;
     ref.current.position.set(ep.x, 0.9 + Math.sin(t.current * 8) * 0.08, ep.z);
-    if (ep.style === "dagger") {
-      // Dagger: align to travel direction + barrel roll
+    if (ep.style === "dagger" || ep.style === "sword") {
+      // Align to travel direction + spin
       const angle = Math.atan2(ep.vx, ep.vz);
       ref.current.rotation.y = angle;
-      ref.current.rotation.z = t.current * 12;
+      ref.current.rotation.z = ep.style === "dagger" ? t.current * 12 : t.current * 4;
     } else {
       ref.current.rotation.y = t.current * 6;
     }
@@ -2537,6 +2537,30 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
           <sphereGeometry args={[0.38, 6, 4]} />
           <meshStandardMaterial color="#6010a0" emissive="#aa00ff" emissiveIntensity={1.5} transparent opacity={0.3} side={THREE.BackSide} />
         </mesh>
+      </group>
+    );
+  }
+
+  // ── Warrior champion arc slash blade ──
+  if (ep.style === "sword") {
+    return (
+      <group ref={ref}>
+        {/* Blade body — elongated box */}
+        <mesh position={[0, 0, -0.25]}>
+          <boxGeometry args={[0.08, 0.14, 0.55]} />
+          <meshStandardMaterial color="#ff4400" emissive="#ff2200" emissiveIntensity={4} metalness={0.8} roughness={0.1} />
+        </mesh>
+        {/* Blade tip — tapered */}
+        <mesh position={[0, 0, -0.56]}>
+          <coneGeometry args={[0.07, 0.16, 4]} />
+          <meshStandardMaterial color="#ff6600" emissive="#ff4400" emissiveIntensity={5} metalness={0.9} roughness={0.05} />
+        </mesh>
+        {/* Trail glow */}
+        <mesh position={[0, 0, 0.05]}>
+          <boxGeometry args={[0.04, 0.08, 0.35]} />
+          <meshStandardMaterial color="#ff8844" emissive="#ff4400" emissiveIntensity={2} transparent opacity={0.4} />
+        </mesh>
+        <pointLight color="#ff4400" intensity={3} distance={4} decay={2} />
       </group>
     );
   }
