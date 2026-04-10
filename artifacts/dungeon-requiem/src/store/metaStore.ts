@@ -81,6 +81,17 @@ export const MILESTONE_DEFS: MilestoneDef[] = [
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
+export interface StashItem {
+  id: string;
+  name: string;
+  icon: string;
+  rarity: string;
+  slot: string;
+  enhanceLevel?: number;
+  /** Stored bonuses from the original GearDef. Needed for stat display in UI. */
+  bonuses?: Record<string, number>;
+}
+
 export interface MetaState {
   shards: number;
   totalShardsEarned: number;
@@ -96,8 +107,11 @@ export interface MetaState {
   // e.g. { warrior: "hard", mage: "normal" }
   trialWins: Record<string, string>;
 
-  // Gear stash — gear carried out of runs, sellable at forge
-  gearStash: Array<{ id: string; name: string; icon: string; rarity: string; slot: string }>;
+  // Gear stash — gear carried out of runs, sellable/equippable at forge
+  gearStash: StashItem[];
+
+  // Pre-run loadout — gear equipped before starting a run
+  equippedLoadout: Record<string, StashItem | null>;
 
   // First-run onboarding flag — set once the player has seen the HUD tutorial
   hasSeenTutorial: boolean;
@@ -120,8 +134,11 @@ export interface MetaState {
   updateBestWave: (wave: number) => void;
   checkUnlocks: () => void;
   completeTrial: (cls: string, difficulty?: string) => void;
-  addGearToStash: (gear: { id: string; name: string; icon: string; rarity: string; slot: string }) => void;
+  addGearToStash: (gear: StashItem) => void;
   sellGear: (index: number) => void;
+  equipToLoadout: (stashIndex: number) => void;
+  unequipFromLoadout: (slot: string) => void;
+  enhanceGear: (stashIndex: number) => boolean;
   markTutorialSeen: () => void;
   setSettings: (patch: Partial<MetaState["settings"]>) => void;
 }
@@ -143,7 +160,8 @@ const DEFAULT_STATE = {
   unlockedClasses: ["warrior"] as string[],
   unlockedRaces: ["human"] as string[],
   trialWins: {} as Record<string, string>,
-  gearStash: [] as Array<{ id: string; name: string; icon: string; rarity: string; slot: string }>,
+  gearStash: [] as StashItem[],
+  equippedLoadout: { weapon: null, armor: null, trinket: null } as Record<string, StashItem | null>,
   hasSeenTutorial: false,
   settings: {
     screenShake: true,
@@ -254,6 +272,46 @@ export const useMetaStore = create<MetaState>()(
         });
       },
 
+      equipToLoadout: (stashIndex: number) => {
+        const s = get();
+        const item = s.gearStash[stashIndex];
+        if (!item) return;
+        const slot = item.slot;
+        const currentlyEquipped = s.equippedLoadout[slot];
+        const newStash = [...s.gearStash];
+        newStash.splice(stashIndex, 1);
+        // If slot was occupied, return old item to stash
+        if (currentlyEquipped) newStash.push(currentlyEquipped);
+        set({
+          gearStash: newStash,
+          equippedLoadout: { ...s.equippedLoadout, [slot]: item },
+        });
+      },
+
+      unequipFromLoadout: (slot: string) => {
+        const s = get();
+        const item = s.equippedLoadout[slot];
+        if (!item) return;
+        set({
+          gearStash: [...s.gearStash, item],
+          equippedLoadout: { ...s.equippedLoadout, [slot]: null },
+        });
+      },
+
+      enhanceGear: (stashIndex: number) => {
+        const s = get();
+        const item = s.gearStash[stashIndex];
+        if (!item || item.rarity !== "common") return false;
+        const currentLevel = item.enhanceLevel ?? 0;
+        if (currentLevel >= 3) return false;
+        const cost = [0, 30, 75, 150][currentLevel + 1];
+        if (s.shards < cost) return false;
+        const newStash = [...s.gearStash];
+        newStash[stashIndex] = { ...item, enhanceLevel: currentLevel + 1 };
+        set({ gearStash: newStash, shards: s.shards - cost });
+        return true;
+      },
+
       markTutorialSeen: () => set({ hasSeenTutorial: true }),
 
       setSettings: (patch) =>
@@ -261,7 +319,7 @@ export const useMetaStore = create<MetaState>()(
     }),
     {
       name: "dungeon-requiem-meta",
-      version: 5, // bumped from 4 — triggers migration
+      version: 6, // bumped: added equippedLoadout, enhanceLevel, bonuses on stash items
       migrate: (persisted: any, version: number) => {
         let state = persisted ?? {};
         if (version < 3) {
@@ -284,6 +342,13 @@ export const useMetaStore = create<MetaState>()(
           state = {
             ...state,
             settings: { screenShake: true, damageNumbers: true },
+          };
+        }
+        if (version < 6) {
+          // Add equippedLoadout and ensure stash items have enhanceLevel
+          state = {
+            ...state,
+            equippedLoadout: { weapon: null, armor: null, trinket: null },
           };
         }
         return state as MetaState;

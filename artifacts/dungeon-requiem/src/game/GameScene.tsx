@@ -22,7 +22,7 @@ import { createDefaultStats, type PlayerStats } from "../data/UpgradeData";
 import { buildMetaModifiers, buildTrialModifiers } from "../data/MetaUpgradeData";
 import { resolveStats } from "../data/StatModifier";
 import { InputManager3D } from "./InputManager3D";
-import { tryRollGear, rollGearDrop, GEAR_RARITY_COLOR, type GearDef } from "../data/GearData";
+import { tryRollGear, rollGearDrop, getEnhancedBonuses, GEAR_RARITY_COLOR, type GearDef } from "../data/GearData";
 import { DungeonRoom } from "../world/DungeonRoom";
 import { Torch3D } from "../world/Torch3D";
 import { Player3D } from "../entities/Player3D";
@@ -443,6 +443,15 @@ function handlePlayerFatalDmg(p: PlayerRuntime, g: GameState): boolean {
 
 // ─── Soulfire relic — explosion on kill ───────────────────────────────────────
 
+/** Convert a GearDef to a stash-compatible object for metaStore. */
+function gearToStash(gear: GearDef) {
+  return {
+    id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity,
+    slot: gear.slot, enhanceLevel: gear.enhanceLevel ?? 0,
+    bonuses: { ...gear.bonuses } as Record<string, number>,
+  };
+}
+
 /** Try to spawn a gear drop at the given position based on enemy type. */
 function trySpawnGear(enemyType: string, x: number, z: number, g: GameState): void {
   const gear = tryRollGear(enemyType, g.difficultyGearMult);
@@ -474,22 +483,24 @@ function equipGear(gear: GearDef, g: GameState): void {
   // Remove old gear bonuses if slot was occupied
   const old = g.equippedGear[gear.slot];
   if (old) {
-    for (const [key, val] of Object.entries(old.bonuses)) {
+    const oldBonuses = getEnhancedBonuses(old);
+    for (const [key, val] of Object.entries(oldBonuses)) {
       if (typeof (stats as any)[key] === "number") {
-        (stats as any)[key] -= val as number;
+        (stats as any)[key] -= val;
       }
     }
   }
-  // Apply new gear bonuses
-  for (const [key, val] of Object.entries(gear.bonuses)) {
+  // Apply new gear bonuses (enhanced)
+  const newBonuses = getEnhancedBonuses(gear);
+  for (const [key, val] of Object.entries(newBonuses)) {
     if (typeof (stats as any)[key] === "number") {
-      (stats as any)[key] += val as number;
+      (stats as any)[key] += val;
     }
   }
   // Update max HP if it changed
-  if (gear.bonuses.maxHealth) {
+  if (newBonuses.maxHealth) {
     g.player.maxHp = stats.maxHealth;
-    g.player.hp = Math.min(g.player.hp + (gear.bonuses.maxHealth as number), g.player.maxHp);
+    g.player.hp = Math.min(g.player.hp + newBonuses.maxHealth, g.player.maxHp);
   }
   g.equippedGear[gear.slot] = gear;
 }
@@ -1916,7 +1927,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       // Transfer gear to stash
       for (const slot of ["weapon", "armor", "trinket"] as const) {
         const gear = g.equippedGear[slot];
-        if (gear) meta.addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
+        if (gear) meta.addGearToStash(gearToStash(gear));
       }
       store.setBossState(0, 0, "", false);
       audioManager.stopMusic();
@@ -2047,11 +2058,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       for (const slot of ["weapon", "armor", "trinket"] as const) {
         const gear = g.equippedGear[slot];
         if (gear) {
-          meta.addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
+          meta.addGearToStash(gearToStash(gear));
         }
       }
       for (const gear of g.inventory) {
-        meta.addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
+        meta.addGearToStash(gearToStash(gear));
       }
       g.inventory = [];
       store.setInventory([]);
@@ -2603,6 +2614,25 @@ export function GameScene({ onRestart }: GameSceneProps) {
       useGameStore.getState().setPhase("levelup");
     };
     gsRef.current = gs0;
+
+    // Apply pre-run loadout from Soul Forge Armory
+    const loadout = useMetaStore.getState().equippedLoadout;
+    for (const slot of ["weapon", "armor", "trinket"] as const) {
+      const stashItem = loadout[slot];
+      if (!stashItem) continue;
+      // Look up full GearDef from the pool to get the canonical bonuses
+      const fullGear: GearDef = {
+        id: stashItem.id, name: stashItem.name, slot: stashItem.slot as any,
+        rarity: stashItem.rarity as any, icon: stashItem.icon,
+        description: "", // not needed at runtime
+        bonuses: stashItem.bonuses ?? {},
+        enhanceLevel: stashItem.enhanceLevel ?? 0,
+      };
+      equipGear(fullGear, gs0);
+      useGameStore.getState().setGearEquipped(slot, fullGear);
+    }
+    // Clear the loadout (gear is now consumed into the run)
+    useMetaStore.getState().equippedLoadout = { weapon: null, armor: null, trinket: null };
   }
 
   // Start/stop/reset based on phase
@@ -2689,10 +2719,10 @@ export function GameScene({ onRestart }: GameSceneProps) {
     // Transfer gear to stash on extraction — both equipped and spare inventory
     for (const slot of ["weapon", "armor", "trinket"] as const) {
       const gear = g.equippedGear[slot];
-      if (gear) useMetaStore.getState().addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
+      if (gear) useMetaStore.getState().addGearToStash(gearToStash(gear));
     }
     for (const gear of g.inventory) {
-      useMetaStore.getState().addGearToStash({ id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity, slot: gear.slot });
+      useMetaStore.getState().addGearToStash(gearToStash(gear));
     }
     g.inventory = [];
     useGameStore.getState().setInventory([]);
