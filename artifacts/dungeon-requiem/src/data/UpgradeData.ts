@@ -39,7 +39,8 @@ export type UpgradeId =
   | "iron_reprisal"
   | "fortress"
   | "war_cry"
-  | "melee_lifedrain"
+  | "bloodforge"
+  | "weakening_blows"
   | "serrated_edge"
   | "concussive_charge"
   // ── Mage-only ──
@@ -49,7 +50,10 @@ export type UpgradeId =
   | "mana_shield"
   | "singularity"
   | "frost_armor"
-  | "piercing_orbs"
+  | "arcane_detonation"
+  | "gravity_orbs"
+  | "overcharged_orbs"
+  | "residual_field"
   | "extra_orb"
   | "volatile_blink"
   | "projectile_size"
@@ -96,6 +100,8 @@ export interface UpgradeDef {
   rarity: UpgradeRarity;
   classes: "all" | CharacterClass[];
   apply: (stats: PlayerStats) => void;
+  /** Runtime-only: current stack count when presented in level-up UI */
+  currentLevel?: number;
 }
 
 export interface PlayerStats {
@@ -128,7 +134,8 @@ export interface PlayerStats {
   ironReprisalEnabled: boolean;  // shockwave on damage taken
   fortressArmorPerSec: number;   // armor/sec while standing still
   warCryDmgBonus: number;        // % bonus damage for 5s after dash (baseline)
-  meleeLifedrainPct: number;     // % of melee damage healed
+  bloodforgeMaxHpPerKill: number; // +1 max HP per kill, capped at 20
+  weakeningBlowsPct: number;     // % damage reduction applied per melee hit on enemies
   serratedBleedDps: number;      // bleed damage per sec on crit (WARRIOR owns bleed)
   dashKnockbackForce: number;    // knockback distance on dash (baseline, upgradeable)
   // ── Mage-specific ──────────────────────────────────────────────────────────
@@ -138,12 +145,15 @@ export interface PlayerStats {
   manaShieldPct: number;         // damage absorption %
   singularityInterval: number;   // seconds between vortex
   frostArmorSlowPct: number;     // slow on enemies that hit you
-  magePiercingOrbs: boolean;     // orbs pierce through all enemies
   mageExtraOrbs: number;         // additional projectiles per attack
   mageBlinkSlowPct: number;      // slow applied to enemies at blink origin (baseline)
   volatileBlinkEnabled: boolean; // blink afterimage explodes for 1× damage
   projectileRadiusBonus: number; // flat bonus to projectile collision radius
   splitBoltActive: boolean;      // +1 orb but -25% damage
+  arcaneDetonationEnabled: boolean; // orbs explode on expiry for 60% AoE
+  gravityOrbPull: number;        // pull strength (units/sec) on nearby enemies
+  overchargedOrbBonus: number;   // max damage bonus at max range (0.8 = +80%)
+  residualFieldEnabled: boolean; // orbs leave damaging ground trail
   // ── Rogue-specific ─────────────────────────────────────────────────────────
   dashResetOnKill: boolean;      // dash cd resets on kill
   venomStackDps: number;         // poison damage per second per stack
@@ -186,7 +196,8 @@ export function createDefaultStats(): PlayerStats {
     ironReprisalEnabled: false,
     fortressArmorPerSec: 0,
     warCryDmgBonus: 0.15,        // baseline: +15% damage for 4s after dash
-    meleeLifedrainPct: 0,
+    bloodforgeMaxHpPerKill: 0,
+    weakeningBlowsPct: 0,
     serratedBleedDps: 0,          // bleed on crit (warrior owns bleed)
     dashKnockbackForce: 3,        // baseline knockback on dash
     // Mage
@@ -196,7 +207,10 @@ export function createDefaultStats(): PlayerStats {
     manaShieldPct: 0,
     singularityInterval: 0,
     frostArmorSlowPct: 0,
-    magePiercingOrbs: false,
+    arcaneDetonationEnabled: false,
+    gravityOrbPull: 0,
+    overchargedOrbBonus: 0,
+    residualFieldEnabled: false,
     mageExtraOrbs: 0,
     mageBlinkSlowPct: 0.30,       // baseline: 30% slow at blink origin
     volatileBlinkEnabled: false,
@@ -385,11 +399,17 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "📯", maxStacks: 1, rarity: "rare", classes: ["warrior"],
     apply: (s) => { s.warCryDmgBonus = 0.35; },  // upgrades baseline 0.15 → 0.35
   },
-  melee_lifedrain: {
-    id: "melee_lifedrain", name: "Siphon Strike",
-    description: "Melee hits heal you for 8% of damage dealt.",
-    icon: "💚", maxStacks: 3, rarity: "rare", classes: ["warrior"],
-    apply: (s) => { s.meleeLifedrainPct += 0.08; },
+  bloodforge: {
+    id: "bloodforge", name: "Bloodforge",
+    description: "Each kill grants +1 max HP (capped at +20).",
+    icon: "🩸", maxStacks: 1, rarity: "rare", classes: ["warrior"],
+    apply: (s) => { s.bloodforgeMaxHpPerKill = 1; },
+  },
+  weakening_blows: {
+    id: "weakening_blows", name: "Weakening Blows",
+    description: "Melee hits reduce enemy damage by 2%.",
+    icon: "💀", maxStacks: 3, rarity: "rare", classes: ["warrior"],
+    apply: (s) => { s.weakeningBlowsPct += 0.02; },
   },
   serrated_edge: {
     id: "serrated_edge", name: "Serrated Edge",
@@ -443,11 +463,29 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "❄️", maxStacks: 1, rarity: "rare", classes: ["mage"],
     apply: (s) => { s.frostArmorSlowPct = 0.35; },
   },
-  piercing_orbs: {
-    id: "piercing_orbs", name: "Piercing Orbs",
-    description: "All arcane orbs pierce through enemies.",
-    icon: "🔵", maxStacks: 1, rarity: "epic", classes: ["mage"],
-    apply: (s) => { s.magePiercingOrbs = true; },
+  arcane_detonation: {
+    id: "arcane_detonation", name: "Arcane Detonation",
+    description: "Orbs explode on expiry for 60% AoE damage.",
+    icon: "💥", maxStacks: 1, rarity: "epic", classes: ["mage"],
+    apply: (s) => { s.arcaneDetonationEnabled = true; },
+  },
+  gravity_orbs: {
+    id: "gravity_orbs", name: "Gravity Orbs",
+    description: "Orbs pull nearby enemies toward their flight path.",
+    icon: "🌀", maxStacks: 1, rarity: "epic", classes: ["mage"],
+    apply: (s) => { s.gravityOrbPull = 4; },
+  },
+  overcharged_orbs: {
+    id: "overcharged_orbs", name: "Overcharged Orbs",
+    description: "Orbs gain up to +80% damage at max range.",
+    icon: "⚡", maxStacks: 1, rarity: "rare", classes: ["mage"],
+    apply: (s) => { s.overchargedOrbBonus = 0.8; },
+  },
+  residual_field: {
+    id: "residual_field", name: "Residual Field",
+    description: "Orbs leave a damaging trail that burns enemies.",
+    icon: "🔮", maxStacks: 1, rarity: "epic", classes: ["mage"],
+    apply: (s) => { s.residualFieldEnabled = true; },
   },
   extra_orb: {
     id: "extra_orb", name: "Arcane Barrage",
@@ -667,11 +705,15 @@ export function pickUpgradeChoices(
     (level >= 5 && Math.random() < 0.25)
   );
 
+  // Helper: stamp currentLevel onto each choice
+  const stamp = (choices: UpgradeDef[]): UpgradeDef[] =>
+    choices.map((u) => ({ ...u, currentLevel: acquired.get(u.id) ?? 0 }));
+
   if (offerRelic) {
     const relic = shuffled(relicPool)[0];
     const normals = weightedSample(normalPool, (u) => RARITY_WEIGHT[u.rarity], count - 1);
-    return shuffled([relic, ...normals]);
+    return stamp(shuffled([relic, ...normals]));
   }
 
-  return weightedSample(normalPool, (u) => RARITY_WEIGHT[u.rarity], count);
+  return stamp(weightedSample(normalPool, (u) => RARITY_WEIGHT[u.rarity], count));
 }

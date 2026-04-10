@@ -83,7 +83,7 @@ export const CHARACTER_DATA: Record<CharacterClass, CharacterDef> = {
     projectileSpeed: 15,
     projectilePiercing: true,
     projectileCount: 1,
-    projectileSpread: 0,
+    projectileSpread: 0.18,
     projectileRadius: 0.55,
     projectileLifetime: 1.5,
     color: "#9030d0",

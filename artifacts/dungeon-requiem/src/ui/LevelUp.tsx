@@ -150,6 +150,21 @@ function UpgradeCard({ upgrade, onSelect }: { upgrade: UpgradeDef; onSelect: () 
               {rarity.toUpperCase()}
             </span>
           )}
+          {!isRelic && (upgrade.currentLevel ?? 0) > 0 && upgrade.maxStacks > 1 && (
+            <span style={{
+              display: "inline-block",
+              background: "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              borderRadius: 4,
+              padding: "2px 8px",
+              color: "#ddd",
+              fontSize: 10,
+              fontWeight: "bold",
+              letterSpacing: 1,
+            }}>
+              Lv.{upgrade.currentLevel} → Lv.{(upgrade.currentLevel ?? 0) + 1}
+            </span>
+          )}
         </div>
         <div style={styles.cardDesc}>{upgrade.description}</div>
       </div>

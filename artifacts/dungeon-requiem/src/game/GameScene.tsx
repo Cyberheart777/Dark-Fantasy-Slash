@@ -66,6 +66,7 @@ export interface PlayerRuntime {
   singularityX: number;          // mage: vortex position
   singularityZ: number;
   bladeOrbitAngle: number;       // rogue: current rotation of blade orbit
+  bloodforgeKills: number;       // warrior: kills tracked for bloodforge (+1 HP each, cap 20)
 }
 
 export interface EnemyRuntime {
@@ -97,6 +98,7 @@ export interface EnemyRuntime {
   bleedTimer: number;          // remaining bleed duration
   slowPct: number;             // current slow amount (0..1)
   slowTimer: number;           // remaining slow duration
+  weakenPct: number;           // weakening blows: damage reduction on this enemy (0..0.30)
   // ── Elite affixes ─────────────────────────────────────────────────────
   affix: "none" | "shielded" | "vampiric" | "berserker";
   shieldHp: number;            // shielded affix: absorbs first hit
@@ -135,6 +137,20 @@ export interface Projectile {
   style: "orb" | "dagger";
   dead: boolean;
   isFracture?: boolean; // prevents chain reaction from arcane fracture
+  spawnX?: number;      // overcharged orbs: spawn position for distance calc
+  spawnZ?: number;
+  maxRange?: number;    // overcharged orbs: max travel distance
+  trailTimer?: number;  // residual field: timer for next trail drop
+}
+
+/** Residual Field ground damage zone left by mage orbs. */
+export interface GroundEffect {
+  id: string;
+  x: number; z: number;
+  radius: number;
+  dps: number;        // damage per second to enemies in zone
+  lifetime: number;   // remaining seconds
+  color: string;
 }
 
 export interface GameState {
@@ -143,6 +159,7 @@ export interface GameState {
   xpOrbs: XPOrb[];
   projectiles: Projectile[];
   enemyProjectiles: EnemyProjectile[];
+  groundEffects: GroundEffect[];
   score: number; kills: number; survivalTime: number;
   wave: number;
   spawnTimer: number; waveTimer: number;
@@ -339,6 +356,17 @@ function spawnDeathFx(g: GameState, x: number, z: number, color: string): void {
   if (g.deathFx.length > 40) g.deathFx.splice(0, g.deathFx.length - 40);
 }
 
+/** Bloodforge: +1 max HP per kill, capped at +20. Called from every kill path. */
+function applyBloodforge(p: PlayerRuntime, stats: PlayerStats): void {
+  if (stats.bloodforgeMaxHpPerKill > 0 && p.bloodforgeKills < 20) {
+    p.bloodforgeKills++;
+    stats.maxHealth += 1;
+    stats.currentHealth = Math.min(stats.currentHealth + 1, stats.maxHealth);
+    p.maxHp = stats.maxHealth;
+    p.hp = Math.min(p.hp + 1, p.maxHp);
+  }
+}
+
 /** Spawn a floating text popup (e.g. "Item Dropped!") with a custom color + duration. */
 function spawnTextPopup(x: number, z: number, text: string, color: string, durationSec = 2.5): void {
   useGameStore.getState().addDamagePopup({
@@ -387,6 +415,7 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     singularityActiveTimer: 0,
     singularityX: 0, singularityZ: 0,
     bladeOrbitAngle: 0,
+    bloodforgeKills: 0,
   };
 }
 
@@ -417,7 +446,7 @@ function spawnGoblin(): EnemyRuntime {
     specialWarning: false, specialWarnTimer: 0,
     minionTimer: 0, radialTimer: 3.8, // taunt cycle timer
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: 0,
-    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0,
     affix: "none" as const, shieldHp: 0,
   };
 }
@@ -575,7 +604,7 @@ function spawnEnemy(wave: number, hpMult = 1, dmgMult = 1, speedMult = 1): Enemy
     specialWarning: false, specialWarnTimer: 0,
     minionTimer: 0, radialTimer: 0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
-    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0,
     affix: "none" as const, shieldHp: 0,
   };
   // Roll affix: 12% chance after wave 10, non-boss enemies only
@@ -628,7 +657,7 @@ function spawnBoss(wave: number): EnemyRuntime {
     minionTimer: 10,
     radialTimer: 5,
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: Math.round(def.damage * (1 + (bossCount - 1) * 0.15)),
-    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0,
     affix: "none" as const, shieldHp: 0,
   };
 }
@@ -656,7 +685,7 @@ function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult =
     minionTimer: cls === "warrior" ? 2.0 : 3.0, // warrior fires first arc slash faster
     radialTimer: cls === "mage" ? 2.2 : cls === "rogue" ? 0.75 : 0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
-    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0,
     affix: "none" as const, shieldHp: 0,
   };
 }
@@ -850,7 +879,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 e.hp -= blinkDmg; e.hitFlashTimer = 0.2;
                 // Baseline slow at blink origin
                 if (stats.mageBlinkSlowPct > 0) { e.slowPct = stats.mageBlinkSlowPct; e.slowTimer = 2.0; }
-                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; trySpawnGear(e.type, e.x, e.z, g); }
+                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; trySpawnGear(e.type, e.x, e.z, g); applyBloodforge(p, stats); }
               }
             }
             p.isDashing = false; // instant, no travel
@@ -876,6 +905,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 if (e.hp <= 0 && !e.dead) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
                   if (stats.dashResetOnKill) p.dashCooldown = 0;
+                  applyBloodforge(p, stats);
                 }
               }
             }
@@ -901,7 +931,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 e.x = Math.max(-ARENA, Math.min(ARENA, e.x + nx * kbForce));
                 e.z = Math.max(-ARENA, Math.min(ARENA, e.z + nz * kbForce));
                 e.hp -= kbDmg; e.hitFlashTimer = 0.2;
-                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; trySpawnGear(e.type, e.x, e.z, g); }
+                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; trySpawnGear(e.type, e.x, e.z, g); applyBloodforge(p, stats); }
               }
             }
           }
@@ -963,9 +993,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (stats.lifesteal > 0) {
               p.hp = Math.min(p.maxHp, p.hp + dmg * stats.lifesteal);
             }
-            // Warrior: Siphon Strike — melee lifedrain
-            if (stats.meleeLifedrainPct > 0) {
-              p.hp = Math.min(p.maxHp, p.hp + dmg * stats.meleeLifedrainPct);
+            // Warrior: Weakening Blows — reduce enemy damage on melee hit
+            if (stats.weakeningBlowsPct > 0) {
+              e.weakenPct = Math.min((e.weakenPct || 0) + stats.weakeningBlowsPct, 0.30);
             }
             // Warrior: Serrated Edge — bleed on crit
             if (isCrit && stats.serratedBleedDps > 0) {
@@ -979,6 +1009,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
               useGameStore.getState().addRunShards(5);
               if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              applyBloodforge(p, stats);
               if (stats.soulfireChance > 0) triggerSoulfire(e, g);
               const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
               g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
@@ -1014,6 +1045,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 if (e.hp <= 0 && !e.dead) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
                   if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              applyBloodforge(p, stats);
                   if (stats.soulfireChance > 0) triggerSoulfire(e, g);
                   trySpawnGear(e.type, e.x, e.z, g);
                   const xg = Math.round(e.xpReward * stats.xpMultiplier);
@@ -1042,6 +1074,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
                   if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
                   if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              applyBloodforge(p, stats);
                   if (stats.soulfireChance > 0) triggerSoulfire(e, g);
                   trySpawnGear(e.type, e.x, e.z, g);
                   const xg = Math.round(e.xpReward * stats.xpMultiplier);
@@ -1059,8 +1092,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                            : g.charClass === "rogue" ? stats.rogueExtraDaggers : 0;
           const totalCount = def.projectileCount + extraCount;
           const projStyle = g.charClass === "mage" ? "orb" as const : "dagger" as const;
-          // Mage piercing override from upgrade
-          const isPiercing = def.projectilePiercing || (g.charClass === "mage" && stats.magePiercingOrbs);
+          const isPiercing = def.projectilePiercing;
           // War cry damage bonus (warrior only but just in case)
           const warCryMult = p.warCryTimer > 0 ? (1 + stats.warCryDmgBonus) : 1;
           // Split Bolt: +1 orb already counted in mageExtraOrbs, apply -25% damage
@@ -1073,7 +1105,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             for (let i = 0; i < totalCount; i++) {
               const spread = totalCount > 1 ? (i - (totalCount - 1) / 2) * def.projectileSpread : 0;
               const angle = p.angle + spread + angleOffset;
-              g.projectiles.push({
+              const proj: Projectile = {
                 id: projId(),
                 x: p.x, z: p.z,
                 vx: Math.sin(angle) * def.projectileSpeed,
@@ -1087,7 +1119,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 glowColor: def.color,
                 style: projStyle,
                 dead: false,
-              });
+              };
+              // Mage orb upgrade fields
+              if (projStyle === "orb") {
+                if (stats.overchargedOrbBonus > 0) { proj.spawnX = p.x; proj.spawnZ = p.z; proj.maxRange = def.projectileSpeed * def.projectileLifetime; }
+                if (stats.residualFieldEnabled) { proj.trailTimer = 0; }
+              }
+              g.projectiles.push(proj);
               // Twin Fang proc
               if (stats.doubleStrikeChance > 0 && Math.random() < stats.doubleStrikeChance) {
                 const extraAngle = angle + (Math.random() - 0.5) * 0.25;
@@ -1212,6 +1250,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               useGameStore.getState().addRunShards(5);
               if (stats.dashResetOnKill) p.dashCooldown = 0;
               if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              applyBloodforge(p, stats);
               if (stats.soulfireChance > 0) triggerSoulfire(e, g);
               // Venom spread on kill
               if (stats.venomStackDps > 0) {
@@ -1309,6 +1348,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (e.hp <= 0 && !e.dead) {
           e.dead = true; g.kills++; g.score += e.scoreValue;
           if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              applyBloodforge(p, stats);
           // Venom spread on death
           if (stats.venomStackDps > 0) {
             for (const nearby of g.enemies) {
@@ -1335,6 +1375,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (e.hp <= 0 && !e.dead) {
           e.dead = true; g.kills++; g.score += e.scoreValue;
           if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              applyBloodforge(p, stats);
           trySpawnGear(e.type, e.x, e.z, g);
           continue;
         }
@@ -1371,7 +1412,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (e.specialTimer <= 0) {
           e.specialTimer = 2.5 + Math.random() * 0.5;
           if (dist <= 3.5 && !p.dead && p.invTimer <= 0 && !p.isDashing) {
-            const rawDmg = e.damage * 1.4 * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
+            const rawDmg = e.damage * 1.4 * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE) * (1 - (e.weakenPct || 0));
             const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
             if (!isDodged) {
               // Mana Shield absorption
@@ -1415,7 +1456,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (e.attackTimer <= 0) {
           e.attackTimer = e.attackInterval;
           if (p.invTimer <= 0 && !p.isDashing && !p.dead) {
-            const rawDmg = e.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
+            const rawDmg = e.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE) * (1 - (e.weakenPct || 0));
             const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
             if (isDodged) {
               // ── Evasion Matrix: dodge → invis + guaranteed crit ──
@@ -1483,13 +1524,88 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       g.deathFx = g.deathFx.filter((fx) => fx.age < fx.duration);
     }
 
+    // ── Ground Effects (Residual Field) ──────────────────────────────────
+    if (g.groundEffects.length > 0) {
+      for (const ge of g.groundEffects) {
+        ge.lifetime -= delta;
+        if (ge.lifetime <= 0) continue;
+        const tickDmg = ge.dps * delta;
+        for (const e of g.enemies) {
+          if (e.dead) continue;
+          const gx = ge.x - e.x, gz = ge.z - e.z;
+          if (Math.sqrt(gx * gx + gz * gz) <= ge.radius + e.collisionRadius) {
+            e.hp -= tickDmg;
+            if (e.hitFlashTimer <= 0) e.hitFlashTimer = 0.08;
+            if (e.hp <= 0 && !e.dead) {
+              e.dead = true; g.kills++; g.score += e.scoreValue;
+              if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              applyBloodforge(p, stats);
+              trySpawnGear(e.type, e.x, e.z, g);
+              audioManager.play("enemy_death");
+            }
+          }
+        }
+      }
+      g.groundEffects = g.groundEffects.filter((ge) => ge.lifetime > 0);
+    }
+
     // ── Projectiles ───────────────────────────────────────────────────────
     for (const proj of g.projectiles) {
       if (proj.dead) continue;
       proj.x += proj.vx * delta;
       proj.z += proj.vz * delta;
       proj.lifetime -= delta;
+
+      // ── Mage: Gravity Orbs — pull nearby enemies toward orb ──
+      if (proj.style === "orb" && stats.gravityOrbPull > 0) {
+        for (const e of g.enemies) {
+          if (e.dead) continue;
+          const gx = proj.x - e.x, gz = proj.z - e.z;
+          const gd = Math.sqrt(gx * gx + gz * gz);
+          if (gd > 0.3 && gd <= 2.5) {
+            const pull = stats.gravityOrbPull * delta / gd;
+            e.x += gx * pull;
+            e.z += gz * pull;
+          }
+        }
+      }
+
+      // ── Mage: Residual Field — drop ground trail every 0.3s ──
+      if (proj.style === "orb" && proj.trailTimer !== undefined) {
+        proj.trailTimer -= delta;
+        if (proj.trailTimer <= 0) {
+          proj.trailTimer = 0.3;
+          g.groundEffects.push({
+            id: `ge${_fxid++}`, x: proj.x, z: proj.z,
+            radius: 1.2, dps: proj.damage * 0.3, lifetime: 2.0,
+            color: "#cc66ff",
+          });
+          if (g.groundEffects.length > 60) g.groundEffects.splice(0, g.groundEffects.length - 60);
+        }
+      }
+
       if (proj.lifetime <= 0 || Math.abs(proj.x) > ARENA + 4 || Math.abs(proj.z) > ARENA + 4) {
+        // ── Mage: Arcane Detonation — AoE on orb expiry ──
+        if (proj.style === "orb" && stats.arcaneDetonationEnabled && proj.lifetime <= 0 && !proj.isFracture) {
+          const aoeRadius = 3;
+          const aoeDmg = Math.round(proj.damage * 0.6);
+          for (const e of g.enemies) {
+            if (e.dead) continue;
+            const ax = proj.x - e.x, az = proj.z - e.z;
+            if (Math.sqrt(ax * ax + az * az) <= aoeRadius) {
+              e.hp -= aoeDmg; e.hitFlashTimer = 0.15;
+              spawnDmgPopup(e.x, e.z, aoeDmg, false, false);
+              if (e.hp <= 0 && !e.dead) {
+                e.dead = true; g.kills++; g.score += e.scoreValue;
+                if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+                applyBloodforge(p, stats);
+                trySpawnGear(e.type, e.x, e.z, g);
+              }
+            }
+          }
+          // Visual: spawn a death-fx–style burst at detonation point
+          spawnDeathFx(g, proj.x, proj.z, "#cc66ff");
+        }
         proj.dead = true;
         continue;
       }
@@ -1500,6 +1616,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (Math.sqrt(pdx * pdx + pdz * pdz) > proj.radius + e.collisionRadius) continue;
 
         let dmg = proj.damage;
+        // ── Mage: Overcharged Orbs — distance-based damage scaling ──
+        if (proj.spawnX !== undefined && proj.maxRange && stats.overchargedOrbBonus > 0) {
+          const dx = proj.x - proj.spawnX, dz = proj.z - (proj.spawnZ ?? 0);
+          const traveled = Math.sqrt(dx * dx + dz * dz);
+          const ratio = Math.min(traveled / proj.maxRange, 1);
+          dmg = Math.round(dmg * (1 + stats.overchargedOrbBonus * ratio));
+        }
         // Crit: guaranteed crit from evasion matrix, or normal roll
         const isCrit = p.guaranteedCrit || Math.random() < (stats.critChance + (p.critCascadeTimer > 0 ? 0.12 : 0));
         if (p.guaranteedCrit) p.guaranteedCrit = false;
@@ -1543,6 +1666,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (closest.hp <= 0 && !closest.dead) {
               closest.dead = true; g.kills++; g.score += closest.scoreValue;
               if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              applyBloodforge(p, stats);
             }
             bounceSource = closest;
           }
@@ -1560,6 +1684,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
           useGameStore.getState().addRunShards(5);
           if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              applyBloodforge(p, stats);
           if (stats.soulfireChance > 0) triggerSoulfire(e, g);
           // ── Rogue: Shadow Step — dash reset on kill ──
           if (stats.dashResetOnKill) p.dashCooldown = 0;
@@ -1991,6 +2116,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             t.dead = true; g.kills++; g.score += t.scoreValue;
             if (g.trialMode && t.type.endsWith("_champion")) g.trialChampionDefeated = true;
             if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              applyBloodforge(p, stats);
             if (stats.soulfireChance > 0) triggerSoulfire(t, g);
             trySpawnGear(t.type, t.x, t.z, g);
             const xg = Math.round(t.xpReward * stats.xpMultiplier);
@@ -2180,6 +2306,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       {gs.current?.deathFx.map((fx) => (
         <DeathFx3D key={fx.id} fx={fx} />
       ))}
+      {gs.current?.groundEffects.map((ge) => (
+        <GroundEffect3D key={ge.id} ge={ge} />
+      ))}
       {/* Ability visual effects */}
       <AbilityEffects gs={gs} />
     </>
@@ -2263,6 +2392,34 @@ function DeathFx3D({ fx }: { fx: DeathFx }) {
         </mesh>
       ))}
     </group>
+  );
+}
+
+// ─── Ground Effect (Residual Field trail) ────────────────────────────────────
+
+function GroundEffect3D({ ge }: { ge: GroundEffect }) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame(() => {
+    if (!ref.current) return;
+    const opacity = Math.min(1, ge.lifetime * 0.8);
+    const mat = ref.current.material as THREE.MeshStandardMaterial;
+    mat.opacity = opacity;
+    mat.emissiveIntensity = 1 + opacity * 2;
+    ref.current.scale.setScalar(ge.radius * (0.7 + opacity * 0.3));
+  });
+  return (
+    <mesh ref={ref} position={[ge.x, 0.05, ge.z]} rotation={[-Math.PI / 2, 0, 0]}>
+      <circleGeometry args={[1, 12]} />
+      <meshStandardMaterial
+        color={ge.color}
+        emissive={ge.color}
+        emissiveIntensity={2}
+        transparent
+        opacity={0.6}
+        depthWrite={false}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
   );
 }
 
@@ -2732,7 +2889,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       difficultyGearMult: diff.gearDropMult,
       highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
       inventory: [],
-      shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [],
+      shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [], groundEffects: [],
     };
     progression.onLevelUp = (_lvl, choices) => {
       audioManager.play("level_up");
@@ -2812,7 +2969,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           difficultyGearMult: resetDiff.gearDropMult,
           highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
           inventory: [],
-          shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [],
+          shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [], groundEffects: [],
         };
         _eid = 1; _oid = 1; _pid = 1; _epid = 1;
       } else {
