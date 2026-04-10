@@ -1066,6 +1066,45 @@ function StatusFxLayer({ poisonStacks, bleedTimer, slowTimer }: { poisonStacks: 
   );
 }
 
+// ─── Elite Affix Aura ────────────────────────────────────────────────────────
+
+const AFFIX_COLORS: Record<string, string> = {
+  shielded: "#4488ff",
+  vampiric: "#ff2040",
+  berserker: "#ff8020",
+};
+
+const _ringGeo = new THREE.RingGeometry(0.8, 1.0, 24);
+const _ringMats: Record<string, THREE.MeshBasicMaterial> = {};
+for (const [affix, color] of Object.entries(AFFIX_COLORS)) {
+  _ringMats[affix] = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
+}
+
+function AffixAura({ affix, shieldHp, scale }: { affix: string; shieldHp: number; scale: number }) {
+  const ref = useRef<THREE.Mesh>(null);
+  const t = useRef(Math.random() * 100);
+
+  useFrame((_, delta) => {
+    if (!ref.current) return;
+    t.current += delta;
+    // Pulse opacity for active shield, steady for others
+    const mat = ref.current.material as THREE.MeshBasicMaterial;
+    if (affix === "shielded" && shieldHp > 0) {
+      mat.opacity = 0.3 + Math.sin(t.current * 4) * 0.2;
+    } else {
+      mat.opacity = 0.25;
+    }
+    ref.current.rotation.z = t.current * 0.5;
+  });
+
+  const mat = _ringMats[affix];
+  if (!mat) return null;
+
+  return (
+    <mesh ref={ref} geometry={_ringGeo} material={mat} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} scale={scale} />
+  );
+}
+
 // ─── Main Enemy3D Export (with spawn scale-in + death shrink) ────────────────
 
 export function Enemy3D({ enemy }: EnemyProps) {
@@ -1142,6 +1181,9 @@ export function Enemy3D({ enemy }: EnemyProps) {
 
       {/* Status effect visuals */}
       <StatusFxLayer poisonStacks={enemy.poisonStacks} bleedTimer={enemy.bleedTimer} slowTimer={enemy.slowTimer} />
+
+      {/* Elite affix aura ring */}
+      {enemy.affix !== "none" && <AffixAura affix={enemy.affix} shieldHp={enemy.shieldHp} scale={enemy.scale} />}
 
       {/* Health bar */}
       <group ref={healthBarGroupRef} position={[0, hpBarHeight, 0]}>

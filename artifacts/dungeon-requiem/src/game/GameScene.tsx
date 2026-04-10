@@ -97,6 +97,9 @@ export interface EnemyRuntime {
   bleedTimer: number;          // remaining bleed duration
   slowPct: number;             // current slow amount (0..1)
   slowTimer: number;           // remaining slow duration
+  // ── Elite affixes ─────────────────────────────────────────────────────
+  affix: "none" | "shielded" | "vampiric" | "berserker";
+  shieldHp: number;            // shielded affix: absorbs first hit
 }
 
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
@@ -415,6 +418,7 @@ function spawnGoblin(): EnemyRuntime {
     minionTimer: 0, radialTimer: 3.8, // taunt cycle timer
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: 0,
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
+    affix: "none" as const, shieldHp: 0,
   };
 }
 
@@ -519,6 +523,23 @@ function triggerSoulfire(deadEnemy: EnemyRuntime, g: GameState): void {
   }
 }
 
+const AFFIX_TYPES = ["shielded", "vampiric", "berserker"] as const;
+
+/**
+ * Apply damage to an enemy, handling the shielded affix.
+ * Returns the actual damage dealt (0 if shield absorbed it).
+ */
+function applyEnemyDamage(e: EnemyRuntime, rawDmg: number): number {
+  if (e.affix === "shielded" && e.shieldHp > 0) {
+    e.shieldHp = 0;
+    e.hitFlashTimer = 0.3;
+    e.emissive = e.color; // clear blue tint
+    return 0; // shield absorbed the hit
+  }
+  e.hp -= rawDmg;
+  return rawDmg;
+}
+
 function spawnEnemy(wave: number, hpMult = 1, dmgMult = 1, speedMult = 1): EnemyRuntime {
   const type = pickEnemyType(wave) as keyof typeof ENEMY_DATA;
   const def = ENEMY_DATA[type];
@@ -534,7 +555,7 @@ function spawnEnemy(wave: number, hpMult = 1, dmgMult = 1, speedMult = 1): Enemy
   const hpScale = (1 + wave * GAME_CONFIG.DIFFICULTY.HP_SCALE_PER_WAVE) * hpMult;
   const finalDmg = Math.round(def.damage * dmgMult);
   const finalSpd = def.moveSpeed * speedMult;
-  return {
+  const e: EnemyRuntime = {
     id: enemyId(), type, x, z,
     hp: Math.round(def.health * hpScale),
     maxHp: Math.round(def.health * hpScale),
@@ -555,7 +576,28 @@ function spawnEnemy(wave: number, hpMult = 1, dmgMult = 1, speedMult = 1): Enemy
     minionTimer: 0, radialTimer: 0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
+    affix: "none" as const, shieldHp: 0,
   };
+  // Roll affix: 12% chance after wave 10, non-boss enemies only
+  if (wave >= 10 && type !== "boss" && Math.random() < 0.12) {
+    const roll = AFFIX_TYPES[Math.floor(Math.random() * AFFIX_TYPES.length)];
+    e.affix = roll;
+    if (roll === "shielded") {
+      e.shieldHp = 1; // absorbs one full hit
+      e.emissive = "#2244cc";
+    } else if (roll === "vampiric") {
+      e.emissive = "#cc2020";
+    } else if (roll === "berserker") {
+      e.moveSpeed *= 1.5;
+      e.baseMoveSpeed *= 1.5;
+      e.damage = Math.round(e.damage * 1.3);
+      e.baseDamage = Math.round(e.baseDamage * 1.3);
+      e.hp = Math.round(e.hp * 0.7);
+      e.maxHp = Math.round(e.maxHp * 0.7);
+      e.emissive = "#cc6600";
+    }
+  }
+  return e;
 }
 
 function spawnBoss(wave: number): EnemyRuntime {
@@ -587,6 +629,7 @@ function spawnBoss(wave: number): EnemyRuntime {
     radialTimer: 5,
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: Math.round(def.damage * (1 + (bossCount - 1) * 0.15)),
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
+    affix: "none" as const, shieldHp: 0,
   };
 }
 
@@ -614,6 +657,7 @@ function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult =
     radialTimer: cls === "mage" ? 2.2 : cls === "rogue" ? 0.75 : 5.0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0,
+    affix: "none" as const, shieldHp: 0,
   };
 }
 
@@ -902,9 +946,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             let dmg = Math.round(stats.damage * warCryMult * momentumMult);
             const isCrit = Math.random() < stats.critChance;
             if (isCrit) dmg = Math.floor(dmg * 1.85);
-            e.hp -= dmg;
+            const dealt = applyEnemyDamage(e, dmg);
             e.hitFlashTimer = 0.15;
-            spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
+            spawnDmgPopup(e.x, e.z, dealt > 0 ? dmg : 0, isCrit, false);
             // Crit hit juice — small shake + brief freeze (skipped if it kills,
             // since the centralized kill-FX scan will fire bigger juice).
             if (isCrit && e.hp > 0) { triggerShake(g, 0.22, 0.16); triggerFreeze(g, 22); }
@@ -1384,6 +1428,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+              // Vampiric affix: heal 20% of damage dealt
+              if (e.affix === "vampiric") {
+                e.hp = Math.min(e.maxHp, e.hp + effective * 0.2);
+              }
               // Iron Reprisal shockwave
               if (stats.ironReprisalEnabled) {
                 const repDmg = Math.round(p.maxHp * 0.15);
