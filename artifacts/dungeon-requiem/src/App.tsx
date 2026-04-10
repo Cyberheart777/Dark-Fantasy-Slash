@@ -57,14 +57,22 @@ export default function App() {
   }, [phase]);
 
   // Kickstart audio on the first user gesture — browsers block AudioContext
-  // until the user interacts with the page. Once unlocked, retry the current
-  // phase's music so it actually starts playing.
+  // until the user interacts with the page. Once unlocked, FORCE-restart the
+  // current phase's music. We can't just call playMusic again because the
+  // phase-change useEffect already called it on mount (while suspended), and
+  // the synth fallback set _musicNodes.osc internally — playMusic's
+  // idempotent guard would now return early thinking music is already
+  // playing. stopMusic() clears that stale state so the second call
+  // actually starts the file-backed track.
   useEffect(() => {
-    audioManager.preload(); // load any file-backed sounds defined in SoundData
+    audioManager.preload(); // load file-backed sounds + music variants
     const unlock = () => {
       audioManager.resume();
       const key = musicForPhase(useGameStore.getState().phase);
-      if (key) audioManager.playMusic(key);
+      if (key) {
+        audioManager.stopMusic(); // clear any stale synth-fallback state
+        audioManager.playMusic(key); // start the real track now that ctx is live
+      }
       window.removeEventListener("pointerdown", unlock);
       window.removeEventListener("keydown", unlock);
     };

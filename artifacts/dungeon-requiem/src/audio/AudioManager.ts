@@ -186,10 +186,21 @@ class AudioManager {
         this._musicNodes.src = src;
       } else {
         // Variant not loaded yet OR no variant in pool — kick off a lazy
-        // load and meanwhile play the synth fallback. The variant will be
-        // ready next time playMusic(key) is called.
+        // load and meanwhile play the synth fallback. When the load
+        // finishes, auto-upgrade from the synth to the file-backed track
+        // (only if we're still on the same music key — the player might
+        // have navigated to a different phase by then).
         if (variantUrl && !this._musicBuffers.has(variantUrl)) {
-          void this._loadMusicVariant(variantUrl);
+          void this._loadMusicVariant(variantUrl).then(() => {
+            if (
+              this._currentMusicKey === key &&
+              this._musicBuffers.has(variantUrl) &&
+              this._musicNodes.src === null // still on synth, no file source yet
+            ) {
+              this.stopMusic();    // clear synth + reset _currentMusicKey
+              this.playMusic(key); // re-enter; buffer is now in cache so it'll play file
+            }
+          });
         }
         this._synthMusic(ctx, key);
       }
