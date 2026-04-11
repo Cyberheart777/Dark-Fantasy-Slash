@@ -368,23 +368,32 @@ function applyBloodforge(p: PlayerRuntime, stats: PlayerStats): void {
 }
 
 /**
- * Boss kill cleanup — call this from any secondary kill path (chain lightning,
- * ground effects, AoE, etc.) that can kill the boss. The primary kill sites
- * (melee swing, projectile hit) already inline this logic. Without this, the
- * boss gets filtered out of g.enemies but g.bossAlive stays true, leaving the
- * HUD boss bar stuck on screen and the wave counter refusing to advance.
+ * Big-kill cleanup — call this from any secondary kill path (chain lightning,
+ * ground effects, AoE, DoT, etc.) that can kill the boss or a trial champion.
+ * The primary kill sites (melee swing, projectile hit) already inline this
+ * logic. Without this, the big target gets filtered out of g.enemies but
+ * g.bossAlive stays true (boss HP bar also used for champions), leaving the
+ * HUD boss bar stuck on screen and the wave/trial not advancing.
  */
 function handleBossKillCleanup(e: EnemyRuntime, g: GameState): void {
-  if (e.type !== "boss") return;
-  g.bossAlive = false;
-  g.bossId = null;
-  g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
+  const isChampion = e.type.endsWith("_champion");
+  if (e.type !== "boss" && !isChampion) return;
   const store = useGameStore.getState();
+  if (e.type === "boss") {
+    g.bossAlive = false;
+    g.bossId = null;
+    g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
+    store.setBossSpecialWarn(false);
+    audioManager.play("boss_death");
+    useMetaStore.getState().unlockMilestone("boss_kill");
+    useMetaStore.getState().checkUnlocks();
+  }
+  // Clear the boss HP bar (used for both bosses and champions)
   store.setBossState(0, 0, "", false);
-  store.setBossSpecialWarn(false);
-  audioManager.play("boss_death");
-  useMetaStore.getState().unlockMilestone("boss_kill");
-  useMetaStore.getState().checkUnlocks();
+  // Trial champions must flag trialChampionDefeated so the victory check fires
+  if (isChampion && g.trialMode) {
+    g.trialChampionDefeated = true;
+  }
 }
 
 /** Spawn a floating text popup (e.g. "Item Dropped!") with a custom color + duration. */
@@ -1035,13 +1044,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
               g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
               if (e.type === "boss") {
-                g.bossAlive = false; g.bossId = null;
-                g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
-                store.setBossState(0, 0, "", false);
-                store.setBossSpecialWarn(false);
-                audioManager.play("boss_death"); trySpawnGear(e.type, e.x, e.z, g);
-                useMetaStore.getState().unlockMilestone("boss_kill");
-                useMetaStore.getState().checkUnlocks();
+                handleBossKillCleanup(e, g);
+                trySpawnGear(e.type, e.x, e.z, g);
+              } else if (e.type.endsWith("_champion")) {
+                handleBossKillCleanup(e, g);
+                audioManager.play("enemy_death"); trySpawnGear(e.type, e.x, e.z, g);
               } else {
                 audioManager.play("enemy_death"); trySpawnGear(e.type, e.x, e.z, g);
               }
@@ -1291,13 +1298,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
               spawnDeathFx(g, e.x, e.z, e.color);
               if (e.type === "boss") {
-                g.bossAlive = false; g.bossId = null;
-                g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
-                store.setBossState(0, 0, "", false);
-                store.setBossSpecialWarn(false);
-                audioManager.play("boss_death"); trySpawnGear(e.type, e.x, e.z, g);
-                useMetaStore.getState().unlockMilestone("boss_kill");
-                useMetaStore.getState().checkUnlocks();
+                handleBossKillCleanup(e, g);
+                trySpawnGear(e.type, e.x, e.z, g);
+              } else if (e.type.endsWith("_champion")) {
+                handleBossKillCleanup(e, g);
+                audioManager.play("enemy_death"); trySpawnGear(e.type, e.x, e.z, g);
               } else {
                 audioManager.play("enemy_death"); trySpawnGear(e.type, e.x, e.z, g);
               }
@@ -1744,13 +1749,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
           g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
           if (e.type === "boss") {
-            g.bossAlive = false; g.bossId = null;
-            g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
-            store.setBossState(0, 0, "", false);
-            store.setBossSpecialWarn(false);
-            audioManager.play("boss_death"); trySpawnGear(e.type, e.x, e.z, g);
-            useMetaStore.getState().unlockMilestone("boss_kill");
-            useMetaStore.getState().checkUnlocks();
+            handleBossKillCleanup(e, g);
+            trySpawnGear(e.type, e.x, e.z, g);
+          } else if (e.type.endsWith("_champion")) {
+            handleBossKillCleanup(e, g);
+            audioManager.play("enemy_death"); trySpawnGear(e.type, e.x, e.z, g);
           } else {
             audioManager.play("enemy_death"); trySpawnGear(e.type, e.x, e.z, g);
           }
@@ -2159,6 +2162,24 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             const xg = Math.round(t.xpReward * stats.xpMultiplier);
             g.xpOrbs.push({ id: orbId(), x: t.x, z: t.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[t.type] ?? "green", collectTimer: 0 });
           }
+        }
+      }
+    }
+
+    // ── Stale boss HP bar safeguard ───────────────────────────────────────
+    // If the HUD thinks a boss/champion is alive but there's no matching enemy
+    // in g.enemies, clear the bar. Also auto-trigger trial victory if a trial
+    // champion vanished without the flag being set (catches any missed kill
+    // paths that marked it dead but didn't set trialChampionDefeated).
+    if (useGameStore.getState().bossAlive) {
+      const hasBossLike = g.enemies.some((e) => !e.dead && (e.type === "boss" || e.type.endsWith("_champion")));
+      if (!hasBossLike) {
+        store.setBossState(0, 0, "", false);
+        store.setBossSpecialWarn(false);
+        g.bossAlive = false;
+        g.bossId = null;
+        if (g.trialMode && !g.trialChampionDefeated) {
+          g.trialChampionDefeated = true;
         }
       }
     }
