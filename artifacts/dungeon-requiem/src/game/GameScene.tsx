@@ -2037,7 +2037,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         }
 
       } else if (e.type === "mage_champion") {
-        // ── Mage Champion: keeps distance, fires piercing orbs ────────
+        // ── Mage Champion: blinks around the arena, fires piercing orbs ────
         const keepDist = 14;
         const cx = p.x - e.x, cz = p.z - e.z;
         const clen = Math.sqrt(cx * cx + cz * cz) || 1;
@@ -2070,6 +2070,35 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             });
           }
           audioManager.play("boss_special");
+        }
+
+        // Blink teleport — repositions around the player on a timer so the
+        // fight doesn't settle into a static kite. Ranges 10-16 units from
+        // the player (just inside the orb burst's preferred distance). Also
+        // fires a retaliation orb burst from the arrival point.
+        e.minionTimer -= delta;
+        if (e.minionTimer <= 0) {
+          e.minionTimer = 4.5 - e.enragePhase * 0.8; // 4.5s → 2.9s in late phase
+          const blinkAngle = Math.random() * Math.PI * 2;
+          const blinkDist = 10 + Math.random() * 6;
+          e.x = Math.max(-ARENA, Math.min(ARENA, p.x + Math.sin(blinkAngle) * blinkDist));
+          e.z = Math.max(-ARENA, Math.min(ARENA, p.z + Math.cos(blinkAngle) * blinkDist));
+          e.hitFlashTimer = 0.25;
+          // Quick retaliation burst at the new position
+          const postBurst = e.enragePhase >= 2 ? 4 : 3;
+          for (let k = 0; k < postBurst; k++) {
+            const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
+            const shotAngle = baseAngle + (k - (postBurst - 1) / 2) * 0.28;
+            g.enemyProjectiles.push({
+              id: eprojId(), x: e.x, z: e.z,
+              vx: Math.sin(shotAngle) * 11,
+              vz: Math.cos(shotAngle) * 11,
+              damage: e.damage, lifetime: 3.5, dead: false, style: "orb" as const,
+            });
+          }
+          // Reset orb burst cooldown so the forced volley feels deliberate
+          e.radialTimer = e.attackInterval * 0.8;
+          audioManager.play("dash");
         }
 
       } else if (e.type === "rogue_champion") {
