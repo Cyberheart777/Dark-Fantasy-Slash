@@ -107,6 +107,10 @@ export interface MetaState {
   // e.g. { warrior: "hard", mage: "normal" }
   trialWins: Record<string, string>;
 
+  // Difficulty gating: highest wave with a boss cleared per difficulty tier.
+  // Hard unlocks when normal >= 20. Nightmare unlocks when hard >= 20.
+  difficultyClears: Record<DifficultyTier, number>;
+
   // Gear stash — gear carried out of runs, sellable/equippable at forge
   gearStash: StashItem[];
 
@@ -134,6 +138,7 @@ export interface MetaState {
   updateBestWave: (wave: number) => void;
   checkUnlocks: () => void;
   completeTrial: (cls: string, difficulty?: string) => void;
+  recordDifficultyClear: (tier: DifficultyTier, wave: number) => void;
   addGearToStash: (gear: StashItem) => void;
   sellGear: (index: number) => void;
   equipToLoadout: (stashIndex: number) => void;
@@ -160,6 +165,7 @@ const DEFAULT_STATE = {
   unlockedClasses: ["warrior"] as string[],
   unlockedRaces: ["human"] as string[],
   trialWins: {} as Record<string, string>,
+  difficultyClears: { normal: 0, hard: 0, nightmare: 0 } as Record<DifficultyTier, number>,
   gearStash: [] as StashItem[],
   equippedLoadout: { weapon: null, armor: null, trinket: null } as Record<string, StashItem | null>,
   hasSeenTutorial: false,
@@ -236,6 +242,15 @@ export const useMetaStore = create<MetaState>()(
         if (s.milestones["boss_kill"]) races.push("dwarf");
         if (s.milestones["wave10"]) races.push("elf");
         set({ unlockedClasses: classes, unlockedRaces: races });
+      },
+
+      recordDifficultyClear: (tier: DifficultyTier, wave: number) => {
+        const s = get();
+        const current = s.difficultyClears?.[tier] ?? 0;
+        if (wave <= current) return;
+        set({
+          difficultyClears: { ...s.difficultyClears, [tier]: wave },
+        });
       },
 
       completeTrial: (cls: string, difficulty: string = "normal") => {
@@ -319,7 +334,7 @@ export const useMetaStore = create<MetaState>()(
     }),
     {
       name: "dungeon-requiem-meta",
-      version: 6, // bumped: added equippedLoadout, enhanceLevel, bonuses on stash items
+      version: 7, // bumped: added difficultyClears for difficulty gating
       migrate: (persisted: any, version: number) => {
         let state = persisted ?? {};
         if (version < 3) {
@@ -349,6 +364,16 @@ export const useMetaStore = create<MetaState>()(
           state = {
             ...state,
             equippedLoadout: { weapon: null, armor: null, trinket: null },
+          };
+        }
+        if (version < 7) {
+          // Add difficultyClears for difficulty gating. Existing players who
+          // have already cleared waves on Normal get the unlock seeded from
+          // bestWaveEver so they aren't forced to re-prove themselves.
+          const bestWave = state?.bestWaveEver ?? 0;
+          state = {
+            ...state,
+            difficultyClears: { normal: bestWave, hard: 0, nightmare: 0 },
           };
         }
         return state as MetaState;

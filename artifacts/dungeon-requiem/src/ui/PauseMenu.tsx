@@ -1,33 +1,40 @@
 /**
  * PauseMenu.tsx
  * Pause overlay with three views:
- *   - main       : resume / inventory / extract / settings / main menu
- *   - inventory  : view spare gear from the in-run inventory, equip or sell
+ *   - main       : resume / character / extract / settings / main menu
+ *   - character  : equipped gear, spare gear inventory, AND live stat readout
+ *                  (resolved PlayerStats from gsRef)
  *   - settings   : delegated to the shared SettingsPanel component (also
  *                  used by MainMenu)
  */
 
+import type { MutableRefObject } from "react";
 import { useState } from "react";
 import { useGameStore } from "../store/gameStore";
 import { audioManager } from "../audio/AudioManager";
 import { GEAR_RARITY_COLOR, type GearDef } from "../data/GearData";
 import { SettingsPanel } from "./SettingsPanel";
+import type { GameState } from "../game/GameScene";
+import type { PlayerStats } from "../data/UpgradeData";
 
 const click = (fn: () => void) => () => { audioManager.play("menu_click"); fn(); };
 
-type PauseView = "main" | "inventory" | "settings";
+type PauseView = "main" | "character" | "settings";
 
 interface PauseMenuProps {
   onExtract?: () => void;
   onEquipFromInventory?: (index: number) => void;
   onSellFromInventory?: (index: number) => void;
+  /** Live game state ref — used to render the live stats panel. */
+  gsRef?: MutableRefObject<GameState | null>;
 }
 
-export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory }: PauseMenuProps) {
+export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory, gsRef }: PauseMenuProps) {
   const {
     setPhase, highestBossWaveCleared, trialMode,
     inventory, equippedWeapon, equippedArmor, equippedTrinket,
   } = useGameStore();
+  const liveStats: PlayerStats | null = gsRef?.current?.progression.stats ?? null;
 
   const [view, setView] = useState<PauseView>("main");
 
@@ -62,8 +69,8 @@ export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory
                 ▶ RESUME
               </button>
 
-              <button style={styles.btnInventory} onClick={click(() => setView("inventory"))}>
-                🎒 INVENTORY{inventory.length > 0 ? ` (${inventory.length})` : ""}
+              <button style={styles.btnInventory} onClick={click(() => setView("character"))}>
+                🎒 CHARACTER{inventory.length > 0 ? ` (${inventory.length})` : ""}
               </button>
 
               {showExtract && (
@@ -87,14 +94,15 @@ export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory
           </>
         )}
 
-        {view === "inventory" && (
-          <InventoryView
+        {view === "character" && (
+          <CharacterView
             inventory={inventory}
             equipped={{
               weapon: equippedWeapon,
               armor: equippedArmor,
               trinket: equippedTrinket,
             }}
+            stats={liveStats}
             onEquip={onEquipFromInventory}
             onSell={onSellFromInventory}
             onBack={() => setView("main")}
@@ -109,17 +117,19 @@ export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory
   );
 }
 
-// ─── Inventory view ──────────────────────────────────────────────────────────
+// ─── Character view ──────────────────────────────────────────────────────────
 
-function InventoryView({
+function CharacterView({
   inventory,
   equipped,
+  stats,
   onEquip,
   onSell,
   onBack,
 }: {
   inventory: GearDef[];
   equipped: { weapon: GearDef | null; armor: GearDef | null; trinket: GearDef | null };
+  stats: PlayerStats | null;
   onEquip?: (index: number) => void;
   onSell?: (index: number) => void;
   onBack: () => void;
@@ -134,6 +144,14 @@ function InventoryView({
           <EquippedSlot label="Armor"   gear={equipped.armor} />
           <EquippedSlot label="Trinket" gear={equipped.trinket} />
         </div>
+
+        {/* Live stats readout */}
+        {stats && (
+          <>
+            <div style={styles.sectionTitle}>STATS</div>
+            <StatsPanel stats={stats} />
+          </>
+        )}
 
         {/* Spare inventory — the actual list of pickable items */}
         <div style={styles.sectionTitle}>
@@ -195,6 +213,77 @@ function InventoryView({
     </>
   );
 }
+
+// ─── Stats panel ─────────────────────────────────────────────────────────────
+// Compact two-column readout of resolved PlayerStats. Used by both PauseMenu
+// (live in-run stats) and SoulForge Armory (pre-run preview).
+
+export function StatsPanel({ stats }: { stats: PlayerStats }) {
+  const rows: Array<[string, string, string, string]> = [
+    ["DAMAGE",     `${Math.round(stats.damage)}`,                            "MAX HP",      `${Math.round(stats.maxHealth)}`],
+    ["ATTACK SPD", `${stats.attackSpeed.toFixed(2)}`,                        "ARMOR",       `${Math.round(stats.armor)}`],
+    ["ATTACK RNG", `${stats.attackRange.toFixed(1)}`,                        "DODGE",       `${Math.round(stats.dodgeChance * 100)}%`],
+    ["CRIT CHANCE",`${Math.round(stats.critChance * 100)}%`,                 "LIFESTEAL",   `${Math.round(stats.lifesteal * 100)}%`],
+    ["CRIT DMG",   `${stats.critDamageMultiplier.toFixed(2)}\u00d7`,         "HP REGEN",    `${stats.healthRegen.toFixed(1)}/s`],
+    ["MOVE SPD",   `${stats.moveSpeed.toFixed(1)}`,                          "ON-KILL HEAL",`${Math.round(stats.onKillHeal)}`],
+    ["DASH CD",    `${stats.dashCooldown.toFixed(2)}s`,                      "XP MULT",     `${stats.xpMultiplier.toFixed(2)}\u00d7`],
+  ];
+  return (
+    <div style={statsPanelStyles.grid}>
+      {rows.map(([l1, v1, l2, v2], i) => (
+        <div key={i} style={statsPanelStyles.row}>
+          <div style={statsPanelStyles.cell}>
+            <span style={statsPanelStyles.label}>{l1}</span>
+            <span style={statsPanelStyles.value}>{v1}</span>
+          </div>
+          <div style={statsPanelStyles.cell}>
+            <span style={statsPanelStyles.label}>{l2}</span>
+            <span style={statsPanelStyles.value}>{v2}</span>
+          </div>
+        </div>
+      ))}
+      {stats.overhealShieldPct > 0 && (
+        <div style={{ ...statsPanelStyles.row, justifyContent: "center", color: "#ffcc44", fontSize: 10, letterSpacing: 1 }}>
+          ✦ VAMPIRIC SHROUD: max HP +{Math.round(stats.overhealShieldPct * 100)}% · drain {stats.hpDrainPerSec}/s
+        </div>
+      )}
+    </div>
+  );
+}
+
+const statsPanelStyles: Record<string, React.CSSProperties> = {
+  grid: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    background: "rgba(15,8,25,0.6)",
+    border: "1px solid rgba(80,50,120,0.3)",
+    borderRadius: 6,
+    padding: "8px 10px",
+    fontFamily: "monospace",
+  },
+  row: {
+    display: "flex",
+    gap: 12,
+  },
+  cell: {
+    flex: 1,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+    gap: 6,
+  },
+  label: {
+    fontSize: 9,
+    color: "rgba(160,140,190,0.7)",
+    letterSpacing: 1,
+  },
+  value: {
+    fontSize: 11,
+    color: "#e0d0ff",
+    fontWeight: 700,
+  },
+};
 
 function EquippedSlot({ label, gear }: { label: string; gear: GearDef | null }) {
   if (!gear) {

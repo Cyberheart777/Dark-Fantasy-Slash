@@ -65,7 +65,6 @@ export interface PlayerRuntime {
   singularityActiveTimer: number;// mage: remaining duration of active vortex
   singularityX: number;          // mage: vortex position
   singularityZ: number;
-  bladeOrbitAngle: number;       // rogue: current rotation of blade orbit
   bloodforgeKills: number;       // warrior: kills tracked for bloodforge (+1 HP each, cap 20)
 }
 
@@ -356,6 +355,17 @@ function spawnDeathFx(g: GameState, x: number, z: number, color: string): void {
   if (g.deathFx.length > 40) g.deathFx.splice(0, g.deathFx.length - 40);
 }
 
+/**
+ * Heal helper that respects the Vampiric Shroud overheal ceiling.
+ * Heals can overflow above maxHp up to maxHp * (1 + overhealShieldPct).
+ * Use this for ALL healing sources (lifesteal, on-kill heal, regen).
+ */
+function healPlayer(p: PlayerRuntime, stats: PlayerStats, amount: number): void {
+  if (amount <= 0) return;
+  const ceiling = p.maxHp * (1 + stats.overhealShieldPct);
+  p.hp = Math.min(ceiling, p.hp + amount);
+}
+
 /** Bloodforge: +1 max HP per kill, capped at +20. Called from every kill path. */
 function applyBloodforge(p: PlayerRuntime, stats: PlayerStats): void {
   if (stats.bloodforgeMaxHpPerKill > 0 && p.bloodforgeKills < 20) {
@@ -385,8 +395,12 @@ function handleBossKillCleanup(e: EnemyRuntime, g: GameState): void {
     g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
     store.setBossSpecialWarn(false);
     audioManager.play("boss_death");
-    useMetaStore.getState().unlockMilestone("boss_kill");
-    useMetaStore.getState().checkUnlocks();
+    const meta = useMetaStore.getState();
+    meta.unlockMilestone("boss_kill");
+    meta.checkUnlocks();
+    // Difficulty gating: clearing a boss on this difficulty advances the
+    // unlock progress. Hard unlocks at normal >= 20, Nightmare at hard >= 20.
+    meta.recordDifficultyClear(store.difficultyTier, g.wave);
   }
   // Clear the boss HP bar (used for both bosses and champions)
   store.setBossState(0, 0, "", false);
@@ -443,7 +457,6 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     singularityTimer: 0,
     singularityActiveTimer: 0,
     singularityX: 0, singularityZ: 0,
-    bladeOrbitAngle: 0,
     bloodforgeKills: 0,
   };
 }
@@ -1007,7 +1020,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
 
             let dmg = Math.round(stats.damage * warCryMult * momentumMult);
             const isCrit = Math.random() < stats.critChance;
-            if (isCrit) dmg = Math.floor(dmg * 1.85);
+            if (isCrit) dmg = Math.floor(dmg * stats.critDamageMultiplier);
             const dealt = applyEnemyDamage(e, dmg);
             e.hitFlashTimer = 0.15;
             spawnDmgPopup(e.x, e.z, dealt > 0 ? dmg : 0, isCrit, false);
@@ -1021,7 +1034,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               spawnDmgPopup(e.x + 0.3, e.z, dmg, false, false);
             }
             if (stats.lifesteal > 0) {
-              p.hp = Math.min(p.maxHp, p.hp + dmg * stats.lifesteal);
+              healPlayer(p, stats, dmg * stats.lifesteal);
             }
             // Warrior: Weakening Blows — reduce enemy damage on melee hit
             if (stats.weakeningBlowsPct > 0) {
@@ -1038,7 +1051,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               g.score += e.scoreValue;
               if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
               useGameStore.getState().addRunShards(5);
-              if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
               applyBloodforge(p, stats);
               if (stats.soulfireChance > 0) triggerSoulfire(e, g);
               const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
@@ -1072,7 +1085,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 e.hp -= slamDmg; e.hitFlashTimer = 0.25;
                 if (e.hp <= 0 && !e.dead) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
-                  if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+                  if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
                   applyBloodforge(p, stats);
                   handleBossKillCleanup(e, g);
                   if (stats.soulfireChance > 0) triggerSoulfire(e, g);
@@ -1102,7 +1115,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 if (e.hp <= 0 && !e.dead) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
                   if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
-                  if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+                  if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
                   applyBloodforge(p, stats);
                   handleBossKillCleanup(e, g);
                   if (stats.soulfireChance > 0) triggerSoulfire(e, g);
@@ -1215,8 +1228,15 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         p.regenTimer += delta;
         if (p.regenTimer >= 1) {
           p.regenTimer = 0;
-          p.hp = Math.min(p.maxHp, p.hp + stats.healthRegen);
+          healPlayer(p, stats, stats.healthRegen);
         }
+      }
+
+      // Vampiric Shroud drain — continuous HP loss; CAN kill the player.
+      // Bypasses i-frames and incomingDamageMult — it's the cost of the relic.
+      if (stats.hpDrainPerSec > 0 && !p.dead) {
+        p.hp -= stats.hpDrainPerSec * delta;
+        if (p.hp <= 0) handlePlayerFatalDmg(p, g);
       }
 
       // ── Per-frame passive systems ────────────────────────────────────────
@@ -1261,54 +1281,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (p.invisTimer > 0) {
         p.invisTimer -= delta;
         p.invTimer = Math.max(p.invTimer, p.invisTimer); // can't be hit while invisible
-      }
-
-      // Rogue: Blade Orbit — spinning daggers damage nearby enemies
-      if (stats.bladeOrbitCount > 0) {
-        p.bladeOrbitAngle += delta * 4; // rotation speed
-        const orbitDmg = Math.round(stats.damage * 0.3) * delta; // per-frame scaled
-        for (const e of g.enemies) {
-          if (e.dead) continue;
-          const ox = e.x - p.x, oz = e.z - p.z;
-          if (Math.sqrt(ox * ox + oz * oz) <= 2.5) {
-            e.hp -= orbitDmg;
-            // Throttled hit flash (only triggers when previous flash expired)
-            if (e.hitFlashTimer <= 0) e.hitFlashTimer = 0.12;
-            if (e.hp <= 0 && !e.dead) {
-              e.dead = true; g.kills++; g.score += e.scoreValue;
-              if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
-              useGameStore.getState().addRunShards(5);
-              if (stats.dashResetOnKill) p.dashCooldown = 0;
-              if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
-              applyBloodforge(p, stats);
-              handleBossKillCleanup(e, g);
-              if (stats.soulfireChance > 0) triggerSoulfire(e, g);
-              // Venom spread on kill
-              if (stats.venomStackDps > 0) {
-                for (const nearby of g.enemies) {
-                  if (nearby.dead || nearby.id === e.id) continue;
-                  const nx = nearby.x - e.x, nz = nearby.z - e.z;
-                  if (Math.sqrt(nx * nx + nz * nz) <= 3.5) {
-                    nearby.poisonStacks = Math.min(nearby.poisonStacks + 1, 5);
-                    nearby.poisonDps = stats.venomStackDps;
-                  }
-                }
-              }
-              const xpGain = Math.round(e.xpReward * stats.xpMultiplier);
-              g.xpOrbs.push({ id: orbId(), x: e.x, z: e.z, value: xpGain, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[e.type] ?? "green", collectTimer: 0 });
-              spawnDeathFx(g, e.x, e.z, e.color);
-              if (e.type === "boss") {
-                handleBossKillCleanup(e, g);
-                trySpawnGear(e.type, e.x, e.z, g);
-              } else if (e.type.endsWith("_champion")) {
-                handleBossKillCleanup(e, g);
-                audioManager.play("enemy_death"); trySpawnGear(e.type, e.x, e.z, g);
-              } else {
-                audioManager.play("enemy_death"); trySpawnGear(e.type, e.x, e.z, g);
-              }
-            }
-          }
-        }
       }
 
       // Mage: Singularity — periodic vortex
@@ -1378,7 +1350,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (e.hp > 0 && e.hp < 0.5) e.hp = 0;
         if (e.hp <= 0 && !e.dead) {
           e.dead = true; g.kills++; g.score += e.scoreValue;
-          if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+          if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
           applyBloodforge(p, stats);
           handleBossKillCleanup(e, g);
           // Venom spread on death
@@ -1408,7 +1380,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (e.hp > 0 && e.hp < 0.5) e.hp = 0;
         if (e.hp <= 0 && !e.dead) {
           e.dead = true; g.kills++; g.score += e.scoreValue;
-          if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+          if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
           applyBloodforge(p, stats);
           handleBossKillCleanup(e, g);
           trySpawnGear(e.type, e.x, e.z, g);
@@ -1575,7 +1547,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (e.hp < 0.5) e.hp = 0;
             if (e.hp <= 0 && !e.dead) {
               e.dead = true; g.kills++; g.score += e.scoreValue;
-              if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
               applyBloodforge(p, stats);
               handleBossKillCleanup(e, g);
               trySpawnGear(e.type, e.x, e.z, g);
@@ -1635,7 +1607,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               spawnDmgPopup(e.x, e.z, aoeDmg, false, false);
               if (e.hp <= 0 && !e.dead) {
                 e.dead = true; g.kills++; g.score += e.scoreValue;
-                if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+                if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
                 applyBloodforge(p, stats);
                 handleBossKillCleanup(e, g);
                 trySpawnGear(e.type, e.x, e.z, g);
@@ -1665,14 +1637,14 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         // Crit: guaranteed crit from evasion matrix, or normal roll
         const isCrit = p.guaranteedCrit || Math.random() < (stats.critChance + (p.critCascadeTimer > 0 ? 0.12 : 0));
         if (p.guaranteedCrit) p.guaranteedCrit = false;
-        if (isCrit) dmg = Math.floor(dmg * 1.85);
+        if (isCrit) dmg = Math.floor(dmg * stats.critDamageMultiplier);
         e.hp -= dmg;
         e.hitFlashTimer = 0.15;
         spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
         // Crit hit juice — see melee swing for the same pattern
         if (isCrit && e.hp > 0) { triggerShake(g, 0.22, 0.16); triggerFreeze(g, 22); }
         if (stats.lifesteal > 0) {
-          p.hp = Math.min(p.maxHp, p.hp + dmg * stats.lifesteal);
+          healPlayer(p, stats, dmg * stats.lifesteal);
         }
 
         // ── Rogue: Venom Stack — apply poison on hit ──
@@ -1704,7 +1676,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             closest.hitFlashTimer = 0.12;
             if (closest.hp <= 0 && !closest.dead) {
               closest.dead = true; g.kills++; g.score += closest.scoreValue;
-              if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+              if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
               applyBloodforge(p, stats);
               handleBossKillCleanup(closest, g);
               trySpawnGear(closest.type, closest.x, closest.z, g);
@@ -1724,7 +1696,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           g.score += e.scoreValue;
           if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
           useGameStore.getState().addRunShards(5);
-          if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+          if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
               applyBloodforge(p, stats);
           if (stats.soulfireChance > 0) triggerSoulfire(e, g);
           // ── Rogue: Shadow Step — dash reset on kill ──
@@ -2154,7 +2126,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           if (t.hp <= 0 && !t.dead) {
             t.dead = true; g.kills++; g.score += t.scoreValue;
             if (g.trialMode && t.type.endsWith("_champion")) g.trialChampionDefeated = true;
-            if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
+            if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
             applyBloodforge(p, stats);
             handleBossKillCleanup(t, g);
             if (stats.soulfireChance > 0) triggerSoulfire(t, g);
@@ -2501,8 +2473,6 @@ function AbilityEffects({ gs }: { gs: React.RefObject<GameState | null> }) {
   const blinkTimer = useRef(0);
   const blinkX = useRef(0);
   const blinkZ = useRef(0);
-  // Blade orbit
-  const orbitRef = useRef<THREE.Group>(null);
   // Knockback wave
   const kbRef = useRef<THREE.Mesh>(null);
   const kbTimer = useRef(0);
@@ -2579,17 +2549,6 @@ function AbilityEffects({ gs }: { gs: React.RefObject<GameState | null> }) {
       }
     }
 
-    // ── Blade orbit visual ──
-    if (orbitRef.current) {
-      if (stats.bladeOrbitCount > 0) {
-        orbitRef.current.visible = true;
-        orbitRef.current.position.set(p.x, 0.8, p.z);
-        orbitRef.current.rotation.y = p.bladeOrbitAngle;
-      } else {
-        orbitRef.current.visible = false;
-      }
-    }
-
     // ── Warrior knockback wave ──
     if (kbRef.current) {
       if (g.charClass === "warrior" && p.isDashing && kbTimer.current <= 0) {
@@ -2651,19 +2610,6 @@ function AbilityEffects({ gs }: { gs: React.RefObject<GameState | null> }) {
         <circleGeometry args={[1, 16]} />
         <meshBasicMaterial color="#cc66ff" transparent opacity={0.6} side={THREE.DoubleSide} />
       </mesh>
-
-      {/* Blade orbit — spinning daggers */}
-      <group ref={orbitRef} visible={false}>
-        {[0, 1, 2].map((i) => {
-          const a = (i / 3) * Math.PI * 2;
-          return (
-            <mesh key={i} position={[Math.sin(a) * 2.2, 0, Math.cos(a) * 2.2]} rotation={[0, a, Math.PI / 4]}>
-              <boxGeometry args={[0.06, 0.06, 0.4]} />
-              <meshStandardMaterial color="#40e8a0" emissive="#00dd66" emissiveIntensity={2} metalness={0.9} roughness={0.1} />
-            </mesh>
-          );
-        })}
-      </group>
 
       {/* Warrior knockback wave — expanding blue ring */}
       <mesh ref={kbRef} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
@@ -3172,6 +3118,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           onExtract={handleExtract}
           onEquipFromInventory={handleEquipFromInventory}
           onSellFromInventory={handleSellFromInventory}
+          gsRef={gsRef}
         />
       )}
       {phase === "levelup" && <LevelUp onChoice={handleUpgrade} />}

@@ -6,6 +6,7 @@
 
 import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
+import { DIFFICULTY_DATA } from "../data/DifficultyData";
 import { useEffect, useRef, useState } from "react";
 
 function useIsMobile() {
@@ -33,7 +34,9 @@ export function HUD({ onExtract }: HUDProps) {
     highestBossWaveCleared, trialMode,
     equippedWeapon, equippedArmor, equippedTrinket,
     damagePopups, playerX, playerZ,
+    difficultyTier,
   } = useGameStore();
+  const diffDef = DIFFICULTY_DATA[difficultyTier];
 
   // First-run tutorial — show the large prompt panel until the player either
   // (a) levels up for the first time, (b) 20 seconds elapse, or (c) pauses.
@@ -83,13 +86,17 @@ export function HUD({ onExtract }: HUDProps) {
     return () => { if (waveFlashTimer.current) clearTimeout(waveFlashTimer.current); };
   }, [wave]);
 
-  const hpPct = Math.max(0, playerHP / playerMaxHP) * 100;
+  // Vampiric Shroud can push HP above max — clamp the main fill at 100% and
+  // surface the overheal portion as a separate gold segment.
+  const isOverheal = playerHP > playerMaxHP;
+  const baseHpPct = Math.max(0, Math.min(playerHP, playerMaxHP) / playerMaxHP) * 100;
+  const overhealPct = isOverheal ? Math.min(20, ((playerHP - playerMaxHP) / playerMaxHP) * 100) : 0;
   const xpPct = Math.min(100, (xp / xpToNext) * 100);
   const minutes = Math.floor(survivalTime / 60);
   const seconds = Math.floor(survivalTime % 60);
   const timeStr = `${minutes}:${String(seconds).padStart(2, "0")}`;
 
-  const hpColor = hpPct > 50 ? "#22cc55" : hpPct > 25 ? "#ff8800" : "#cc2222";
+  const hpColor = baseHpPct > 50 ? "#22cc55" : baseHpPct > 25 ? "#ff8800" : "#cc2222";
 
   const upgradeEntries = Object.entries(acquiredUpgrades).filter(([, v]) => v > 0);
 
@@ -106,11 +113,28 @@ export function HUD({ onExtract }: HUDProps) {
       <div style={{ ...styles.vitals, width: isMobile ? 160 : 220 }}>
         {/* HP bar */}
         <div style={styles.barLabel}>
-          <span style={{ color: "#ff6666", fontWeight: "bold" }}>HP</span>
-          <span style={{ color: "#ccc", fontSize: 13 }}>{Math.ceil(playerHP)}/{playerMaxHP}</span>
+          <span style={{ color: isOverheal ? "#ffcc44" : "#ff6666", fontWeight: "bold", textShadow: isOverheal ? "0 0 6px #ffaa00" : undefined }}>
+            HP{isOverheal ? " ✦" : ""}
+          </span>
+          <span style={{ color: isOverheal ? "#ffcc44" : "#ccc", fontSize: 13 }}>
+            {Math.ceil(playerHP)}/{playerMaxHP}
+          </span>
         </div>
-        <div style={styles.barTrack}>
-          <div style={{ ...styles.barFill, width: `${hpPct}%`, background: hpColor, boxShadow: `0 0 8px ${hpColor}` }} />
+        <div style={{ ...styles.barTrack, position: "relative" }}>
+          <div style={{ ...styles.barFill, width: `${baseHpPct}%`, background: hpColor, boxShadow: `0 0 8px ${hpColor}` }} />
+          {overhealPct > 0 && (
+            <div style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: `${100 + overhealPct}%`,
+              background: "linear-gradient(90deg, transparent 80%, #ffcc44 100%)",
+              boxShadow: "0 0 10px #ffaa00",
+              borderRadius: "inherit",
+              pointerEvents: "none",
+            }} />
+          )}
         </div>
 
         {/* XP bar */}
@@ -125,6 +149,20 @@ export function HUD({ onExtract }: HUDProps) {
 
       {/* Top-center: wave/score */}
       <div style={styles.center}>
+        <div style={{
+          display: "inline-block",
+          padding: "2px 10px",
+          borderRadius: 4,
+          background: diffDef.color + "22",
+          border: `1px solid ${diffDef.color}aa`,
+          color: diffDef.accentColor,
+          fontSize: 10,
+          fontWeight: 900,
+          letterSpacing: 2,
+          fontFamily: "monospace",
+          marginBottom: 4,
+          textShadow: `0 0 6px ${diffDef.color}80`,
+        }}>{diffDef.label}</div>
         <div style={styles.waveText}>WAVE {wave}</div>
         <div style={styles.statsRow}>
           <span>⚔ {kills}</span>

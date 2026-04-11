@@ -37,7 +37,7 @@ const CLASS_UNLOCK_CONDITION: Record<CharacterClass, string | null> = {
 
 export function CharacterSelect() {
   const { setPhase, setSelectedClass, setSelectedRace, setDifficultyTier, setTrialMode, selectedClass, trialMode } = useGameStore();
-  const { unlockedClasses, unlockedRaces, milestones, totalKills, bestWaveEver } = useMetaStore();
+  const { unlockedClasses, unlockedRaces, milestones, totalKills, bestWaveEver, difficultyClears } = useMetaStore();
 
   const [step, setStep] = useState<"race" | "class">("race");
   const [race, setRace] = useState<RaceType>("human");
@@ -46,6 +46,21 @@ export function CharacterSelect() {
 
   const isClassUnlocked = (c: CharacterClass) => unlockedClasses.includes(c);
   const isRaceUnlocked  = (r: RaceType)       => unlockedRaces.includes(r);
+
+  // Difficulty gating — clear wave 20 boss on previous tier to unlock next.
+  const normalClearedWave = difficultyClears?.normal ?? 0;
+  const hardClearedWave   = difficultyClears?.hard   ?? 0;
+  const isDifficultyUnlocked = (tier: DifficultyTier): boolean => {
+    if (tier === "normal") return true;
+    if (tier === "hard") return normalClearedWave >= 20;
+    if (tier === "nightmare") return hardClearedWave >= 20;
+    return true;
+  };
+  const difficultyUnlockHint = (tier: DifficultyTier): string => {
+    if (tier === "hard")      return `Clear Wave 20 boss on Normal (${Math.min(normalClearedWave, 20)}/20)`;
+    if (tier === "nightmare") return `Clear Wave 20 boss on Hard (${Math.min(hardClearedWave, 20)}/20)`;
+    return "";
+  };
 
   const confirmRace = (r: RaceType) => {
     if (!isRaceUnlocked(r)) return;
@@ -198,25 +213,33 @@ export function CharacterSelect() {
                 {DIFFICULTIES.map((tier) => {
                   const d = DIFFICULTY_DATA[tier];
                   const active = difficulty === tier;
+                  const unlocked = isDifficultyUnlocked(tier);
                   return (
                     <button
                       key={tier}
+                      disabled={!unlocked}
+                      title={!unlocked ? difficultyUnlockHint(tier) : ""}
                       style={{
                         ...S.diffBtn,
-                        borderColor: active ? d.accentColor : "#2a1f3d",
-                        color: active ? d.accentColor : "#504060",
-                        background: active ? `${d.color}18` : "#0a0614",
-                        boxShadow: active ? `0 0 12px ${d.color}44` : "none",
+                        borderColor: !unlocked ? "#1a1228"
+                          : active ? d.accentColor : "#2a1f3d",
+                        color: !unlocked ? "#3a2050"
+                          : active ? d.accentColor : "#504060",
+                        background: !unlocked ? "#080610"
+                          : active ? `${d.color}18` : "#0a0614",
+                        boxShadow: active && unlocked ? `0 0 12px ${d.color}44` : "none",
+                        cursor: unlocked ? "pointer" : "not-allowed",
+                        opacity: unlocked ? 1 : 0.55,
                       }}
-                      onClick={() => { clickSfx(); setDifficulty(tier); }}
+                      onClick={() => { if (unlocked) { clickSfx(); setDifficulty(tier); } }}
                     >
                       <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, fontFamily: "monospace" }}>
-                        {d.label}
+                        {!unlocked ? "🔒 " : ""}{d.label}
                       </div>
                       <div style={{ fontSize: 9, letterSpacing: 1, fontFamily: "monospace", opacity: 0.8, marginTop: 2 }}>
-                        {d.description}
+                        {unlocked ? d.description : difficultyUnlockHint(tier)}
                       </div>
-                      {tier !== "normal" && (
+                      {tier !== "normal" && unlocked && (
                         <div style={{ fontSize: 9, color: d.color, fontFamily: "monospace", marginTop: 2 }}>
                           ×{d.shardBonusMult} shards
                         </div>

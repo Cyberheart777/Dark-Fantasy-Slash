@@ -6,11 +6,15 @@
 
 import { useState } from "react";
 import { useMetaStore, TRIAL_BUFFS, getEarnedTrialBuffs, type StashItem } from "../store/metaStore";
-import { META_UPGRADES, nextRankCost, nextRankLine } from "../data/MetaUpgradeData";
+import { META_UPGRADES, buildMetaModifiers, buildTrialModifiers, nextRankCost, nextRankLine } from "../data/MetaUpgradeData";
 import { DIFFICULTIES, DIFFICULTY_DATA } from "../data/DifficultyData";
-import { ENHANCE_MULT, ENHANCE_COST, ENHANCE_COLORS, formatBonuses } from "../data/GearData";
+import { ENHANCE_MULT, ENHANCE_COST, ENHANCE_COLORS, formatBonuses, type GearDef } from "../data/GearData";
 import { useGameStore } from "../store/gameStore";
 import { audioManager } from "../audio/AudioManager";
+import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
+import { createDefaultStats, type PlayerStats } from "../data/UpgradeData";
+import { resolveStats, flatModifiers, type StatModifier } from "../data/StatModifier";
+import { StatsPanel } from "./PauseMenu";
 
 const clickSfx = () => audioManager.play("menu_click");
 
@@ -22,6 +26,53 @@ function scaleBonuses(bonuses: Record<string, number>, enhanceLevel: number): Re
     if (typeof v === "number") out[k] = v * mult;
   }
   return out;
+}
+
+/**
+ * Compute the resolved PlayerStats a player would START a run with, based on:
+ *   - the picked class's base stats
+ *   - all purchased meta upgrades (Soul Forge)
+ *   - earned Trial of Champions buffs
+ *   - the equipped pre-run loadout (gear stash)
+ *
+ * Mirrors `makeProgWithMeta` in GameScene.tsx so the UI preview matches what
+ * the run will actually start with (sans race bonuses since the race isn't
+ * picked at the forge).
+ */
+function computePreviewStats(
+  cls: CharacterClass,
+  purchased: Record<string, number>,
+  trialWins: Record<string, string>,
+  equippedLoadout: Record<string, StashItem | null>,
+): PlayerStats {
+  const def = CHARACTER_DATA[cls];
+  const classBase: PlayerStats = {
+    ...createDefaultStats(),
+    maxHealth: def.hp,
+    currentHealth: def.hp,
+    damage: def.damage,
+    attackSpeed: def.attackSpeed,
+    moveSpeed: def.moveSpeed,
+    armor: def.armor,
+    dashCooldown: def.dashCooldown,
+    critChance: def.critChance,
+    attackRange: def.attackRange,
+  };
+  const metaMods = buildMetaModifiers(purchased);
+  const trialMods = buildTrialModifiers(trialWins);
+  // Equipped gear bonuses are added as flat modifiers with enhancement scaling.
+  const gearMods: StatModifier[] = [];
+  for (const item of Object.values(equippedLoadout)) {
+    if (!item || !item.bonuses) continue;
+    const enh = item.enhanceLevel ?? 0;
+    const mult = ENHANCE_MULT[enh] ?? 1;
+    const scaled: Partial<Record<keyof PlayerStats, number>> = {};
+    for (const [key, val] of Object.entries(item.bonuses)) {
+      if (typeof val === "number") (scaled as Record<string, number>)[key] = val * mult;
+    }
+    gearMods.push(...flatModifiers(scaled, `gear:${item.id}`));
+  }
+  return resolveStats(classBase, [...metaMods, ...trialMods, ...gearMods]);
 }
 
 /**
@@ -38,8 +89,12 @@ const SOUL_FORGE_BG_URL = `${import.meta.env.BASE_URL}images/Soul-Forge-bg.png`;
 export function SoulForge() {
   const { shards, totalShardsEarned, purchased, purchaseRank, trialWins, gearStash, sellGear, equippedLoadout, equipToLoadout, unequipFromLoadout, enhanceGear } = useMetaStore();
   const setPhase = useGameStore((s) => s.setPhase);
+  const selectedClass = useGameStore((s) => s.selectedClass);
   const [flash, setFlash] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"forge" | "armory">("forge");
+  const [previewClass, setPreviewClass] = useState<CharacterClass>(selectedClass);
+
+  const previewStats = computePreviewStats(previewClass, purchased, trialWins, equippedLoadout);
 
   const handleBuy = (id: string, cost: number, maxRanks: number) => {
     clickSfx();
@@ -246,6 +301,39 @@ export function SoulForge() {
             <div style={styles.armoryIntro}>
               Equip gear from your stash before your next run. Each slot holds
               one item. Click an equipped slot to unequip.
+            </div>
+
+            {/* ── Stats preview (with class picker) ── */}
+            <div style={styles.armorySection}>
+              <div style={styles.armorySectionTitle}>STATS PREVIEW</div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                {(["warrior", "mage", "rogue"] as const).map((c) => {
+                  const def = CHARACTER_DATA[c];
+                  const active = previewClass === c;
+                  return (
+                    <button
+                      key={c}
+                      onClick={() => { clickSfx(); setPreviewClass(c); }}
+                      style={{
+                        flex: 1,
+                        padding: "6px 8px",
+                        background: active ? `${def.color}22` : "#0a0614",
+                        border: `1px solid ${active ? def.accentColor : "#2a1f3d"}`,
+                        borderRadius: 6,
+                        color: active ? def.accentColor : "#504060",
+                        fontFamily: "monospace",
+                        fontSize: 11,
+                        fontWeight: 900,
+                        letterSpacing: 2,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {c === "warrior" ? "⚔" : c === "mage" ? "✦" : "◆"} {def.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <StatsPanel stats={previewStats} />
             </div>
 
             {/* ── Equipment Loadout ── */}

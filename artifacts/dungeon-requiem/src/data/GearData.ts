@@ -150,32 +150,41 @@ export function rollGearDrop(rarity: GearRarity, forSlot?: GearSlot): GearDef {
 
 /**
  * Drop chances per enemy type, per rarity.
- * Rebalanced: more commons, fewer rares/epics. Commons are the backbone gear
- * tier — enhancement system makes them meaningful long-term.
+ *
+ * Base epic rates raised 2-3× from previous values so the harder enemy tiers
+ * actually feel like they reward epics. The previous values (e.g. elite epic
+ * 0.05%) made epic drops effectively invisible even on Nightmare.
  */
 export const GEAR_DROP_RATES: Record<string, Record<GearRarity, number>> = {
-  scuttler:          { common: 0.008,  rare: 0,       epic: 0 },        // 0.8% common
-  wraith:            { common: 0.008,  rare: 0.0005,  epic: 0 },        // 0.8% common, 0.05% rare
-  brute:             { common: 0.025,  rare: 0.001,   epic: 0 },        // 2.5% common, 0.1% rare
-  elite:             { common: 0.06,   rare: 0.004,   epic: 0.0005 },   // 6% common, 0.4% rare, 0.05% epic
-  boss:              { common: 0.15,   rare: 0.02,    epic: 0.003 },    // 15% common, 2% rare, 0.3% epic
-  xp_goblin:         { common: 0.03,   rare: 0.002,   epic: 0 },        // 3% common, 0.2% rare
-  warrior_champion:  { common: 1.0,    rare: 0.15,    epic: 0.03 },     // guaranteed common, 15% rare, 3% epic
-  mage_champion:     { common: 1.0,    rare: 0.15,    epic: 0.03 },
-  rogue_champion:    { common: 1.0,    rare: 0.15,    epic: 0.03 },
+  scuttler:          { common: 0.008,  rare: 0,        epic: 0 },        // 0.8% common
+  wraith:            { common: 0.008,  rare: 0.0008,   epic: 0 },        // 0.8% common, 0.08% rare
+  brute:             { common: 0.025,  rare: 0.0015,   epic: 0 },        // 2.5% common, 0.15% rare
+  elite:             { common: 0.06,   rare: 0.005,    epic: 0.0015 },   // 6% common, 0.5% rare, 0.15% epic
+  boss:              { common: 0.15,   rare: 0.025,    epic: 0.008 },    // 15% common, 2.5% rare, 0.8% epic
+  xp_goblin:         { common: 0.03,   rare: 0.003,    epic: 0 },        // 3% common, 0.3% rare
+  warrior_champion:  { common: 1.0,    rare: 0.18,     epic: 0.06 },     // guaranteed common, 18% rare, 6% epic
+  mage_champion:     { common: 1.0,    rare: 0.18,     epic: 0.06 },
+  rogue_champion:    { common: 1.0,    rare: 0.18,     epic: 0.06 },
 };
 
 /**
  * Attempt a gear drop. Rolls epic first, then rare, then common.
- * dropMult scales all drop chances (e.g. 1.15 for Hard difficulty).
+ *
+ * dropMult scales drop chances by difficulty (1.0 Normal, 1.15 Hard, 1.30 Nightmare).
+ * Higher rarities get steeper non-linear scaling — epic = mult^3, rare = mult^2,
+ * common = mult^1. This makes Nightmare epics ~2.2× more common than Normal epics
+ * while keeping the common drop pace roughly comparable.
+ *
  * Returns null if nothing drops.
  */
 export function tryRollGear(enemyType: string, dropMult = 1.0): GearDef | null {
   const rates = GEAR_DROP_RATES[enemyType];
   if (!rates) return null;
-  // Roll highest rarity first, applying difficulty multiplier
-  if (rates.epic > 0 && Math.random() < rates.epic * dropMult) return rollGearDrop("epic");
-  if (rates.rare > 0 && Math.random() < rates.rare * dropMult) return rollGearDrop("rare");
-  if (rates.common > 0 && Math.random() < rates.common * dropMult) return rollGearDrop("common");
+  const epicMult   = Math.pow(dropMult, 3);
+  const rareMult   = Math.pow(dropMult, 2);
+  const commonMult = dropMult;
+  if (rates.epic   > 0 && Math.random() < rates.epic   * epicMult)   return rollGearDrop("epic");
+  if (rates.rare   > 0 && Math.random() < rates.rare   * rareMult)   return rollGearDrop("rare");
+  if (rates.common > 0 && Math.random() < rates.common * commonMult) return rollGearDrop("common");
   return null;
 }

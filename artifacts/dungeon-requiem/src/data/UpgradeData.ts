@@ -27,9 +27,7 @@ export type UpgradeId =
   | "xp_gain_boost"
   | "berserker_rage"
   | "iron_skin"
-  | "attack_range_boost"
   | "soul_feast"
-  | "wraithplate"
   | "overclock"
   // ── Warrior-only ──
   | "cleave_start"
@@ -64,7 +62,6 @@ export type UpgradeId =
   | "crit_cascade"
   | "phantom_blades"
   | "evasion_matrix"
-  | "blade_orbit"
   | "extra_daggers"
   | "toxic_dash"
   | "deep_wounds"
@@ -122,6 +119,9 @@ export interface PlayerStats {
   attackRange: number;
   attackArc: number;
   onKillHeal: number;
+  critDamageMultiplier: number;  // multiplier applied to crit damage (default 1.85)
+  overhealShieldPct: number;     // 0 = none. 0.20 = heals can overflow to 120% maxHp
+  hpDrainPerSec: number;         // 0 = none. continuous HP loss; can kill the player
   // ── Relic fields ───────────────────────────────────────────────────────────
   soulfireChance: number;
   phantomEchoEvery: number;
@@ -160,7 +160,6 @@ export interface PlayerStats {
   critCascadeEnabled: boolean;   // crits boost crit chance temporarily
   phantomBladesEnabled: boolean; // extra spectral daggers
   evasionMatrixEnabled: boolean; // dodge → invis + crit
-  bladeOrbitCount: number;       // spinning daggers
   rogueExtraDaggers: number;     // additional daggers per attack
   toxicDashStacks: number;       // poison stacks applied by dash (baseline 1, upgradeable)
   deepWoundsMultiplier: number;  // multiplier on poison duration/damage
@@ -185,6 +184,9 @@ export function createDefaultStats(): PlayerStats {
     attackRange: 5,
     attackArc: 120,
     onKillHeal: 0,
+    critDamageMultiplier: 1.85,
+    overhealShieldPct: 0,
+    hpDrainPerSec: 0,
     soulfireChance: 0,
     phantomEchoEvery: 0,
     deathBargainActive: 0,
@@ -222,7 +224,6 @@ export function createDefaultStats(): PlayerStats {
     critCascadeEnabled: false,
     phantomBladesEnabled: false,
     evasionMatrixEnabled: false,
-    bladeOrbitCount: 0,
     rogueExtraDaggers: 0,
     toxicDashStacks: 1,            // baseline: 1 poison stack on dash
     deepWoundsMultiplier: 1.0,
@@ -288,9 +289,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   armor_boost: {
     id: "armor_boost", name: "Tempered Plate",
-    description: "+5 armor (reduces incoming damage)",
+    description: "+3 armor (reduces incoming damage)",
     icon: "🛡️", maxStacks: 6, rarity: "common", classes: "all",
-    apply: (s) => { s.armor += 5; }, // was 8 — max stack gave +48 alone
+    apply: (s) => { s.armor += 3; },
   },
   health_regen: {
     id: "health_regen", name: "Troll's Blood",
@@ -326,23 +327,11 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "🪬", maxStacks: 4, rarity: "common", classes: "all",
     apply: (s) => { s.dodgeChance += 0.05; },
   },
-  attack_range_boost: {
-    id: "attack_range_boost", name: "Executioner's Reach",
-    description: "+1 attack range",
-    icon: "🗡️", maxStacks: 4, rarity: "common", classes: "all",
-    apply: (s) => { s.attackRange += 1; },
-  },
   soul_feast: {
     id: "soul_feast", name: "Soul Feast",
-    description: "Heal 8 HP on every kill",
+    description: "Heal 2 HP on every kill",
     icon: "👻", maxStacks: 5, rarity: "common", classes: "all",
-    apply: (s) => { s.onKillHeal += 8; },
-  },
-  wraithplate: {
-    id: "wraithplate", name: "Wraithplate",
-    description: "+10 armor",
-    icon: "🦴", maxStacks: 4, rarity: "common", classes: "all",
-    apply: (s) => { s.armor += 10; }, // was 15 — max stack gave +60 alone
+    apply: (s) => { s.onKillHeal += 2; },
   },
   overclock: {
     id: "overclock", name: "Overclock",
@@ -545,12 +534,6 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "🌫️", maxStacks: 1, rarity: "rare", classes: ["rogue"],
     apply: (s) => { s.evasionMatrixEnabled = true; },
   },
-  blade_orbit: {
-    id: "blade_orbit", name: "Blade Orbit",
-    description: "3 daggers spin around you, damaging nearby enemies.",
-    icon: "🔄", maxStacks: 2, rarity: "rare", classes: ["rogue"],
-    apply: (s) => { s.bladeOrbitCount += 3; },
-  },
   extra_daggers: {
     id: "extra_daggers", name: "Fan of Knives",
     description: "Fire +1 additional dagger per attack.",
@@ -581,9 +564,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   relic_vampiric: {
     id: "relic_vampiric", name: "Vampiric Shroud",
-    description: "+4% lifesteal. Heal 2 HP on kill.",
+    description: "Heals can overflow to 120% max HP. Lose 2 HP/sec — kill or die.",
     icon: "🧛", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
-    apply: (s) => { s.lifesteal += 0.04; s.onKillHeal += 2; }, // was 6% + 3 (was 12% + 5)
+    apply: (s) => { s.overhealShieldPct = 0.20; s.hpDrainPerSec = 2; },
   },
   relic_phantom_echo: {
     id: "relic_phantom_echo", name: "Phantom Echo",
