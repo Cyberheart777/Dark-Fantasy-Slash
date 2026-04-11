@@ -17,7 +17,7 @@ interface GameOverProps {
 export function GameOver({ onRestart }: GameOverProps) {
   const {
     score, kills, wave, survivalTime, level,
-    bestScore, bestWave, shardsThisRun, trialMode,
+    bestScore, bestWave, shardsThisRun, guaranteedShards, trialMode,
     runExtracted, highestBossWaveCleared, extractedBonusShards,
   } = useGameStore();
   const shards = useMetaStore((s) => s.shards);
@@ -95,7 +95,12 @@ export function GameOver({ onRestart }: GameOverProps) {
           ) : (
             <>
               <div style={styles.shardTitle}>◈ SHARDS LOST TO THE DUNGEON</div>
-              <div style={styles.shardAmountLost}>{shardsThisRun.toLocaleString()}</div>
+              <div style={styles.shardAmountLost}>{Math.max(0, shardsThisRun - guaranteedShards).toLocaleString()}</div>
+              {guaranteedShards > 0 && (
+                <div style={{ color: "#66cc66", fontSize: 13, marginTop: 8, fontWeight: "bold" }}>
+                  +{guaranteedShards.toLocaleString()} wave reward kept
+                </div>
+              )}
               <div style={styles.shardLore}>Extract your run next time to carry shards back.</div>
               <div style={styles.shardTotal}>Banked: {shards.toLocaleString()} shards</div>
             </>

@@ -108,6 +108,12 @@ export interface GameUIState {
 
   // Soul shards (per-run counter — persistent total lives in metaStore)
   shardsThisRun: number;
+  /**
+   * Guaranteed shards earned per wave completion. These always persist on
+   * death (unlike shardsThisRun which is forfeit). Tracked separately so the
+   * death handler can transfer them to meta while leaving the rest forfeit.
+   */
+  guaranteedShards: number;
 
   // Boss state
   bossHP: number;
@@ -136,6 +142,7 @@ export interface GameUIState {
   // Actions
   setPhase: (phase: GamePhase) => void;
   addRunShards: (n: number) => void;
+  addGuaranteedShards: (n: number) => void;
   setBossState: (hp: number, maxHp: number, name: string, alive: boolean) => void;
   setBossSpecialWarn: (active: boolean) => void;
   setSelectedClass: (cls: CharacterClass) => void;
@@ -197,6 +204,7 @@ const initialState = {
   difficultyTier: "normal" as DifficultyTier,
   trialMode: false,
   shardsThisRun: 0,
+  guaranteedShards: 0,
   bossHP: 0,
   bossMaxHP: 0,
   bossName: "",
@@ -222,6 +230,10 @@ export const useGameStore = create<GameUIState>((set) => ({
   setDifficultyTier: (difficultyTier) => set({ difficultyTier }),
   setTrialMode: (trialMode) => set({ trialMode }),
   addRunShards: (n) => set((s) => ({ shardsThisRun: s.shardsThisRun + n })),
+  addGuaranteedShards: (n) => set((s) => ({
+    shardsThisRun: s.shardsThisRun + n,
+    guaranteedShards: s.guaranteedShards + n,
+  })),
   setBossState: (hp, maxHp, name, alive) => set({ bossHP: hp, bossMaxHP: maxHp, bossName: name, bossAlive: alive }),
   setBossSpecialWarn: (active) => set({ bossSpecialWarn: active }),
   setNemesisState: (alive, announce) => set({ nemesisAlive: alive, nemesisAnnounce: announce }),

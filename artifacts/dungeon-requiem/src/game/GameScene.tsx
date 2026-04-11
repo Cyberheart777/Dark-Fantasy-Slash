@@ -367,6 +367,26 @@ function applyBloodforge(p: PlayerRuntime, stats: PlayerStats): void {
   }
 }
 
+/**
+ * Boss kill cleanup — call this from any secondary kill path (chain lightning,
+ * ground effects, AoE, etc.) that can kill the boss. The primary kill sites
+ * (melee swing, projectile hit) already inline this logic. Without this, the
+ * boss gets filtered out of g.enemies but g.bossAlive stays true, leaving the
+ * HUD boss bar stuck on screen and the wave counter refusing to advance.
+ */
+function handleBossKillCleanup(e: EnemyRuntime, g: GameState): void {
+  if (e.type !== "boss") return;
+  g.bossAlive = false;
+  g.bossId = null;
+  g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
+  const store = useGameStore.getState();
+  store.setBossState(0, 0, "", false);
+  store.setBossSpecialWarn(false);
+  audioManager.play("boss_death");
+  useMetaStore.getState().unlockMilestone("boss_kill");
+  useMetaStore.getState().checkUnlocks();
+}
+
 /** Spawn a floating text popup (e.g. "Item Dropped!") with a custom color + duration. */
 function spawnTextPopup(x: number, z: number, text: string, color: string, durationSec = 2.5): void {
   useGameStore.getState().addDamagePopup({
@@ -879,7 +899,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 e.hp -= blinkDmg; e.hitFlashTimer = 0.2;
                 // Baseline slow at blink origin
                 if (stats.mageBlinkSlowPct > 0) { e.slowPct = stats.mageBlinkSlowPct; e.slowTimer = 2.0; }
-                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; trySpawnGear(e.type, e.x, e.z, g); applyBloodforge(p, stats); }
+                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; trySpawnGear(e.type, e.x, e.z, g); applyBloodforge(p, stats); handleBossKillCleanup(e, g); }
               }
             }
             p.isDashing = false; // instant, no travel
@@ -906,6 +926,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
                   if (stats.dashResetOnKill) p.dashCooldown = 0;
                   applyBloodforge(p, stats);
+                  handleBossKillCleanup(e, g);
                 }
               }
             }
@@ -931,7 +952,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 e.x = Math.max(-ARENA, Math.min(ARENA, e.x + nx * kbForce));
                 e.z = Math.max(-ARENA, Math.min(ARENA, e.z + nz * kbForce));
                 e.hp -= kbDmg; e.hitFlashTimer = 0.2;
-                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; trySpawnGear(e.type, e.x, e.z, g); applyBloodforge(p, stats); }
+                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; trySpawnGear(e.type, e.x, e.z, g); applyBloodforge(p, stats); handleBossKillCleanup(e, g); }
               }
             }
           }
@@ -1045,7 +1066,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 if (e.hp <= 0 && !e.dead) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
                   if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
-              applyBloodforge(p, stats);
+                  applyBloodforge(p, stats);
+                  handleBossKillCleanup(e, g);
                   if (stats.soulfireChance > 0) triggerSoulfire(e, g);
                   trySpawnGear(e.type, e.x, e.z, g);
                   const xg = Math.round(e.xpReward * stats.xpMultiplier);
@@ -1074,7 +1096,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
                   if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
                   if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
-              applyBloodforge(p, stats);
+                  applyBloodforge(p, stats);
+                  handleBossKillCleanup(e, g);
                   if (stats.soulfireChance > 0) triggerSoulfire(e, g);
                   trySpawnGear(e.type, e.x, e.z, g);
                   const xg = Math.round(e.xpReward * stats.xpMultiplier);
@@ -1251,6 +1274,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               if (stats.dashResetOnKill) p.dashCooldown = 0;
               if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
               applyBloodforge(p, stats);
+              handleBossKillCleanup(e, g);
               if (stats.soulfireChance > 0) triggerSoulfire(e, g);
               // Venom spread on kill
               if (stats.venomStackDps > 0) {
@@ -1345,10 +1369,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       // Poison (rogue venom)
       if (e.poisonStacks > 0 && e.poisonDps > 0) {
         e.hp -= e.poisonStacks * e.poisonDps * delta;
+        // Float-precision guard: clamp tiny positive HP to 0 so kill fires
+        if (e.hp > 0 && e.hp < 0.5) e.hp = 0;
         if (e.hp <= 0 && !e.dead) {
           e.dead = true; g.kills++; g.score += e.scoreValue;
           if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
-              applyBloodforge(p, stats);
+          applyBloodforge(p, stats);
+          handleBossKillCleanup(e, g);
           // Venom spread on death
           if (stats.venomStackDps > 0) {
             for (const nearby of g.enemies) {
@@ -1372,10 +1399,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         e.bleedTimer -= delta;
         e.hp -= e.bleedDps * delta;
         if (e.bleedTimer <= 0) { e.bleedDps = 0; }
+        // Float-precision guard: clamp tiny positive HP to 0 so kill fires
+        if (e.hp > 0 && e.hp < 0.5) e.hp = 0;
         if (e.hp <= 0 && !e.dead) {
           e.dead = true; g.kills++; g.score += e.scoreValue;
           if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
-              applyBloodforge(p, stats);
+          applyBloodforge(p, stats);
+          handleBossKillCleanup(e, g);
           trySpawnGear(e.type, e.x, e.z, g);
           continue;
         }
@@ -1536,12 +1566,15 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           if (Math.sqrt(gx * gx + gz * gz) <= ge.radius + e.collisionRadius) {
             e.hp -= tickDmg;
             if (e.hitFlashTimer <= 0) e.hitFlashTimer = 0.08;
+            // Float-precision guard: clamp tiny positive HP to 0 so kill fires
+            if (e.hp < 0.5) e.hp = 0;
             if (e.hp <= 0 && !e.dead) {
               e.dead = true; g.kills++; g.score += e.scoreValue;
               if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
               applyBloodforge(p, stats);
+              handleBossKillCleanup(e, g);
               trySpawnGear(e.type, e.x, e.z, g);
-              audioManager.play("enemy_death");
+              if (e.type !== "boss") audioManager.play("enemy_death");
             }
           }
         }
@@ -1599,6 +1632,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 e.dead = true; g.kills++; g.score += e.scoreValue;
                 if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
                 applyBloodforge(p, stats);
+                handleBossKillCleanup(e, g);
                 trySpawnGear(e.type, e.x, e.z, g);
               }
             }
@@ -1667,6 +1701,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               closest.dead = true; g.kills++; g.score += closest.scoreValue;
               if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
               applyBloodforge(p, stats);
+              handleBossKillCleanup(closest, g);
+              trySpawnGear(closest.type, closest.x, closest.z, g);
             }
             bounceSource = closest;
           }
@@ -2116,12 +2152,12 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             t.dead = true; g.kills++; g.score += t.scoreValue;
             if (g.trialMode && t.type.endsWith("_champion")) g.trialChampionDefeated = true;
             if (stats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + stats.onKillHeal);
-              applyBloodforge(p, stats);
+            applyBloodforge(p, stats);
+            handleBossKillCleanup(t, g);
             if (stats.soulfireChance > 0) triggerSoulfire(t, g);
             trySpawnGear(t.type, t.x, t.z, g);
             const xg = Math.round(t.xpReward * stats.xpMultiplier);
             g.xpOrbs.push({ id: orbId(), x: t.x, z: t.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[t.type] ?? "green", collectTimer: 0 });
-            if (t.type === "boss") { g.bossAlive = false; g.bossId = null; g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave); store.setBossState(0, 0, "", false); }
           }
         }
       }
@@ -2194,7 +2230,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         g.waveTimer = 0;
         g.wave += 1;
         { const meta = useMetaStore.getState(); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
-        useGameStore.getState().addRunShards(25); // 25 soul shards per wave completed
+        useGameStore.getState().addGuaranteedShards(25); // 25 soul shards per wave completed — persists on death
         g.spawnInterval = Math.max(
           GAME_CONFIG.DIFFICULTY.MIN_SPAWN_INTERVAL,
           g.spawnInterval - GAME_CONFIG.DIFFICULTY.SPAWN_REDUCTION
@@ -2278,6 +2314,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       }
       g.inventory = [];
       store.setInventory([]);
+      // Wave-completion shards persist on death (25/wave guaranteed reward)
+      const guaranteed = store.guaranteedShards;
+      if (guaranteed > 0) {
+        meta.addShards(guaranteed);
+      }
       store.setPhase("gameover");
     }
   });
