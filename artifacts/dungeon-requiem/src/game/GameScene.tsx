@@ -812,6 +812,10 @@ function AimResolver({ gs }: { gs: React.RefObject<GameState | null> }) {
 
   useFrame(() => {
     if (!gs.current) return;
+    // On mobile, the right joystick writes worldAimX/Z directly via
+    // MobileControls. Don't clobber it with the mouse raycaster (whose
+    // pointer would default to screen-center and override the stick).
+    if (gs.current.input.isMobile) return;
     raycaster.setFromCamera(pointer, camera);
     if (raycaster.ray.intersectPlane(groundPlane.current, hit.current)) {
       gs.current.input.worldAimX = hit.current.x;

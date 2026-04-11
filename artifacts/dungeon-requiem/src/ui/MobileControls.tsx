@@ -38,6 +38,10 @@ export function MobileControls({ gsRef }: Props) {
 
   useEffect(() => {
     if (!visible) return;
+    // Mark the input manager as mobile so the desktop mouse raycaster
+    // (AimResolver in GameScene) doesn't clobber the right-stick aim.
+    const input = gsRef.current?.input;
+    if (input) input.isMobile = true;
     return () => {
       gsRef.current?.input.setMobileMovement(false, false, false, false);
     };
@@ -74,6 +78,11 @@ export function MobileControls({ gsRef }: Props) {
     const target = e.target as HTMLElement;
     if (target.closest("[data-ctrl]")) return;
     e.preventDefault();
+
+    // Defensive: ensure isMobile is set so the desktop raycaster won't
+    // overwrite worldAimX/Z while the right stick is active.
+    const input = gsRef.current?.input;
+    if (input) input.isMobile = true;
 
     const halfW = window.innerWidth / 2;
 
