@@ -31,7 +31,6 @@ export type UpgradeId =
   | "overclock"
   // ── Warrior-only ──
   | "cleave_start"
-  | "cleave_boost"
   | "blood_momentum"
   | "earthbreaker"
   | "iron_reprisal"
@@ -348,15 +347,18 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   // ════════════════════════════════════════════════════════════════════════════
   cleave_start: {
     id: "cleave_start", name: "Wide Swing",
-    description: "Attacks now cleave — wider arc (+30°)",
-    icon: "🪓", maxStacks: 1, rarity: "rare", classes: ["warrior"],
-    apply: (s) => { s.cleaveChance = 1; s.attackArc += 30; },
-  },
-  cleave_boost: {
-    id: "cleave_boost", name: "Arc Master",
-    description: "+20° attack arc",
-    icon: "🪓", maxStacks: 5, rarity: "common", classes: ["warrior"],
-    apply: (s) => { s.attackArc += 20; },
+    description: "Attacks cleave. +30° arc on first rank, +20° per rank after.",
+    icon: "🪓", maxStacks: 5, rarity: "rare", classes: ["warrior"],
+    apply: (s) => {
+      if (s.cleaveChance < 1) {
+        // Rank 1 — enable cleave and the initial wide sweep
+        s.cleaveChance = 1;
+        s.attackArc += 30;
+      } else {
+        // Subsequent ranks — just widen the arc further
+        s.attackArc += 20;
+      }
+    },
   },
   blood_momentum: {
     id: "blood_momentum", name: "Blood Momentum",
