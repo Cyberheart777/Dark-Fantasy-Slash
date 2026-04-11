@@ -39,6 +39,7 @@ export function SoulForge() {
   const { shards, totalShardsEarned, purchased, purchaseRank, trialWins, gearStash, sellGear, equippedLoadout, equipToLoadout, unequipFromLoadout, enhanceGear } = useMetaStore();
   const setPhase = useGameStore((s) => s.setPhase);
   const [flash, setFlash] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"forge" | "armory">("forge");
 
   const handleBuy = (id: string, cost: number, maxRanks: number) => {
     clickSfx();
@@ -77,6 +78,32 @@ export function SoulForge() {
           "The dungeon does not forget those who survive it. Every Shard you carry back… is a thread binding you to what waits below."
         </div>
 
+        {/* Tab selector */}
+        <div style={styles.tabRow}>
+          <button
+            style={{
+              ...styles.tabBtn,
+              ...(activeTab === "forge" ? styles.tabBtnActive : {}),
+            }}
+            onClick={() => { clickSfx(); setActiveTab("forge"); }}
+          >
+            ⚒ FORGE
+          </button>
+          <button
+            style={{
+              ...styles.tabBtn,
+              ...(activeTab === "armory" ? styles.tabBtnActive : {}),
+            }}
+            onClick={() => { clickSfx(); setActiveTab("armory"); }}
+          >
+            ⚔ ARMORY
+            {gearStash.length > 0 && (
+              <span style={styles.tabBadge}>{gearStash.length}</span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === "forge" && (<>
         {/* Trial of Champions — per-difficulty progress */}
         <div style={styles.trialBox}>
           <div style={styles.trialTitle}>🏆 TRIAL OF CHAMPIONS — PERMANENT BUFFS</div>
@@ -212,124 +239,139 @@ export function SoulForge() {
             );
           })}
         </div>
+        </>)}
 
-        {/* ARMORY — Pre-run equipment loadout */}
-        <div style={styles.trialBox}>
-          <div style={styles.trialTitle}>⚔ ARMORY — EQUIP GEAR FOR NEXT RUN</div>
+        {activeTab === "armory" && (
+          <div style={styles.armoryContainer}>
+            <div style={styles.armoryIntro}>
+              Equip gear from your stash before your next run. Each slot holds
+              one item. Click an equipped slot to unequip.
+            </div>
 
-          {/* Equipment slots */}
-          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-            {(["weapon", "armor", "trinket"] as const).map(slot => {
-              const equipped = equippedLoadout[slot];
-              const slotLabel = slot.charAt(0).toUpperCase() + slot.slice(1);
-              const enh = equipped?.enhanceLevel ?? 0;
-              const enhColor = ENHANCE_COLORS[enh] ?? ENHANCE_COLORS[0];
-              const rarityColor = equipped
-                ? equipped.rarity === "epic" ? "#aa44ff" : equipped.rarity === "rare" ? "#4488dd" : enhColor.border
-                : "#2a1f3d";
-              return (
-                <button
-                  key={slot}
-                  onClick={() => { if (equipped) { clickSfx(); unequipFromLoadout(slot); } }}
-                  style={{
-                    flex: 1, display: "flex", flexDirection: "column" as const, alignItems: "center",
-                    gap: 4, padding: "10px 8px", background: "#0a0610",
-                    border: `1.5px solid ${rarityColor}`, borderRadius: 10, cursor: equipped ? "pointer" : "default",
-                    fontFamily: "monospace", minHeight: 80, transition: "all 0.15s",
-                    boxShadow: equipped ? (enh > 0 ? enhColor.glow : "none") : "none",
-                  }}
-                  title={equipped ? "Click to unequip" : ""}
-                >
-                  <span style={{ fontSize: 9, color: "#504060", letterSpacing: 2 }}>{slotLabel.toUpperCase()}</span>
-                  {equipped ? (
-                    <>
-                      <span style={{ fontSize: 22 }}>{equipped.icon}</span>
-                      <span style={{ fontSize: 9, color: rarityColor }}>{equipped.name}{enh > 0 ? ` +${enh}` : ""}</span>
-                      {equipped.bonuses && (
-                        <span style={{ fontSize: 8, color: "#8070a0", textAlign: "center" as const }}>
-                          {formatBonuses(scaleBonuses(equipped.bonuses as Record<string, number>, enh))}
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <span style={{ fontSize: 9, color: "#3a2050" }}>— empty —</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Stash list with EQUIP + SELL buttons */}
-          {gearStash.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 10, color: "#504060", letterSpacing: 2, fontFamily: "monospace", marginBottom: 6 }}>STASH ({gearStash.length})</div>
-              <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8 }}>
-                {gearStash.map((item, i) => {
-                  const enh = item.enhanceLevel ?? 0;
+            {/* ── Equipment Loadout ── */}
+            <div style={styles.armorySection}>
+              <div style={styles.armorySectionTitle}>EQUIPPED LOADOUT</div>
+              <div style={styles.loadoutGrid}>
+                {(["weapon", "armor", "trinket"] as const).map(slot => {
+                  const equipped = equippedLoadout[slot];
+                  const slotLabel = slot.charAt(0).toUpperCase() + slot.slice(1);
+                  const enh = equipped?.enhanceLevel ?? 0;
                   const enhColor = ENHANCE_COLORS[enh] ?? ENHANCE_COLORS[0];
-                  const rarityColor = item.rarity === "epic" ? "#aa44ff" : item.rarity === "rare" ? "#4488dd" : enhColor.border;
-                  const sellVal = item.rarity === "epic" ? 35 : item.rarity === "rare" ? 15 : 5;
-                  const canEnhance = item.rarity === "common" && enh < 3;
-                  const enhanceCost = canEnhance ? ENHANCE_COST[enh + 1] : 0;
-                  const canAffordEnhance = shards >= enhanceCost;
+                  const rarityColor = equipped
+                    ? equipped.rarity === "epic" ? "#aa44ff" : equipped.rarity === "rare" ? "#4488dd" : enhColor.border
+                    : "#2a1f3d";
                   return (
-                    <div
-                      key={`${item.id}-${i}`}
+                    <button
+                      key={slot}
+                      onClick={() => { if (equipped) { clickSfx(); unequipFromLoadout(slot); } }}
                       style={{
-                        display: "flex", flexDirection: "column" as const, alignItems: "center",
-                        gap: 3, padding: "8px 8px 6px",
-                        background: "#0a0610", border: `1.5px solid ${rarityColor}`,
-                        borderRadius: 8, fontFamily: "monospace",
-                        minWidth: 80, transition: "all 0.15s",
-                        boxShadow: enh > 0 ? enhColor.glow : "none",
+                        ...styles.loadoutSlot,
+                        border: `2px solid ${rarityColor}`,
+                        cursor: equipped ? "pointer" : "default",
+                        boxShadow: equipped ? (enh > 0 ? enhColor.glow : `0 0 12px ${rarityColor}44`) : "none",
                       }}
+                      title={equipped ? "Click to unequip" : ""}
                     >
-                      <span style={{ fontSize: 18 }}>{item.icon}</span>
-                      <span style={{ fontSize: 8, color: rarityColor, letterSpacing: 1 }}>
-                        {item.rarity.toUpperCase()}{enh > 0 ? ` +${enh}` : ""}
-                      </span>
-                      <span style={{ fontSize: 9, color: "#8070a0", maxWidth: 72, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
-                        {item.name}
-                      </span>
-                      {item.bonuses && (
-                        <span style={{ fontSize: 7, color: "#605080", textAlign: "center" as const, maxWidth: 80 }}>
-                          {formatBonuses(scaleBonuses(item.bonuses as Record<string, number>, enh))}
-                        </span>
+                      <div style={styles.slotLabel}>{slotLabel.toUpperCase()}</div>
+                      {equipped ? (
+                        <>
+                          <div style={styles.slotIcon}>{equipped.icon}</div>
+                          <div style={{ ...styles.slotName, color: rarityColor }}>
+                            {equipped.name}{enh > 0 ? ` +${enh}` : ""}
+                          </div>
+                          {equipped.bonuses && (
+                            <div style={styles.slotStats}>
+                              {formatBonuses(scaleBonuses(equipped.bonuses as Record<string, number>, enh))}
+                            </div>
+                          )}
+                          <div style={styles.slotUnequipHint}>click to unequip</div>
+                        </>
+                      ) : (
+                        <div style={styles.slotEmpty}>— EMPTY —</div>
                       )}
-                      <span style={{ fontSize: 8, color: "#3a2850", letterSpacing: 1 }}>{item.slot}</span>
-                      <div style={{ display: "flex", gap: 4, marginTop: 3 }}>
-                        <button
-                          onClick={() => { clickSfx(); equipToLoadout(i); }}
-                          style={{ fontSize: 8, padding: "3px 8px", background: "#1a1040", border: "1px solid #4040aa", borderRadius: 4, color: "#8080dd", cursor: "pointer", fontFamily: "monospace" }}
-                        >EQUIP</button>
-                        <button
-                          onClick={() => { clickSfx(); sellGear(i); }}
-                          style={{ fontSize: 8, padding: "3px 8px", background: "#1a1040", border: "1px solid #4a2050", borderRadius: 4, color: "#a060c0", cursor: "pointer", fontFamily: "monospace" }}
-                        >◈{sellVal}</button>
-                        {canEnhance && (
-                          <button
-                            onClick={() => { clickSfx(); enhanceGear(i); }}
-                            style={{
-                              fontSize: 8, padding: "3px 8px", background: canAffordEnhance ? "#0a2010" : "#1a1040",
-                              border: `1px solid ${canAffordEnhance ? "#40aa40" : "#2a3030"}`, borderRadius: 4,
-                              color: canAffordEnhance ? "#60cc60" : "#3a4a3a", cursor: canAffordEnhance ? "pointer" : "default",
-                              fontFamily: "monospace", opacity: canAffordEnhance ? 1 : 0.5,
-                            }}
-                          >+{enh + 1} ◈{enhanceCost}</button>
-                        )}
-                      </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
             </div>
-          )}
-          {gearStash.length === 0 && !equippedLoadout.weapon && !equippedLoadout.armor && !equippedLoadout.trinket && (
-            <div style={{ fontSize: 10, color: "#3a2050", fontFamily: "monospace", textAlign: "center" as const, padding: 12 }}>
-              No gear collected yet. Play a run to find drops!
+
+            {/* ── Stash ── */}
+            <div style={styles.armorySection}>
+              <div style={styles.armorySectionTitle}>
+                STASH {gearStash.length > 0 && <span style={{ color: "#a060c0" }}>({gearStash.length})</span>}
+              </div>
+              {gearStash.length > 0 ? (
+                <div style={styles.stashGrid}>
+                  {gearStash.map((item, i) => {
+                    const enh = item.enhanceLevel ?? 0;
+                    const enhColor = ENHANCE_COLORS[enh] ?? ENHANCE_COLORS[0];
+                    const rarityColor = item.rarity === "epic" ? "#aa44ff" : item.rarity === "rare" ? "#4488dd" : enhColor.border;
+                    const sellVal = item.rarity === "epic" ? 35 : item.rarity === "rare" ? 15 : 5;
+                    const canEnhance = item.rarity === "common" && enh < 3;
+                    const enhanceCost = canEnhance ? ENHANCE_COST[enh + 1] : 0;
+                    const canAffordEnhance = shards >= enhanceCost;
+                    return (
+                      <div
+                        key={`${item.id}-${i}`}
+                        style={{
+                          ...styles.stashCard,
+                          border: `2px solid ${rarityColor}`,
+                          boxShadow: enh > 0 ? enhColor.glow : "none",
+                        }}
+                      >
+                        <div style={styles.stashCardHeader}>
+                          <span style={styles.stashIcon}>{item.icon}</span>
+                          <div style={styles.stashCardTitles}>
+                            <div style={{ ...styles.stashName, color: rarityColor }}>
+                              {item.name}{enh > 0 ? ` +${enh}` : ""}
+                            </div>
+                            <div style={styles.stashMeta}>
+                              <span style={{ color: rarityColor }}>{item.rarity.toUpperCase()}</span>
+                              <span style={{ color: "#504060" }}> · </span>
+                              <span style={{ color: "#806090" }}>{item.slot.toUpperCase()}</span>
+                            </div>
+                          </div>
+                        </div>
+                        {item.bonuses && (
+                          <div style={styles.stashStats}>
+                            {formatBonuses(scaleBonuses(item.bonuses as Record<string, number>, enh))}
+                          </div>
+                        )}
+                        <div style={styles.stashActions}>
+                          <button
+                            onClick={() => { clickSfx(); equipToLoadout(i); }}
+                            style={styles.equipBtn}
+                          >EQUIP</button>
+                          <button
+                            onClick={() => { clickSfx(); sellGear(i); }}
+                            style={styles.sellBtn}
+                          >SELL ◈{sellVal}</button>
+                          {canEnhance && (
+                            <button
+                              onClick={() => { clickSfx(); enhanceGear(i); }}
+                              style={{
+                                ...styles.enhanceBtn,
+                                background: canAffordEnhance ? "#0a2010" : "#1a1040",
+                                borderColor: canAffordEnhance ? "#40aa40" : "#2a3030",
+                                color: canAffordEnhance ? "#60cc60" : "#3a4a3a",
+                                cursor: canAffordEnhance ? "pointer" : "default",
+                                opacity: canAffordEnhance ? 1 : 0.5,
+                              }}
+                            >+{enh + 1} ◈{enhanceCost}</button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={styles.stashEmpty}>
+                  No gear in stash. Play a run to find drops!
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div style={styles.footer}>
@@ -633,5 +675,241 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     minHeight: 56,
     boxShadow: "0 4px 20px #6010a060",
+  },
+
+  // ── Tabs ─────────────────────────────────────────────────────────────────
+  tabRow: {
+    display: "flex",
+    gap: 8,
+    borderBottom: "2px solid #2a1f3d",
+    paddingBottom: 0,
+  },
+  tabBtn: {
+    flex: 1,
+    padding: "14px 18px",
+    background: "transparent",
+    border: "2px solid transparent",
+    borderBottom: "none",
+    borderRadius: "8px 8px 0 0",
+    color: "#6a5080",
+    fontFamily: "monospace",
+    fontSize: 16,
+    fontWeight: 900,
+    letterSpacing: 3,
+    cursor: "pointer",
+    transition: "all 0.15s",
+    position: "relative" as const,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  tabBtnActive: {
+    background: "#0e0919",
+    borderColor: "#5020a0",
+    color: "#c080f0",
+    boxShadow: "0 -2px 12px rgba(140,60,220,0.3)",
+  },
+  tabBadge: {
+    display: "inline-block",
+    background: "#a060c0",
+    color: "#0a0610",
+    borderRadius: 12,
+    padding: "2px 8px",
+    fontSize: 12,
+    fontWeight: 900,
+    minWidth: 20,
+    textAlign: "center" as const,
+  },
+
+  // ── Armory layout ────────────────────────────────────────────────────────
+  armoryContainer: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 20,
+  },
+  armoryIntro: {
+    fontSize: 13,
+    color: "#806090",
+    fontFamily: "monospace",
+    lineHeight: 1.5,
+    padding: "12px 14px",
+    background: "rgba(10,6,16,0.5)",
+    borderLeft: "3px solid #5020a0",
+    borderRadius: 4,
+  },
+  armorySection: {
+    background: "#080612",
+    border: "1px solid rgba(140,60,220,0.25)",
+    borderRadius: 10,
+    padding: "16px 18px",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 14,
+  },
+  armorySectionTitle: {
+    fontSize: 14,
+    fontWeight: 900,
+    letterSpacing: 4,
+    color: "#a060c0",
+    fontFamily: "monospace",
+  },
+
+  // ── Loadout (equipment slots) ────────────────────────────────────────────
+  loadoutGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: 12,
+  },
+  loadoutSlot: {
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    gap: 8,
+    padding: "16px 10px",
+    background: "#0a0610",
+    borderRadius: 10,
+    fontFamily: "monospace",
+    minHeight: 160,
+    transition: "all 0.15s",
+  },
+  slotLabel: {
+    fontSize: 11,
+    color: "#604070",
+    letterSpacing: 3,
+    fontWeight: 900,
+  },
+  slotIcon: {
+    fontSize: 40,
+    margin: "4px 0",
+  },
+  slotName: {
+    fontSize: 14,
+    fontWeight: 900,
+    textAlign: "center" as const,
+    letterSpacing: 1,
+  },
+  slotStats: {
+    fontSize: 12,
+    color: "#a080c0",
+    textAlign: "center" as const,
+    lineHeight: 1.5,
+    padding: "0 4px",
+  },
+  slotUnequipHint: {
+    fontSize: 10,
+    color: "#4a3060",
+    letterSpacing: 1,
+    marginTop: "auto",
+  },
+  slotEmpty: {
+    fontSize: 13,
+    color: "#3a2050",
+    letterSpacing: 2,
+    marginTop: 30,
+  },
+
+  // ── Stash grid ───────────────────────────────────────────────────────────
+  stashGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+    gap: 12,
+  },
+  stashCard: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 10,
+    padding: "14px",
+    background: "#0a0610",
+    borderRadius: 10,
+    fontFamily: "monospace",
+    transition: "all 0.15s",
+  },
+  stashCardHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+  },
+  stashIcon: {
+    fontSize: 32,
+    flexShrink: 0,
+  },
+  stashCardTitles: {
+    flex: 1,
+    minWidth: 0,
+  },
+  stashName: {
+    fontSize: 15,
+    fontWeight: 900,
+    letterSpacing: 1,
+    overflow: "hidden" as const,
+    textOverflow: "ellipsis" as const,
+    whiteSpace: "nowrap" as const,
+  },
+  stashMeta: {
+    fontSize: 10,
+    letterSpacing: 2,
+    marginTop: 2,
+  },
+  stashStats: {
+    fontSize: 12,
+    color: "#a080c0",
+    lineHeight: 1.5,
+    padding: "8px 10px",
+    background: "rgba(30,10,50,0.4)",
+    borderRadius: 6,
+    borderLeft: "2px solid #5020a0",
+  },
+  stashActions: {
+    display: "flex",
+    gap: 6,
+    flexWrap: "wrap" as const,
+  },
+  equipBtn: {
+    flex: 1,
+    minWidth: 60,
+    fontSize: 12,
+    fontWeight: 900,
+    padding: "10px 12px",
+    background: "#1a1040",
+    border: "1.5px solid #5040aa",
+    borderRadius: 6,
+    color: "#a0a0ff",
+    cursor: "pointer",
+    fontFamily: "monospace",
+    letterSpacing: 2,
+  },
+  sellBtn: {
+    flex: 1,
+    minWidth: 60,
+    fontSize: 12,
+    fontWeight: 900,
+    padding: "10px 12px",
+    background: "#1a1040",
+    border: "1.5px solid #6a2070",
+    borderRadius: 6,
+    color: "#c070e0",
+    cursor: "pointer",
+    fontFamily: "monospace",
+    letterSpacing: 2,
+  },
+  enhanceBtn: {
+    flex: 1,
+    minWidth: 60,
+    fontSize: 12,
+    fontWeight: 900,
+    padding: "10px 12px",
+    border: "1.5px solid",
+    borderRadius: 6,
+    fontFamily: "monospace",
+    letterSpacing: 1,
+  },
+  stashEmpty: {
+    fontSize: 13,
+    color: "#4a3060",
+    fontFamily: "monospace",
+    textAlign: "center" as const,
+    padding: "40px 20px",
+    fontStyle: "italic" as const,
   },
 };
