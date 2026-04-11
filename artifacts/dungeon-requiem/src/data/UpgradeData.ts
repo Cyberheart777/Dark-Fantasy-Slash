@@ -564,9 +564,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   relic_vampiric: {
     id: "relic_vampiric", name: "Vampiric Shroud",
-    description: "Heals can overflow to 120% max HP. Lose 2 HP/sec — kill or die.",
+    description: "+2% lifesteal. Heals overflow to 120% max HP. Lose 6 HP/sec — kill or die.",
     icon: "🧛", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
-    apply: (s) => { s.overhealShieldPct = 0.20; s.hpDrainPerSec = 2; },
+    apply: (s) => { s.lifesteal += 0.02; s.overhealShieldPct = 0.20; s.hpDrainPerSec = 6; },
   },
   relic_phantom_echo: {
     id: "relic_phantom_echo", name: "Phantom Echo",
