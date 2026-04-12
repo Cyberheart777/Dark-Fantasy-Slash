@@ -5,9 +5,10 @@
  * No external manager classes — plain refs + zustand for UI.
  */
 
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, Suspense } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import { EffectComposer, Bloom, Vignette, N8AO } from "@react-three/postprocessing";
 
 import { audioManager } from "../audio/AudioManager";
 import { useGameStore } from "../store/gameStore";
@@ -25,6 +26,8 @@ import { InputManager3D } from "./InputManager3D";
 import { tryRollGear, rollGearDrop, getEnhancedBonuses, GEAR_RARITY_COLOR, type GearDef } from "../data/GearData";
 import { DungeonRoom } from "../world/DungeonRoom";
 import { Torch3D } from "../world/Torch3D";
+import { GroundMist } from "../world/GroundMist";
+import { DustParticles } from "../world/DustParticles";
 import { Player3D } from "../entities/Player3D";
 import { Enemy3D } from "../entities/Enemy3D";
 import { XPOrb3D } from "../entities/XPOrb3D";
@@ -3118,23 +3121,31 @@ function BossAoeRing({ gs }: { gs: React.RefObject<GameState | null> }) {
 function Lighting() {
   return (
     <>
-      <ambientLight color="#8070c0" intensity={1.4} />
-      <directionalLight color="#c0b0ff" intensity={2.0} position={[5, 30, 15]} castShadow
+      {/* Very dim blue-black ambient — dungeon should feel dark */}
+      <ambientLight color="#1a1a2e" intensity={0.3} />
+      {/* Cool moonlit overhead — faint directional for shadow casting */}
+      <directionalLight color="#6688bb" intensity={1.0} position={[5, 30, 15]} castShadow
         shadow-mapSize={[1024, 1024]}
         shadow-camera-near={0.5} shadow-camera-far={120}
         shadow-camera-left={-40} shadow-camera-right={40}
         shadow-camera-top={40} shadow-camera-bottom={-40}
       />
-      <directionalLight color="#806040" intensity={0.7} position={[-10, 15, -10]} />
-      {/* Center arena overhead — guarantees player is lit */}
-      <pointLight color="#a080e0" intensity={4} distance={45} decay={1.2} position={[0, 14, 0]} />
-      {/* Interior warm accents */}
-      <pointLight color="#ff8800" intensity={2} distance={28} decay={2} position={[-15, 4, -15]} />
-      <pointLight color="#ff8800" intensity={2} distance={28} decay={2} position={[ 15, 4, -15]} />
-      <pointLight color="#ff8800" intensity={2} distance={28} decay={2} position={[-15, 4,  15]} />
-      <pointLight color="#ff8800" intensity={2} distance={28} decay={2} position={[ 15, 4,  15]} />
+      {/* Barely perceptible warm fill from opposite side */}
+      <directionalLight color="#403020" intensity={0.4} position={[-10, 15, -10]} />
     </>
   );
+}
+
+// ─── Player follow-light ──────────────────────────────────────────────────────
+
+function PlayerLight({ gs }: { gs: React.RefObject<GameState | null> }) {
+  const lightRef = useRef<THREE.PointLight>(null);
+  useFrame(() => {
+    if (!gs.current || !lightRef.current) return;
+    const p = gs.current.player;
+    lightRef.current.position.set(p.x, 6, p.z);
+  });
+  return <pointLight ref={lightRef} color="#ffaa66" intensity={3} distance={20} decay={2} />;
 }
 
 // ─── Scene content (inside Canvas) ───────────────────────────────────────────
@@ -3143,12 +3154,21 @@ function SceneContent({ gs }: { gs: React.RefObject<GameState | null> }) {
   return (
     <>
       <Lighting />
-      <fog attach="fog" args={["#050008", 55, 95]} />
+      <PlayerLight gs={gs} />
+      <fog attach="fog" args={["#050008", 25, 55]} />
       <DungeonRoom />
+      <GroundMist />
+      <DustParticles />
       {TORCH_POSITIONS.map((pos, i) => (
         <Torch3D key={i} position={pos} />
       ))}
       <GameLoop gs={gs} />
+      {/* Post-processing: bloom makes lights/abilities glow, AO darkens corners, vignette focuses center */}
+      <EffectComposer>
+        <Bloom intensity={0.4} luminanceThreshold={0.6} luminanceSmoothing={0.9} mipmapBlur />
+        <N8AO aoRadius={2} intensity={1.5} distanceFalloff={0.5} />
+        <Vignette offset={0.3} darkness={0.7} />
+      </EffectComposer>
     </>
   );
 }

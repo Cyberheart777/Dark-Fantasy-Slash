@@ -20,40 +20,82 @@ const WALL_COLOR = "#3a2c50";
 const PILLAR_COLOR = "#42305a";
 const ACCENT_COLOR = "#6a4888";
 
+/** Generate a canvas-based normal map matching a tile grid pattern. */
+function generateNormalMap(size: number, tileW: number, tileH: number, groutWidth: number, herringbone: boolean): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+
+  // Neutral normal (pointing straight up in tangent space = #8080ff)
+  ctx.fillStyle = "#8080ff";
+  ctx.fillRect(0, 0, size, size);
+
+  // Grout crevices: slightly tilted normals to create depth
+  for (let row = 0; row < size / tileH; row++) {
+    for (let col = 0; col < size / tileW; col++) {
+      const offset = herringbone && row % 2 === 0 ? 0 : tileW / 2;
+      const x = col * tileW + offset;
+      const y = row * tileH;
+      // Horizontal grout — normal tilted downward (#8060ff)
+      ctx.fillStyle = "#8060e0";
+      ctx.fillRect(x, y, tileW, groutWidth);
+      // Vertical grout — normal tilted leftward (#6080ff)
+      ctx.fillStyle = "#6080e0";
+      ctx.fillRect(x, y, groutWidth, tileH);
+    }
+  }
+
+  // Random surface bumps — small circles with slight normal offsets
+  for (let i = 0; i < 1500; i++) {
+    const px = Math.random() * size;
+    const py = Math.random() * size;
+    const r = 1 + Math.random() * 2;
+    // Random normal direction offset
+    const nr = Math.floor(118 + Math.random() * 20);
+    const ng = Math.floor(118 + Math.random() * 20);
+    ctx.fillStyle = `rgb(${nr},${ng},255)`;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
 function FloorTile() {
   // Procedural stone texture via canvas
-  const texture = useMemo(() => {
+  const { texture, normalMap } = useMemo(() => {
     const size = 512;
+    const tileW = 64, tileH = 64;
+
+    // ── Color texture ──
     const canvas = document.createElement("canvas");
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext("2d")!;
 
-    // Base stone color
     ctx.fillStyle = "#5a4470";
     ctx.fillRect(0, 0, size, size);
 
-    // Draw tile grid
-    const tileW = 64, tileH = 64;
     for (let row = 0; row < size / tileH; row++) {
       for (let col = 0; col < size / tileW; col++) {
         const offset = row % 2 === 0 ? 0 : tileW / 2;
         const x = col * tileW + offset;
         const y = row * tileH;
-        // Slight random variation
         const brightness = 0.85 + Math.random() * 0.15;
         const r = Math.floor(80 * brightness);
         const g = Math.floor(62 * brightness);
         const b = Math.floor(100 * brightness);
         ctx.fillStyle = `rgb(${r},${g},${b})`;
         ctx.fillRect(x + 2, y + 2, tileW - 4, tileH - 4);
-        // Grout lines
         ctx.fillStyle = "#150f1a";
         ctx.fillRect(x, y, tileW, 2);
         ctx.fillRect(x, y, 2, tileH);
       }
     }
-    // Add noise
     for (let i = 0; i < 3000; i++) {
       const px = Math.random() * size;
       const py = Math.random() * size;
@@ -65,7 +107,12 @@ function FloorTile() {
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(8, 8);
-    return tex;
+
+    // ── Normal map ──
+    const nmap = generateNormalMap(size, tileW, tileH, 2, true);
+    nmap.repeat.set(8, 8);
+
+    return { texture: tex, normalMap: nmap };
   }, []);
 
   return (
@@ -73,6 +120,8 @@ function FloorTile() {
       <planeGeometry args={[FULL, FULL, 1, 1]} />
       <meshStandardMaterial
         map={texture}
+        normalMap={normalMap}
+        normalScale={new THREE.Vector2(0.6, 0.6)}
         color={FLOOR_COLOR}
         roughness={0.9}
         metalness={0.0}
@@ -82,12 +131,19 @@ function FloorTile() {
 }
 
 function Walls() {
+  // Wall normal map: larger stone blocks than floor
+  const wallNormal = useMemo(() => {
+    const nmap = generateNormalMap(512, 128, 64, 3, false);
+    nmap.repeat.set(4, 2);
+    return nmap;
+  }, []);
+
   return (
     <group>
       {/* North wall */}
       <mesh position={[0, WH / 2, -H - W / 2]} receiveShadow castShadow>
         <boxGeometry args={[FULL + W * 2, WH, W]} />
-        <meshStandardMaterial color={WALL_COLOR} roughness={0.95} />
+        <meshStandardMaterial color={WALL_COLOR} roughness={0.95} normalMap={wallNormal} normalScale={new THREE.Vector2(0.8, 0.8)} />
       </mesh>
       {/* South wall — semi-transparent so the camera doesn't block gameplay
            when the player is near the bottom edge of the arena */}
@@ -99,17 +155,19 @@ function Walls() {
           transparent
           opacity={0.35}
           side={THREE.DoubleSide}
+          normalMap={wallNormal}
+          normalScale={new THREE.Vector2(0.8, 0.8)}
         />
       </mesh>
       {/* West wall */}
       <mesh position={[-H - W / 2, WH / 2, 0]} receiveShadow castShadow>
         <boxGeometry args={[W, WH, FULL]} />
-        <meshStandardMaterial color={WALL_COLOR} roughness={0.95} />
+        <meshStandardMaterial color={WALL_COLOR} roughness={0.95} normalMap={wallNormal} normalScale={new THREE.Vector2(0.8, 0.8)} />
       </mesh>
       {/* East wall */}
       <mesh position={[H + W / 2, WH / 2, 0]} receiveShadow castShadow>
         <boxGeometry args={[W, WH, FULL]} />
-        <meshStandardMaterial color={WALL_COLOR} roughness={0.95} />
+        <meshStandardMaterial color={WALL_COLOR} roughness={0.95} normalMap={wallNormal} normalScale={new THREE.Vector2(0.8, 0.8)} />
       </mesh>
 
       {/* Wall top trim — south trim matches the semi-transparent south wall */}
