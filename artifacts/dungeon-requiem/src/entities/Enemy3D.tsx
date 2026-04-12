@@ -1176,7 +1176,7 @@ export function Enemy3D({ enemy }: EnemyProps) {
           </GLBErrorBoundary>
         )}
         {enemy.type === "mage_champion" && <MageChampionMesh {...meshProps} />}
-        {enemy.type === "rogue_champion" && <RogueChampionMesh {...meshProps} walkSpeed={walkSpeed} />}
+        {enemy.type === "rogue_champion" && <group rotation-y={Math.PI}><RogueChampionMesh {...meshProps} walkSpeed={walkSpeed} /></group>}
       </group>
 
       {/* Status effect visuals */}

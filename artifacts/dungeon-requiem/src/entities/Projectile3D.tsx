@@ -46,7 +46,7 @@ export function Projectile3D({ proj }: ProjectileProps) {
     } else {
       // Dagger: align to travel direction + spin along travel axis
       const angle = Math.atan2(proj.vx, proj.vz);
-      groupRef.current.rotation.y = angle;
+      groupRef.current.rotation.y = angle + Math.PI;
       groupRef.current.position.y = 0.7;
       // Spin along the forward axis (barrel roll)
       if (groupRef.current.children[0]) {

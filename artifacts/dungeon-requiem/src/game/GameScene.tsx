@@ -1497,8 +1497,20 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         const isTaunting = e.radialTimer <= 0.8;
         if (!isTaunting && dist > 0.1) {
           const speed = e.moveSpeed;
-          e.vx = THREE.MathUtils.lerp(e.vx, -(edx / dist) * speed, 0.12);
-          e.vz = THREE.MathUtils.lerp(e.vz, -(edz / dist) * speed, 0.12);
+          // Base flee direction: away from player
+          let fleeX = -(edx / dist);
+          let fleeZ = -(edz / dist);
+          // Wall avoidance: steer away from arena edges to prevent corner trapping
+          const wallMargin = ARENA * 0.8;
+          if (e.x > wallMargin)  fleeX -= (e.x - wallMargin) / (ARENA - wallMargin);
+          if (e.x < -wallMargin) fleeX -= (e.x + wallMargin) / (ARENA - wallMargin);
+          if (e.z > wallMargin)  fleeZ -= (e.z - wallMargin) / (ARENA - wallMargin);
+          if (e.z < -wallMargin) fleeZ -= (e.z + wallMargin) / (ARENA - wallMargin);
+          // Normalize
+          const fLen = Math.sqrt(fleeX * fleeX + fleeZ * fleeZ) || 1;
+          fleeX /= fLen; fleeZ /= fLen;
+          e.vx = THREE.MathUtils.lerp(e.vx, fleeX * speed, 0.12);
+          e.vz = THREE.MathUtils.lerp(e.vz, fleeZ * speed, 0.12);
           e.x += e.vx * delta;
           e.z += e.vz * delta;
         } else if (isTaunting) {
