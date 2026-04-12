@@ -28,6 +28,8 @@ export type UpgradeId =
   | "berserker_rage"
   | "iron_skin"
   | "soul_feast"
+  | "killing_blow"
+  | "momentum_shift"
   // ── Warrior-only ──
   | "cleave_start"
   | "blood_momentum"
@@ -37,6 +39,9 @@ export type UpgradeId =
   | "bloodforge"
   | "weakening_blows"
   | "concussive_charge"
+  | "executioners_wrath"
+  | "berserkers_mark"
+  | "titans_grip"
   // ── Mage-only ──
   | "chain_lightning"
   | "spell_echo"
@@ -52,6 +57,10 @@ export type UpgradeId =
   | "volatile_blink"
   | "projectile_size"
   | "split_bolt"
+  | "arcane_surge"
+  | "convergence"
+  | "leyline_anchor"
+  | "unstable_core"
   // ── Rogue-only ──
   | "shadow_step"
   | "venom_stack"
@@ -61,6 +70,11 @@ export type UpgradeId =
   | "extra_daggers"
   | "toxic_dash"
   | "deep_wounds"
+  | "marked_for_death"
+  | "deaths_momentum"
+  | "cloak_and_dagger"
+  | "ricochet"
+  | "predators_instinct"
   // ── Relics ──
   | "relic_soulfire"
   | "relic_vampiric"
@@ -68,7 +82,8 @@ export type UpgradeId =
   | "relic_deaths_bargain"
   | "relic_abyss_crown"
   | "relic_blood_covenant"
-  | "relic_iron_oath";
+  | "relic_iron_oath"
+  | "relic_convergence_blade";
 
 // ─── Rarity ────────────────────────────────────────────────────────────────────
 
@@ -118,6 +133,7 @@ export interface PlayerStats {
   overhealShieldPct: number;     // 0 = none. 0.20 = heals can overflow to 120% maxHp
   hpDrainPerSec: number;         // 0 = none. continuous HP loss; can kill the player
   healingReceivedMult: number;   // 1.0 = normal. 1.25 = +25% all healing received
+  momentumShiftEnabled: boolean; // crits grant +4% move speed for 2s, stacks 5x
   // ── Relic fields ───────────────────────────────────────────────────────────
   soulfireChance: number;
   phantomEchoEvery: number;
@@ -131,6 +147,9 @@ export interface PlayerStats {
   bloodforgeMaxHpPerKill: number; // +1 max HP per kill, capped at 20
   weakeningBlowsPct: number;     // % damage reduction applied per melee hit on enemies
   dashKnockbackForce: number;    // knockback distance on dash (baseline, upgradeable)
+  executionersWrathEnabled: boolean; // crits deal 40% AoE around target
+  berserkersMarkEnabled: boolean;    // below 40% HP: burst crit dmg + atk speed
+  titansGripEnabled: boolean;        // -20% atk speed, +35% dmg, +2 knockback
   // ── Mage-specific ──────────────────────────────────────────────────────────
   chainLightningBounces: number; // bounce count per hit
   spellEchoChance: number;       // chance to double-cast
@@ -147,6 +166,10 @@ export interface PlayerStats {
   gravityOrbPull: number;        // pull strength (units/sec) on nearby enemies
   overchargedOrbBonus: number;   // max damage bonus at max range (0.8 = +80%)
   residualFieldEnabled: boolean; // orbs leave damaging ground trail
+  arcaneSurgeBlinkCdr: number;   // blink CD reduction on crit (seconds)
+  convergenceEnabled: boolean;   // same-target escalating damage
+  leylineAnchorEnabled: boolean; // standing still creates crit/speed zone
+  unstableCoreEnabled: boolean;  // post-blink empowered attack
   // ── Rogue-specific ─────────────────────────────────────────────────────────
   dashResetOnKill: boolean;      // dash cd resets on kill
   venomStackDps: number;         // poison damage per second per stack
@@ -154,8 +177,15 @@ export interface PlayerStats {
   phantomBladesEnabled: boolean; // extra spectral daggers
   evasionMatrixEnabled: boolean; // dodge → invis + crit
   rogueExtraDaggers: number;     // additional daggers per attack
-  toxicDashStacks: number;       // poison stacks applied by dash (baseline 1, upgradeable)
+  toxicDashStacks: number;       // poison stacks applied by dash (baseline 1)
+  toxicDashPuddle: boolean;      // dash leaves a toxic puddle at origin
   deepWoundsMultiplier: number;  // multiplier on poison duration/damage
+  markedForDeathEnabled: boolean; // first hit marks, subsequent hits deal bonus
+  deathsMomentumEnabled: boolean; // chain-kills stack crit damage
+  cloakAndDaggerEnabled: boolean; // stealth burst after 1.5s no attack
+  ricochetBounces: number;        // daggers bounce to N enemies for 50% dmg
+  predatorsInstinctEnabled: boolean; // +40% crit dmg vs enemies below 30% HP
+  convergenceBladeEnabled: boolean;  // merge all daggers into single mega-projectile
 }
 
 export function createDefaultStats(): PlayerStats {
@@ -181,6 +211,7 @@ export function createDefaultStats(): PlayerStats {
     overhealShieldPct: 0,
     hpDrainPerSec: 0,
     healingReceivedMult: 1.0,
+    momentumShiftEnabled: false,
     soulfireChance: 0,
     phantomEchoEvery: 0,
     deathBargainActive: 0,
@@ -193,6 +224,9 @@ export function createDefaultStats(): PlayerStats {
     bloodforgeMaxHpPerKill: 0,
     weakeningBlowsPct: 0,
     dashKnockbackForce: 3,        // baseline knockback on dash
+    executionersWrathEnabled: false,
+    berserkersMarkEnabled: false,
+    titansGripEnabled: false,
     // Mage
     chainLightningBounces: 0,
     spellEchoChance: 0,
@@ -209,6 +243,10 @@ export function createDefaultStats(): PlayerStats {
     volatileBlinkEnabled: false,
     projectileRadiusBonus: 0,
     splitBoltActive: false,
+    arcaneSurgeBlinkCdr: 0,
+    convergenceEnabled: false,
+    leylineAnchorEnabled: false,
+    unstableCoreEnabled: false,
     // Rogue
     dashResetOnKill: false,
     venomStackDps: 0,
@@ -217,7 +255,14 @@ export function createDefaultStats(): PlayerStats {
     evasionMatrixEnabled: false,
     rogueExtraDaggers: 0,
     toxicDashStacks: 1,            // baseline: 1 poison stack on dash
+    toxicDashPuddle: false,
     deepWoundsMultiplier: 1.0,
+    markedForDeathEnabled: false,
+    deathsMomentumEnabled: false,
+    cloakAndDaggerEnabled: false,
+    ricochetBounces: 0,
+    predatorsInstinctEnabled: false,
+    convergenceBladeEnabled: false,
   };
 }
 
@@ -327,27 +372,39 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "👻", maxStacks: 5, rarity: "common", classes: "all",
     apply: (s) => { s.onKillHeal += 2; },
   },
+  killing_blow: {
+    id: "killing_blow", name: "Killing Blow",
+    description: "+12% crit damage per stack.",
+    icon: "💀", maxStacks: 3, rarity: "rare", classes: "all",
+    apply: (s) => { s.critDamageMultiplier += 0.12; },
+  },
+  momentum_shift: {
+    id: "momentum_shift", name: "Momentum Shift",
+    description: "Crits grant +4% move speed for 2s, stacks up to 5 times.",
+    icon: "💨", maxStacks: 1, rarity: "rare", classes: "all",
+    apply: (s) => { s.momentumShiftEnabled = true; },
+  },
   // ════════════════════════════════════════════════════════════════════════════
   // WARRIOR-ONLY — melee is hard mode, so these are slightly stronger
   // ════════════════════════════════════════════════════════════════════════════
   cleave_start: {
     id: "cleave_start", name: "Wide Swing",
-    description: "Attacks cleave. +30° arc on first rank, +20° per rank after.",
+    description: "Attacks cleave. Rank 1: 60° arc. Ranks 2-5: +75° each (360° at rank 5).",
     icon: "🪓", maxStacks: 5, rarity: "rare", classes: ["warrior"],
     apply: (s) => {
       if (s.cleaveChance < 1) {
-        // Rank 1 — enable cleave and the initial wide sweep
+        // Rank 1 — enable cleave with 60° base arc
         s.cleaveChance = 1;
-        s.attackArc += 30;
+        s.attackArc += 60;
       } else {
-        // Subsequent ranks — just widen the arc further
-        s.attackArc += 20;
+        // Ranks 2-5: +75° each → 60+75+75+75+75 = 360° cap
+        s.attackArc += 75;
       }
     },
   },
   blood_momentum: {
     id: "blood_momentum", name: "Blood Momentum",
-    description: "Each consecutive hit increases damage by +3% (max 60%). Resets after 2s.",
+    description: "Each consecutive hit increases damage by +3% (max 30%). Resets after 3s.",
     icon: "🔴", maxStacks: 1, rarity: "epic", classes: ["warrior"],
     apply: (s) => { s.bloodMomentumPerHit = 0.03; },
   },
@@ -377,15 +434,38 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   weakening_blows: {
     id: "weakening_blows", name: "Weakening Blows",
-    description: "Melee hits reduce enemy damage by 2%.",
+    description: "Melee hits reduce enemy damage by 4% and grant +4% crit damage per stack.",
     icon: "💀", maxStacks: 3, rarity: "rare", classes: ["warrior"],
-    apply: (s) => { s.weakeningBlowsPct += 0.02; },
+    apply: (s) => { s.weakeningBlowsPct += 0.04; s.critDamageMultiplier += 0.04; },
   },
   concussive_charge: {
     id: "concussive_charge", name: "Concussive Charge",
     description: "Dash knockback distance +50%. Knocked enemies take damage.",
     icon: "💥", maxStacks: 2, rarity: "rare", classes: ["warrior"],
     apply: (s) => { s.dashKnockbackForce += 2; },
+  },
+  executioners_wrath: {
+    id: "executioners_wrath", name: "Executioner's Wrath",
+    description: "Crits deal an additional hit for 40% of crit damage in a small AoE around the target.",
+    icon: "🪓", maxStacks: 1, rarity: "epic", classes: ["warrior"],
+    apply: (s) => { s.executionersWrathEnabled = true; },
+  },
+  berserkers_mark: {
+    id: "berserkers_mark", name: "Berserker's Mark",
+    description: "Below 40% HP: +30% crit damage and +15% attack speed for 6s. 20s cooldown.",
+    icon: "🔴", maxStacks: 1, rarity: "rare", classes: ["warrior"],
+    apply: (s) => { s.berserkersMarkEnabled = true; },
+  },
+  titans_grip: {
+    id: "titans_grip", name: "Titan's Grip",
+    description: "Attack speed -20%, but each hit deals +35% damage and +2 knockback.",
+    icon: "🦾", maxStacks: 1, rarity: "rare", classes: ["warrior"],
+    apply: (s) => {
+      s.titansGripEnabled = true;
+      s.attackSpeed = parseFloat((s.attackSpeed * 0.80).toFixed(3));
+      s.damage = Math.round(s.damage * 1.35);
+      s.dashKnockbackForce += 2;
+    },
   },
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -429,7 +509,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   arcane_detonation: {
     id: "arcane_detonation", name: "Arcane Detonation",
-    description: "Orbs explode on expiry for 60% AoE damage.",
+    description: "When orbs reach max range, they explode for 60% base damage in an AoE instead of disappearing.",
     icon: "💥", maxStacks: 1, rarity: "epic", classes: ["mage"],
     apply: (s) => { s.arcaneDetonationEnabled = true; },
   },
@@ -447,7 +527,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   residual_field: {
     id: "residual_field", name: "Residual Field",
-    description: "Orbs leave a damaging trail that burns enemies.",
+    description: "Orbs leave a damaging trail that persists for 2s, dealing 8% base damage/sec.",
     icon: "🔮", maxStacks: 1, rarity: "epic", classes: ["mage"],
     apply: (s) => { s.residualFieldEnabled = true; },
   },
@@ -465,15 +545,39 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   projectile_size: {
     id: "projectile_size", name: "Amplified Orbs",
-    description: "+20% projectile collision radius.",
+    description: "+20% orb size.",
     icon: "🔵", maxStacks: 3, rarity: "common", classes: ["mage"],
     apply: (s) => { s.projectileRadiusBonus += 0.11; },
   },
   split_bolt: {
     id: "split_bolt", name: "Split Bolt",
-    description: "+1 orb per attack but -25% damage. Trades focus for spread.",
+    description: "Each orb splits into 3 mini-orbs on fire. Mini-orbs deal 35% damage and spread in a cone.",
     icon: "🔀", maxStacks: 1, rarity: "rare", classes: ["mage"],
-    apply: (s) => { s.splitBoltActive = true; s.mageExtraOrbs += 1; },
+    apply: (s) => { s.splitBoltActive = true; },
+  },
+  arcane_surge: {
+    id: "arcane_surge", name: "Arcane Surge",
+    description: "+15% crit damage. Crits reduce blink cooldown by 0.5s.",
+    icon: "⚡", maxStacks: 3, rarity: "rare", classes: ["mage"],
+    apply: (s) => { s.critDamageMultiplier += 0.15; s.arcaneSurgeBlinkCdr += 0.5; },
+  },
+  convergence: {
+    id: "convergence", name: "Convergence",
+    description: "Orbs hitting the same enemy within 0.5s escalate: +25% on 2nd, +50% on 3rd, +75% on 4th.",
+    icon: "🎯", maxStacks: 1, rarity: "epic", classes: ["mage"],
+    apply: (s) => { s.convergenceEnabled = true; },
+  },
+  leyline_anchor: {
+    id: "leyline_anchor", name: "Leyline Anchor",
+    description: "Stand still 1.5s to create a zone: +25% crit damage, +20% projectile speed. Lasts 4s after leaving.",
+    icon: "🔮", maxStacks: 1, rarity: "rare", classes: ["mage"],
+    apply: (s) => { s.leylineAnchorEnabled = true; },
+  },
+  unstable_core: {
+    id: "unstable_core", name: "Unstable Core",
+    description: "After blink, next orb attack within 2s deals +60% damage and +40% crit damage.",
+    icon: "💥", maxStacks: 1, rarity: "epic", classes: ["mage"],
+    apply: (s) => { s.unstableCoreEnabled = true; },
   },
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -481,7 +585,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   // ════════════════════════════════════════════════════════════════════════════
   shadow_step: {
     id: "shadow_step", name: "Shadow Step",
-    description: "Dash cooldown resets on kill.",
+    description: "Dash cooldown resets on kill (minimum 0.3s cooldown floor).",
     icon: "👤", maxStacks: 1, rarity: "epic", classes: ["rogue"],
     apply: (s) => { s.dashResetOnKill = true; },
   },
@@ -493,7 +597,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   crit_cascade: {
     id: "crit_cascade", name: "Crit Cascade",
-    description: "Critical hits boost crit chance by +12% for 3s.",
+    description: "Critical hits boost crit chance by +12% for 3s. Non-refreshing.",
     icon: "💫", maxStacks: 1, rarity: "epic", classes: ["rogue"],
     apply: (s) => { s.critCascadeEnabled = true; },
   },
@@ -517,15 +621,45 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   toxic_dash: {
     id: "toxic_dash", name: "Toxic Dash",
-    description: "Dash applies 3 poison stacks instead of 1.",
+    description: "Dash leaves a toxic puddle at your starting position. Lasts 3s, applies 1 poison stack/sec.",
     icon: "☠️", maxStacks: 1, rarity: "rare", classes: ["rogue"],
-    apply: (s) => { s.toxicDashStacks = 3; },
+    apply: (s) => { s.toxicDashPuddle = true; },
   },
   deep_wounds: {
     id: "deep_wounds", name: "Deep Wounds",
     description: "Poison damage and duration increased by 50%.",
     icon: "🧪", maxStacks: 1, rarity: "rare", classes: ["rogue"],
     apply: (s) => { s.deepWoundsMultiplier += 0.5; },
+  },
+  marked_for_death: {
+    id: "marked_for_death", name: "Marked for Death",
+    description: "First hit marks enemies for 4s. Subsequent hits deal +20% damage and +20% crit damage.",
+    icon: "🎯", maxStacks: 1, rarity: "rare", classes: ["rogue"],
+    apply: (s) => { s.markedForDeathEnabled = true; },
+  },
+  deaths_momentum: {
+    id: "deaths_momentum", name: "Death's Momentum",
+    description: "Kills within 3s of each other grant +8% crit damage, stacking 5 times (40% total). Resets after 3s.",
+    icon: "💀", maxStacks: 1, rarity: "epic", classes: ["rogue"],
+    apply: (s) => { s.deathsMomentumEnabled = true; },
+  },
+  cloak_and_dagger: {
+    id: "cloak_and_dagger", name: "Cloak and Dagger",
+    description: "After 1.5s without attacking, next attack deals +50% damage and +100% crit damage. 3s cooldown.",
+    icon: "🗡️", maxStacks: 1, rarity: "rare", classes: ["rogue"],
+    apply: (s) => { s.cloakAndDaggerEnabled = true; },
+  },
+  ricochet: {
+    id: "ricochet", name: "Ricochet",
+    description: "Daggers bounce to 1 nearby enemy for 50% damage. At 2 stacks, bounces to 2 enemies.",
+    icon: "↩️", maxStacks: 2, rarity: "rare", classes: ["rogue"],
+    apply: (s) => { s.ricochetBounces += 1; },
+  },
+  predators_instinct: {
+    id: "predators_instinct", name: "Predator's Instinct",
+    description: "Enemies below 30% HP take +40% crit damage from you.",
+    icon: "🦅", maxStacks: 1, rarity: "rare", classes: ["rogue"],
+    apply: (s) => { s.predatorsInstinctEnabled = true; },
   },
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -586,13 +720,22 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
       s.dashCooldown *= 3;
     },
   },
+  relic_convergence_blade: {
+    id: "relic_convergence_blade", name: "Convergence Blade",
+    description: "All daggers merge into a single piercing projectile. Combined damage, 5× wider, 40% velocity. -30% attack speed.",
+    icon: "🗡️", maxStacks: 1, rarity: "epic", classes: ["rogue"], isRelic: true,
+    apply: (s) => {
+      s.convergenceBladeEnabled = true;
+      s.attackSpeed = parseFloat((s.attackSpeed * 0.70).toFixed(3));
+    },
+  },
 };
 
 // ─── Relic ID list ─────────────────────────────────────────────────────────────
 
 const RELIC_IDS: UpgradeId[] = [
   "relic_soulfire", "relic_vampiric", "relic_phantom_echo", "relic_deaths_bargain",
-  "relic_abyss_crown", "relic_blood_covenant", "relic_iron_oath",
+  "relic_abyss_crown", "relic_blood_covenant", "relic_iron_oath", "relic_convergence_blade",
 ];
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────

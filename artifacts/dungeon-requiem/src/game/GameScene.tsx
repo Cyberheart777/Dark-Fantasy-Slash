@@ -56,6 +56,8 @@ export interface PlayerRuntime {
   momentumStacks: number;        // warrior: current blood momentum damage stacks
   warCryTimer: number;           // warrior: remaining war cry buff duration
   critCascadeTimer: number;      // rogue: remaining crit cascade buff duration
+  momentumShiftTimer: number;    // universal: remaining momentum shift buff duration
+  momentumShiftStacks: number;   // universal: current move speed stacks (max 5)
   invisTimer: number;            // rogue: evasion matrix invisibility
   guaranteedCrit: boolean;       // rogue: next hit auto-crits
   singularityTimer: number;      // mage: timer for next singularity
@@ -63,6 +65,21 @@ export interface PlayerRuntime {
   singularityX: number;          // mage: vortex position
   singularityZ: number;
   bloodforgeKills: number;       // warrior: kills tracked for bloodforge (+1 HP each, cap 20)
+  // Phase 7 runtime fields
+  berserkersMarkTimer: number;   // warrior: remaining buff duration
+  berserkersMarkCooldown: number;// warrior: ICD timer
+  unstableCoreTimer: number;     // mage: time remaining for empowered attack after blink
+  leylineStillTimer: number;     // mage: time standing still for leyline zone
+  leylineZoneTimer: number;      // mage: remaining leyline zone duration (4s after leaving)
+  leylineZoneX: number;          // mage: leyline zone position
+  leylineZoneZ: number;
+  deathsMomentumStacks: number;  // rogue: chain-kill crit damage stacks (max 5)
+  deathsMomentumTimer: number;   // rogue: 3s kill chain timer
+  cloakAndDaggerTimer: number;   // rogue: time since last attack
+  cloakAndDaggerCooldown: number;// rogue: ICD timer
+  cloakAndDaggerReady: boolean;  // rogue: next attack is empowered
+  lastAttackTime: number;        // universal: time of last attack for cloak and dagger
+  lastX: number; lastZ: number;  // track movement for leyline anchor
 }
 
 export interface EnemyRuntime {
@@ -95,6 +112,9 @@ export interface EnemyRuntime {
   slowPct: number;             // current slow amount (0..1)
   slowTimer: number;           // remaining slow duration
   weakenPct: number;           // weakening blows: damage reduction on this enemy (0..0.30)
+  markTimer: number;           // marked for death: remaining mark duration
+  convergenceHits: number;     // convergence: hit count within 0.5s window
+  convergenceTimer: number;    // convergence: time since last hit (reset at 0.5s)
   // ── Elite affixes ─────────────────────────────────────────────────────
   affix: "none" | "shielded" | "vampiric" | "berserker";
   shieldHp: number;            // shielded affix: absorbs first hit
@@ -144,9 +164,10 @@ export interface GroundEffect {
   id: string;
   x: number; z: number;
   radius: number;
-  dps: number;        // damage per second to enemies in zone
-  lifetime: number;   // remaining seconds
+  dps: number;           // damage per second to enemies in zone
+  lifetime: number;      // remaining seconds
   color: string;
+  appliesPoison?: boolean; // if true, applies poison stacks instead of raw dps
 }
 
 export interface GameState {
@@ -385,7 +406,15 @@ function spawnPlayerDmgPopup(p: PlayerRuntime, value: number): void {
 }
 
 /** Bloodforge: +1 max HP per kill, capped at +20. Called from every kill path. */
+function applyDeathsMomentum(p: PlayerRuntime, stats: PlayerStats): void {
+  if (stats.deathsMomentumEnabled) {
+    p.deathsMomentumStacks = Math.min(p.deathsMomentumStacks + 1, 5);
+    p.deathsMomentumTimer = 3.0;
+  }
+}
+
 function applyBloodforge(p: PlayerRuntime, stats: PlayerStats): void {
+  applyDeathsMomentum(p, stats);
   if (stats.bloodforgeMaxHpPerKill > 0 && p.bloodforgeKills < 20) {
     p.bloodforgeKills++;
     stats.maxHealth += 1;
@@ -467,12 +496,28 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     momentumStacks: 0,
     warCryTimer: 0,
     critCascadeTimer: 0,
+    momentumShiftTimer: 0,
+    momentumShiftStacks: 0,
     invisTimer: 0,
     guaranteedCrit: false,
     singularityTimer: 0,
     singularityActiveTimer: 0,
     singularityX: 0, singularityZ: 0,
     bloodforgeKills: 0,
+    // Phase 7 runtime
+    berserkersMarkTimer: 0,
+    berserkersMarkCooldown: 0,
+    unstableCoreTimer: 0,
+    leylineStillTimer: 0,
+    leylineZoneTimer: 0,
+    leylineZoneX: 0, leylineZoneZ: 0,
+    deathsMomentumStacks: 0,
+    deathsMomentumTimer: 0,
+    cloakAndDaggerTimer: 0,
+    cloakAndDaggerCooldown: 0,
+    cloakAndDaggerReady: false,
+    lastAttackTime: 0,
+    lastX: 0, lastZ: 0,
   };
 }
 
@@ -503,7 +548,7 @@ function spawnGoblin(): EnemyRuntime {
     specialWarning: false, specialWarnTimer: 0,
     minionTimer: 0, radialTimer: 3.8, // taunt cycle timer
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: 0,
-    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
     affix: "none" as const, shieldHp: 0,
   };
 }
@@ -661,7 +706,7 @@ function spawnEnemy(wave: number, hpMult = 1, dmgMult = 1, speedMult = 1): Enemy
     specialWarning: false, specialWarnTimer: 0,
     minionTimer: 0, radialTimer: 0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
-    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
     affix: "none" as const, shieldHp: 0,
   };
   // Roll affix: 12% chance after wave 10, non-boss enemies only
@@ -714,7 +759,7 @@ function spawnBoss(wave: number): EnemyRuntime {
     minionTimer: 10,
     radialTimer: 5,
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: Math.round(def.damage * (1 + (bossCount - 1) * 0.15)),
-    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
     affix: "none" as const, shieldHp: 0,
   };
 }
@@ -742,7 +787,7 @@ function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult =
     minionTimer: cls === "warrior" ? 2.0 : 3.0, // warrior fires first arc slash faster
     radialTimer: cls === "mage" ? 2.2 : cls === "rogue" ? 0.75 : 0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
-    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
     affix: "none" as const, shieldHp: 0,
   };
 }
@@ -911,8 +956,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         const len = Math.sqrt(mx * mx + mz * mz);
         if (len > 0) {
           mx /= len; mz /= len;
-          p.x += mx * stats.moveSpeed * delta;
-          p.z += mz * stats.moveSpeed * delta;
+          const effectiveMoveSpeed = stats.moveSpeed * (1 + p.momentumShiftStacks * 0.04);
+          p.x += mx * effectiveMoveSpeed * delta;
+          p.z += mz * effectiveMoveSpeed * delta;
         }
 
         // Dash initiation — class-specific baseline dashes
@@ -943,11 +989,24 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; trySpawnGear(e.type, e.x, e.z, g); applyBloodforge(p, stats); handleBossKillCleanup(e, g); }
               }
             }
+            // Unstable Core: empower next orb after blink
+            if (stats.unstableCoreEnabled) p.unstableCoreTimer = 2.0;
             p.isDashing = false; // instant, no travel
             p.dashCooldown = stats.dashCooldown;
 
           } else if (g.charClass === "rogue") {
             // ── Rogue: Poison Dash — pass through enemies, apply venom ──
+            // Toxic Dash puddle: spawn at starting position before dash moves
+            if (stats.toxicDashPuddle) {
+              g.groundEffects.push({
+                id: `toxic_puddle_${Date.now()}`,
+                x: p.x, z: p.z, radius: 2.5,
+                dps: 0, lifetime: 3.0,
+                color: "#44ff44",
+                appliesPoison: true,
+              });
+              if (g.groundEffects.length > 60) g.groundEffects.splice(0, g.groundEffects.length - 60);
+            }
             p.isDashing = true;
             p.dashTimer = GAME_CONFIG.PLAYER.DASH_DURATION;
             p.dashVX = dashDir.x * GAME_CONFIG.PLAYER.DASH_SPEED;
@@ -965,7 +1024,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 e.poisonDps = poisonPerStack * stats.deepWoundsMultiplier;
                 if (e.hp <= 0 && !e.dead) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
-                  if (stats.dashResetOnKill) p.dashCooldown = 0;
+                  if (stats.dashResetOnKill) p.dashCooldown = Math.min(p.dashCooldown, 0.3);
                   applyBloodforge(p, stats);
                   handleBossKillCleanup(e, g);
                 }
@@ -1006,7 +1065,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
 
       // Auto-attack — fires automatically when cooldown expires
       if (p.attackTimer <= 0) {
-        const attackDuration = 1 / stats.attackSpeed;
+        const berserkAtkSpd = p.berserkersMarkTimer > 0 ? 1.15 : 1;
+        const attackDuration = 1 / (stats.attackSpeed * berserkAtkSpd);
         p.attackTrigger++;
         p.attackTimer = attackDuration;
         p.attackAngle = p.angle;
@@ -1017,9 +1077,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           // ── Melee arc sweep ────────────────────────────────────────────
           // War Cry damage bonus
           const warCryMult = p.warCryTimer > 0 ? (1 + stats.warCryDmgBonus) : 1;
+          // Berserker's Mark: +30% crit damage while active
+          const berserkCritBonus = p.berserkersMarkTimer > 0 ? 0.30 : 0;
           // Blood Momentum stacking
           const momentumMult = stats.bloodMomentumPerHit > 0
-            ? 1 + Math.min(p.momentumStacks * stats.bloodMomentumPerHit, 0.60)
+            ? 1 + Math.min(p.momentumStacks * stats.bloodMomentumPerHit, 0.30)
             : 1;
 
           let meleeHitsThisSwing = 0;
@@ -1039,13 +1101,32 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
 
             let dmg = Math.round(stats.damage * warCryMult * momentumMult);
             const isCrit = Math.random() < stats.critChance;
-            if (isCrit) dmg = Math.floor(dmg * stats.critDamageMultiplier);
+            if (isCrit) {
+              dmg = Math.floor(dmg * (stats.critDamageMultiplier + berserkCritBonus));
+              if (stats.momentumShiftEnabled) { p.momentumShiftStacks = Math.min(p.momentumShiftStacks + 1, 5); p.momentumShiftTimer = 2.0; }
+            }
             const dealt = applyEnemyDamage(e, dmg);
             e.hitFlashTimer = 0.15;
             spawnDmgPopup(e.x, e.z, dealt > 0 ? dmg : 0, isCrit, false);
-            // Crit hit juice — small shake + brief freeze (skipped if it kills,
-            // since the centralized kill-FX scan will fire bigger juice).
             if (isCrit && e.hp > 0) { triggerShake(g, 0.22, 0.16); triggerFreeze(g, 22); }
+            // Executioner's Wrath: crit AoE burst around target
+            if (isCrit && stats.executionersWrathEnabled) {
+              const wrathDmg = Math.round(dmg * 0.40);
+              for (const nearby of g.enemies) {
+                if (nearby.dead || nearby.id === e.id) continue;
+                const wx = nearby.x - e.x, wz = nearby.z - e.z;
+                if (Math.sqrt(wx * wx + wz * wz) <= 3.5) {
+                  nearby.hp -= wrathDmg; nearby.hitFlashTimer = 0.12;
+                  if (nearby.hp <= 0 && !nearby.dead) {
+                    nearby.dead = true; g.kills++; g.score += nearby.scoreValue;
+                    if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
+                    applyBloodforge(p, stats);
+                    handleBossKillCleanup(nearby, g);
+                    trySpawnGear(nearby.type, nearby.x, nearby.z, g);
+                  }
+                }
+              }
+            }
             meleeHitsThisSwing++;
 
             if (stats.doubleStrikeChance > 0 && Math.random() < stats.doubleStrikeChance) {
@@ -1084,7 +1165,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           // ── Blood Momentum: update stacks after melee swing ──
           if (stats.bloodMomentumPerHit > 0 && meleeHitsThisSwing > 0) {
             p.momentumStacks = Math.min(p.momentumStacks + meleeHitsThisSwing, 20);
-            p.momentumTimer = 2.0; // reset 2s decay
+            p.momentumTimer = 3.0; // reset 3s decay
           }
           p.meleeHitCounter += meleeHitsThisSwing;
 
@@ -1152,9 +1233,12 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const isPiercing = def.projectilePiercing;
           // War cry damage bonus (warrior only but just in case)
           const warCryMult = p.warCryTimer > 0 ? (1 + stats.warCryDmgBonus) : 1;
-          // Split Bolt: +1 orb already counted in mageExtraOrbs, apply -25% damage
-          const splitMult = stats.splitBoltActive ? 0.75 : 1;
-          const projDmg = Math.round(stats.damage * warCryMult * splitMult);
+          const projDmg = Math.round(stats.damage * warCryMult);
+          // Leyline Anchor: +20% projectile speed while in zone
+          const leylineInZone = stats.leylineAnchorEnabled && p.leylineZoneTimer > 0
+            && Math.sqrt((p.x - p.leylineZoneX) ** 2 + (p.z - p.leylineZoneZ) ** 2) <= 4;
+          const projSpeedMult = leylineInZone ? 1.20 : 1;
+          const projSpeed = def.projectileSpeed * projSpeedMult;
           // Projectile radius with bonus
           const projRadius = def.projectileRadius + stats.projectileRadiusBonus;
 
@@ -1165,8 +1249,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const proj: Projectile = {
                 id: projId(),
                 x: p.x, z: p.z,
-                vx: Math.sin(angle) * def.projectileSpeed,
-                vz: Math.cos(angle) * def.projectileSpeed,
+                vx: Math.sin(angle) * projSpeed,
+                vz: Math.cos(angle) * projSpeed,
                 damage: projDmg,
                 radius: projRadius,
                 lifetime: def.projectileLifetime,
@@ -1179,18 +1263,36 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               };
               // Mage orb upgrade fields
               if (projStyle === "orb") {
-                if (stats.overchargedOrbBonus > 0) { proj.spawnX = p.x; proj.spawnZ = p.z; proj.maxRange = def.projectileSpeed * def.projectileLifetime; }
+                if (stats.overchargedOrbBonus > 0) { proj.spawnX = p.x; proj.spawnZ = p.z; proj.maxRange = projSpeed * def.projectileLifetime; }
                 if (stats.residualFieldEnabled) { proj.trailTimer = 0; }
               }
               g.projectiles.push(proj);
+              // Split Bolt: each orb spawns 2 extra mini-orbs (3 total) at 35% damage in cone
+              if (stats.splitBoltActive && projStyle === "orb") {
+                const splitDmg = Math.round(projDmg * 0.35);
+                const splitSpread = 0.35; // cone half-angle
+                for (const offset of [-splitSpread, splitSpread]) {
+                  const sAngle = angle + offset;
+                  g.projectiles.push({
+                    id: projId(), x: p.x, z: p.z,
+                    vx: Math.sin(sAngle) * projSpeed,
+                    vz: Math.cos(sAngle) * projSpeed,
+                    damage: splitDmg, radius: projRadius * 0.7,
+                    lifetime: def.projectileLifetime * 0.7,
+                    piercing: isPiercing, hitIds: new Set(),
+                    color: def.accentColor, glowColor: def.color,
+                    style: projStyle, dead: false,
+                  });
+                }
+              }
               // Twin Fang proc
               if (stats.doubleStrikeChance > 0 && Math.random() < stats.doubleStrikeChance) {
                 const extraAngle = angle + (Math.random() - 0.5) * 0.25;
                 g.projectiles.push({
                   id: projId(),
                   x: p.x, z: p.z,
-                  vx: Math.sin(extraAngle) * def.projectileSpeed,
-                  vz: Math.cos(extraAngle) * def.projectileSpeed,
+                  vx: Math.sin(extraAngle) * projSpeed,
+                  vz: Math.cos(extraAngle) * projSpeed,
                   damage: projDmg,
                   radius: projRadius,
                   lifetime: def.projectileLifetime,
@@ -1205,35 +1307,55 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             }
           };
 
-          // Fire main volley
-          fireVolley(0);
+          // Reset cloak and dagger timer on attack
+          if (stats.cloakAndDaggerEnabled) p.cloakAndDaggerTimer = 0;
 
-          // Mage: Spell Echo — chance to double-cast entire volley
-          if (g.charClass === "mage" && stats.spellEchoChance > 0 && Math.random() < stats.spellEchoChance) {
-            fireVolley((Math.random() - 0.5) * 0.15); // slight angle jitter
-          }
+          // Convergence Blade: merge all daggers into single mega-projectile
+          if (stats.convergenceBladeEnabled && projStyle === "dagger") {
+            const megaDmg = projDmg * totalCount;
+            const megaRadius = projRadius * 5;
+            const megaSpeed = projSpeed * 0.4;
+            g.projectiles.push({
+              id: projId(), x: p.x, z: p.z,
+              vx: Math.sin(p.angle) * megaSpeed,
+              vz: Math.cos(p.angle) * megaSpeed,
+              damage: megaDmg, radius: megaRadius,
+              lifetime: def.projectileLifetime * 1.5,
+              piercing: true, hitIds: new Set(),
+              color: "#66ffcc", glowColor: "#22cc88",
+              style: "dagger", dead: false,
+            });
+          } else {
+            // Fire main volley
+            fireVolley(0);
 
-          // Rogue: Phantom Blades — 2 extra spectral daggers at wide angles
-          if (g.charClass === "rogue" && stats.phantomBladesEnabled) {
-            for (const offset of [-0.5, 0.5]) { // ~28 degrees each side
-              const phantomAngle = p.angle + offset;
-              g.projectiles.push({
-                id: projId(),
-                x: p.x, z: p.z,
-                vx: Math.sin(phantomAngle) * def.projectileSpeed * 0.8,
-                vz: Math.cos(phantomAngle) * def.projectileSpeed * 0.8,
-                damage: Math.round(projDmg * 0.5),
-                radius: def.projectileRadius * 0.7,
-                lifetime: def.projectileLifetime * 0.7,
-                piercing: false,
-                hitIds: new Set(),
-                color: "#80ffcc",
-                glowColor: "#40cc88",
-                style: "dagger",
-                dead: false,
-              });
+            // Mage: Spell Echo — chance to double-cast entire volley
+            if (g.charClass === "mage" && stats.spellEchoChance > 0 && Math.random() < stats.spellEchoChance) {
+              fireVolley((Math.random() - 0.5) * 0.15); // slight angle jitter
             }
-          }
+
+            // Rogue: Phantom Blades — 2 extra spectral daggers at wide angles
+            if (g.charClass === "rogue" && stats.phantomBladesEnabled) {
+              for (const offset of [-0.5, 0.5]) { // ~28 degrees each side
+                const phantomAngle = p.angle + offset;
+                g.projectiles.push({
+                  id: projId(),
+                  x: p.x, z: p.z,
+                  vx: Math.sin(phantomAngle) * projSpeed * 0.8,
+                  vz: Math.cos(phantomAngle) * projSpeed * 0.8,
+                  damage: Math.round(projDmg * 0.5),
+                  radius: def.projectileRadius * 0.7,
+                  lifetime: def.projectileLifetime * 0.7,
+                  piercing: false,
+                  hitIds: new Set(),
+                  color: "#80ffcc",
+                  glowColor: "#40cc88",
+                  style: "dagger",
+                  dead: false,
+                });
+              }
+            }
+          } // end else (non-convergence-blade)
         }
       }
 
@@ -1267,8 +1389,61 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       // Warrior: War Cry timer
       if (p.warCryTimer > 0) p.warCryTimer -= delta;
 
+      // Warrior: Berserker's Mark — below 40% HP triggers burst buff
+      if (p.berserkersMarkCooldown > 0) p.berserkersMarkCooldown -= delta;
+      if (p.berserkersMarkTimer > 0) p.berserkersMarkTimer -= delta;
+      if (stats.berserkersMarkEnabled && p.berserkersMarkCooldown <= 0 && p.berserkersMarkTimer <= 0
+          && p.hp < p.maxHp * 0.4) {
+        p.berserkersMarkTimer = 6.0;
+        p.berserkersMarkCooldown = 20.0;
+      }
+
+      // Mage: Unstable Core — timer after blink
+      if (p.unstableCoreTimer > 0) p.unstableCoreTimer -= delta;
+
+      // Mage: Leyline Anchor — standing still charges zone
+      if (stats.leylineAnchorEnabled) {
+        const moved = Math.abs(p.x - p.lastX) > 0.01 || Math.abs(p.z - p.lastZ) > 0.01;
+        p.lastX = p.x; p.lastZ = p.z;
+        if (!moved) {
+          p.leylineStillTimer += delta;
+          if (p.leylineStillTimer >= 1.5 && p.leylineZoneTimer <= 0) {
+            p.leylineZoneX = p.x; p.leylineZoneZ = p.z;
+            p.leylineZoneTimer = 999; // while standing, zone stays
+          }
+        } else {
+          p.leylineStillTimer = 0;
+          if (p.leylineZoneTimer > 4) p.leylineZoneTimer = 4; // start 4s decay on move
+        }
+        if (p.leylineZoneTimer > 0 && p.leylineZoneTimer < 999) p.leylineZoneTimer -= delta;
+      }
+
+      // Rogue: Death's Momentum timer
+      if (p.deathsMomentumTimer > 0) {
+        p.deathsMomentumTimer -= delta;
+        if (p.deathsMomentumTimer <= 0) { p.deathsMomentumStacks = 0; p.deathsMomentumTimer = 0; }
+      }
+
+      // Rogue: Cloak and Dagger — charge after 1.5s without attacking
+      if (p.cloakAndDaggerCooldown > 0) p.cloakAndDaggerCooldown -= delta;
+      if (stats.cloakAndDaggerEnabled) {
+        p.cloakAndDaggerTimer += delta;
+        if (p.cloakAndDaggerTimer >= 1.5 && p.cloakAndDaggerCooldown <= 0 && !p.cloakAndDaggerReady) {
+          p.cloakAndDaggerReady = true;
+        }
+      }
+
       // Rogue: Crit Cascade timer
       if (p.critCascadeTimer > 0) p.critCascadeTimer -= delta;
+
+      // Universal: Momentum Shift timer — stacks decay together after 2s
+      if (p.momentumShiftTimer > 0) {
+        p.momentumShiftTimer -= delta;
+        if (p.momentumShiftTimer <= 0) {
+          p.momentumShiftStacks = 0;
+          p.momentumShiftTimer = 0;
+        }
+      }
 
       // Rogue: Evasion Matrix invisibility
       if (p.invisTimer > 0) {
@@ -1384,6 +1559,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (e.slowTimer > 0) {
         e.slowTimer -= delta;
         if (e.slowTimer <= 0) e.slowPct = 0;
+      }
+      // Mark timer decay
+      if (e.markTimer > 0) e.markTimer -= delta;
+      // Convergence window decay
+      if (e.convergenceTimer > 0) {
+        e.convergenceTimer -= delta;
+        if (e.convergenceTimer <= 0) { e.convergenceHits = 0; e.convergenceTimer = 0; }
       }
 
       // Wraith phasing + ranged shot
@@ -1534,7 +1716,14 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           if (e.dead) continue;
           const gx = ge.x - e.x, gz = ge.z - e.z;
           if (Math.sqrt(gx * gx + gz * gz) <= ge.radius + e.collisionRadius) {
-            e.hp -= tickDmg;
+            if (ge.appliesPoison) {
+              // Apply 1 poison stack per second (via delta accumulation)
+              const poisonPerStack = stats.venomStackDps > 0 ? stats.venomStackDps : 3;
+              e.poisonStacks = Math.min(e.poisonStacks + delta, 5);
+              e.poisonDps = poisonPerStack * stats.deepWoundsMultiplier;
+            } else {
+              e.hp -= tickDmg;
+            }
             if (e.hitFlashTimer <= 0) e.hitFlashTimer = 0.08;
             // Float-precision guard: clamp tiny positive HP to 0 so kill fires
             if (e.hp < 0.5) e.hp = 0;
@@ -1580,7 +1769,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           proj.trailTimer = 0.3;
           g.groundEffects.push({
             id: `ge${_fxid++}`, x: proj.x, z: proj.z,
-            radius: 1.2, dps: proj.damage * 0.3, lifetime: 2.0,
+            radius: 1.2, dps: stats.damage * 0.08, lifetime: 2.0,
             color: "#cc66ff",
           });
           if (g.groundEffects.length > 60) g.groundEffects.splice(0, g.groundEffects.length - 60);
@@ -1630,7 +1819,51 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         // Crit: guaranteed crit from evasion matrix, or normal roll
         const isCrit = p.guaranteedCrit || Math.random() < (stats.critChance + (p.critCascadeTimer > 0 ? 0.12 : 0));
         if (p.guaranteedCrit) p.guaranteedCrit = false;
-        if (isCrit) dmg = Math.floor(dmg * stats.critDamageMultiplier);
+        // Leyline Anchor: +25% crit damage while in zone
+        const inLeyline = stats.leylineAnchorEnabled && p.leylineZoneTimer > 0
+          && Math.sqrt((p.x - p.leylineZoneX) ** 2 + (p.z - p.leylineZoneZ) ** 2) <= 4;
+        // Unstable Core: post-blink empowered attack
+        if (p.unstableCoreTimer > 0 && proj.style === "orb") {
+          dmg = Math.round(dmg * 1.60);
+          p.unstableCoreTimer = 0; // consumed
+        }
+        // Predator's Instinct: +40% crit damage vs low HP enemies
+        const predatorBonus = stats.predatorsInstinctEnabled && e.hp / e.maxHp < 0.3 ? 0.40 : 0;
+        // Death's Momentum: +8% crit damage per stack
+        const deathsMomBonus = p.deathsMomentumStacks * 0.08;
+        // Convergence: escalating same-target damage
+        let convergenceBonus = 0;
+        if (stats.convergenceEnabled && proj.style === "orb") {
+          e.convergenceTimer = 0.5;
+          e.convergenceHits++;
+          const hitN = Math.min(e.convergenceHits, 4);
+          if (hitN >= 2) convergenceBonus = (hitN - 1) * 0.25;
+        }
+        // Marked for Death: +20% damage and +20% crit damage on marked enemies
+        let markDmgMult = 1;
+        let markCritBonus = 0;
+        if (stats.markedForDeathEnabled) {
+          if (e.markTimer > 0) { markDmgMult = 1.20; markCritBonus = 0.20; }
+          else { e.markTimer = 4.0; }
+        }
+        dmg = Math.round(dmg * markDmgMult);
+        // Cloak and Dagger: empowered attack
+        let cloakCritBonus = 0;
+        if (p.cloakAndDaggerReady) {
+          dmg = Math.round(dmg * 1.50);
+          cloakCritBonus = 1.0;
+          p.cloakAndDaggerReady = false;
+          p.cloakAndDaggerCooldown = 3.0;
+        }
+        if (isCrit) {
+          const totalCritMult = stats.critDamageMultiplier + predatorBonus + deathsMomBonus
+            + convergenceBonus + markCritBonus + cloakCritBonus
+            + (inLeyline ? 0.25 : 0)
+            + (p.unstableCoreTimer > 0 ? 0.40 : 0);
+          dmg = Math.floor(dmg * totalCritMult);
+          if (stats.momentumShiftEnabled) { p.momentumShiftStacks = Math.min(p.momentumShiftStacks + 1, 5); p.momentumShiftTimer = 2.0; }
+          if (stats.arcaneSurgeBlinkCdr > 0) p.dashCooldown = Math.max(0, p.dashCooldown - stats.arcaneSurgeBlinkCdr);
+        }
         e.hp -= dmg;
         e.hitFlashTimer = 0.15;
         spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
@@ -1646,8 +1879,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           e.poisonDps = stats.venomStackDps;
         }
         // ── Rogue: Crit Cascade — crits boost crit chance ──
-        if (isCrit && stats.critCascadeEnabled) {
-          p.critCascadeTimer = 3.0;
+        if (isCrit && stats.critCascadeEnabled && p.critCascadeTimer <= 0) {
+          p.critCascadeTimer = 3.0; // non-refreshing: can't retrigger during buff
         }
         // ── Mage: Chain Lightning — bounce to nearby enemies ──
         if (stats.chainLightningBounces > 0) {
@@ -1678,6 +1911,35 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           }
         }
 
+        // ── Rogue: Ricochet — daggers bounce to nearby enemies ──
+        if (stats.ricochetBounces > 0 && proj.style === "dagger") {
+          let ricoSource = e;
+          const ricoBounced = new Set<string>([e.id]);
+          for (let rb = 0; rb < stats.ricochetBounces; rb++) {
+            let closest: EnemyRuntime | null = null;
+            let closestDist = 6;
+            for (const t of g.enemies) {
+              if (t.dead || ricoBounced.has(t.id)) continue;
+              const rx = t.x - ricoSource.x, rz = t.z - ricoSource.z;
+              const rd = Math.sqrt(rx * rx + rz * rz);
+              if (rd < closestDist) { closestDist = rd; closest = t; }
+            }
+            if (!closest) break;
+            ricoBounced.add(closest.id);
+            const ricoDmg = Math.round(dmg * 0.50);
+            closest.hp -= ricoDmg;
+            closest.hitFlashTimer = 0.12;
+            if (closest.hp <= 0 && !closest.dead) {
+              closest.dead = true; g.kills++; g.score += closest.scoreValue;
+              if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
+              applyBloodforge(p, stats);
+              handleBossKillCleanup(closest, g);
+              trySpawnGear(closest.type, closest.x, closest.z, g);
+            }
+            ricoSource = closest;
+          }
+        }
+
         if (proj.piercing) {
           proj.hitIds.add(e.id);
         } else {
@@ -1693,7 +1955,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               applyBloodforge(p, stats);
           if (stats.soulfireChance > 0) triggerSoulfire(e, g);
           // ── Rogue: Shadow Step — dash reset on kill ──
-          if (stats.dashResetOnKill) p.dashCooldown = 0;
+          if (stats.dashResetOnKill) p.dashCooldown = Math.min(p.dashCooldown, 0.3);
           // ── Mage: Arcane Fracture — death explosion projectiles ──
           if (stats.arcaneFractureEnabled && !proj.isFracture) {
             for (let f = 0; f < 3; f++) {
@@ -2295,8 +2557,20 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         buffs.push({ id: "warcry", icon: "📯", label: "WAR CRY", value: p.warCryTimer, max: 4, isStacks: false, color: "#ff8844" });
       if (stats.bloodMomentumPerHit > 0 && p.momentumStacks > 0)
         buffs.push({ id: "momentum", icon: "🔴", label: "MOMENTUM", value: p.momentumStacks, max: 20, isStacks: true, color: "#ff4444" });
+      if (p.berserkersMarkTimer > 0)
+        buffs.push({ id: "berserker", icon: "🔴", label: "BERSERKER", value: p.berserkersMarkTimer, max: 6, isStacks: false, color: "#ff2222" });
+      if (p.unstableCoreTimer > 0)
+        buffs.push({ id: "unstable", icon: "💥", label: "UNSTABLE CORE", value: p.unstableCoreTimer, max: 2, isStacks: false, color: "#ff66cc" });
+      if (p.leylineZoneTimer > 0)
+        buffs.push({ id: "leyline", icon: "🔮", label: "LEYLINE", value: Math.min(p.leylineZoneTimer, 4), max: 4, isStacks: false, color: "#cc66ff" });
+      if (p.deathsMomentumStacks > 0)
+        buffs.push({ id: "deathsmom", icon: "💀", label: "DEATH'S MOMENTUM", value: p.deathsMomentumStacks, max: 5, isStacks: true, color: "#44ff88" });
+      if (p.cloakAndDaggerReady)
+        buffs.push({ id: "cloak", icon: "🗡️", label: "CLOAK & DAGGER", value: 1, max: 1, isStacks: true, color: "#aaddff" });
       if (p.critCascadeTimer > 0)
         buffs.push({ id: "critcascade", icon: "💫", label: "CRIT CASCADE", value: p.critCascadeTimer, max: 3, isStacks: false, color: "#ffcc00" });
+      if (p.momentumShiftStacks > 0)
+        buffs.push({ id: "momentum", icon: "💨", label: "MOMENTUM", value: p.momentumShiftStacks, max: 5, isStacks: true, color: "#66ccff" });
       if (p.invisTimer > 0)
         buffs.push({ id: "invis", icon: "🌫️", label: "INVISIBLE", value: p.invisTimer, max: 1, isStacks: false, color: "#88ddff" });
       if (p.guaranteedCrit)
