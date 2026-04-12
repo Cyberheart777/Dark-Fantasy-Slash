@@ -397,8 +397,9 @@ export function SoulForge() {
                     const enhColor = ENHANCE_COLORS[enh] ?? ENHANCE_COLORS[0];
                     const rarityColor = item.rarity === "epic" ? "#aa44ff" : item.rarity === "rare" ? "#4488dd" : enhColor.border;
                     const sellVal = item.rarity === "epic" ? 35 : item.rarity === "rare" ? 15 : 5;
-                    const canEnhance = item.rarity === "common" && enh < 3;
-                    const enhanceCost = canEnhance ? ENHANCE_COST[enh + 1] : 0;
+                    const enhMax = item.rarity === "epic" ? 7 : item.rarity === "rare" ? 5 : 3;
+                    const canEnhance = enh < enhMax;
+                    const enhanceCost = canEnhance ? (ENHANCE_COST[enh + 1] ?? 400) : 0;
                     const canAffordEnhance = shards >= enhanceCost;
                     return (
                       <div

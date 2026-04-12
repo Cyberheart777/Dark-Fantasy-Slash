@@ -316,10 +316,13 @@ export const useMetaStore = create<MetaState>()(
       enhanceGear: (stashIndex: number) => {
         const s = get();
         const item = s.gearStash[stashIndex];
-        if (!item || item.rarity !== "common") return false;
+        if (!item) return false;
         const currentLevel = item.enhanceLevel ?? 0;
-        if (currentLevel >= 3) return false;
-        const cost = [0, 30, 75, 150][currentLevel + 1];
+        // Max enhancement by rarity: common +3, rare +5, epic +7
+        const maxLevel = item.rarity === "epic" ? 7 : item.rarity === "rare" ? 5 : 3;
+        if (currentLevel >= maxLevel) return false;
+        const costs = [0, 30, 60, 100, 150, 220, 300, 400];
+        const cost = costs[currentLevel + 1] ?? 400;
         if (s.shards < cost) return false;
         const newStash = [...s.gearStash];
         newStash[stashIndex] = { ...item, enhanceLevel: currentLevel + 1 };

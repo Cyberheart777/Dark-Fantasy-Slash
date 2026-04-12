@@ -45,13 +45,27 @@ export const ENHANCE_COLORS: Record<number, { border: string; glow: string }> = 
   1: { border: "#44cc44", glow: "0 0 8px rgba(60,200,60,0.3)" },
   2: { border: "#4488dd", glow: "0 0 10px rgba(60,120,255,0.3)" },
   3: { border: "#aa44ff", glow: "0 0 14px rgba(140,40,255,0.35)" },
+  4: { border: "#cc44ff", glow: "0 0 16px rgba(160,40,255,0.4)" },
+  5: { border: "#ff44aa", glow: "0 0 18px rgba(255,40,160,0.4)" },
+  6: { border: "#ff8844", glow: "0 0 20px rgba(255,120,40,0.45)" },
+  7: { border: "#ffcc00", glow: "0 0 22px rgba(255,200,0,0.5)" },
 };
 
-/** Enhancement multiplier per level. */
-export const ENHANCE_MULT = [1.0, 1.4, 1.8, 2.2];
+/**
+ * Enhancement multiplier per level: +20% base per rank.
+ * Common max +3 (1.6x), Rare max +5 (2.0x), Epic max +7 (2.4x).
+ */
+export const ENHANCE_MULT = [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4];
+
+/** Max enhancement level by rarity. */
+export const ENHANCE_MAX: Record<GearRarity, number> = {
+  common: 3,
+  rare: 5,
+  epic: 7,
+};
 
 /** Enhancement shard cost per level (cost to go FROM level N-1 TO level N). */
-export const ENHANCE_COST = [0, 30, 75, 150]; // index 0 unused
+export const ENHANCE_COST = [0, 30, 60, 100, 150, 220, 300, 400];
 
 /**
  * Get the effective bonuses for a gear piece, accounting for enhancement.
@@ -99,6 +113,8 @@ export function formatBonuses(bonuses: Record<string, number>): string {
 // Stats rebalanced: commons are low baseline (+1 dmg, +1 armor, +10 HP, etc.)
 // Rares ~3× common, epics ~5× common. Enhancement +3 (2.2×) makes a common
 // rival a base rare.
+
+// Enhancement now scales all rarities: Common +3 (1.6x), Rare +5 (2.0x), Epic +7 (2.4x).
 
 export const GEAR_POOL: GearDef[] = [
   // ── Weapons (common) ──
