@@ -28,17 +28,14 @@ export type UpgradeId =
   | "berserker_rage"
   | "iron_skin"
   | "soul_feast"
-  | "overclock"
   // ── Warrior-only ──
   | "cleave_start"
   | "blood_momentum"
   | "earthbreaker"
   | "iron_reprisal"
-  | "fortress"
   | "war_cry"
   | "bloodforge"
   | "weakening_blows"
-  | "serrated_edge"
   | "concussive_charge"
   // ── Mage-only ──
   | "chain_lightning"
@@ -71,7 +68,6 @@ export type UpgradeId =
   | "relic_deaths_bargain"
   | "relic_abyss_crown"
   | "relic_blood_covenant"
-  | "relic_storm_heart"
   | "relic_iron_oath";
 
 // ─── Rarity ────────────────────────────────────────────────────────────────────
@@ -121,21 +117,19 @@ export interface PlayerStats {
   critDamageMultiplier: number;  // multiplier applied to crit damage (default 1.85)
   overhealShieldPct: number;     // 0 = none. 0.20 = heals can overflow to 120% maxHp
   hpDrainPerSec: number;         // 0 = none. continuous HP loss; can kill the player
+  healingReceivedMult: number;   // 1.0 = normal. 1.25 = +25% all healing received
   // ── Relic fields ───────────────────────────────────────────────────────────
   soulfireChance: number;
   phantomEchoEvery: number;
   deathBargainActive: number;
   incomingDamageMult: number;
-  stormCallInterval: number;
   // ── Warrior-specific ───────────────────────────────────────────────────────
   bloodMomentumPerHit: number;   // stacking damage % per hit (0 = off)
   earthbreakerEnabled: boolean;  // every 5th hit AoE slam
   ironReprisalEnabled: boolean;  // shockwave on damage taken
-  fortressArmorPerSec: number;   // armor/sec while standing still
   warCryDmgBonus: number;        // % bonus damage for 5s after dash (baseline)
   bloodforgeMaxHpPerKill: number; // +1 max HP per kill, capped at 20
   weakeningBlowsPct: number;     // % damage reduction applied per melee hit on enemies
-  serratedBleedDps: number;      // bleed damage per sec on crit (WARRIOR owns bleed)
   dashKnockbackForce: number;    // knockback distance on dash (baseline, upgradeable)
   // ── Mage-specific ──────────────────────────────────────────────────────────
   chainLightningBounces: number; // bounce count per hit
@@ -186,20 +180,18 @@ export function createDefaultStats(): PlayerStats {
     critDamageMultiplier: 1.85,
     overhealShieldPct: 0,
     hpDrainPerSec: 0,
+    healingReceivedMult: 1.0,
     soulfireChance: 0,
     phantomEchoEvery: 0,
     deathBargainActive: 0,
     incomingDamageMult: 1.0,
-    stormCallInterval: 0,
     // Warrior
     bloodMomentumPerHit: 0,
     earthbreakerEnabled: false,
     ironReprisalEnabled: false,
-    fortressArmorPerSec: 0,
     warCryDmgBonus: 0.15,        // baseline: +15% damage for 4s after dash
     bloodforgeMaxHpPerKill: 0,
     weakeningBlowsPct: 0,
-    serratedBleedDps: 0,          // bleed on crit (warrior owns bleed)
     dashKnockbackForce: 3,        // baseline knockback on dash
     // Mage
     chainLightningBounces: 0,
@@ -243,14 +235,14 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   attack_speed_boost: {
     id: "attack_speed_boost", name: "Bladestorm",
-    description: "+12% attack speed",
+    description: "+10% attack speed",
     icon: "🌪️", maxStacks: 6, rarity: "common", classes: "all",
-    apply: (s) => { s.attackSpeed = parseFloat((s.attackSpeed * 1.12).toFixed(3)); },
+    apply: (s) => { s.attackSpeed = parseFloat((s.attackSpeed * 1.10).toFixed(3)); },
   },
   max_health_boost: {
     id: "max_health_boost", name: "Iron Constitution",
     description: "+20 max health and heal 20 HP",
-    icon: "❤️", maxStacks: 10, rarity: "common", classes: "all",
+    icon: "❤️", maxStacks: 5, rarity: "common", classes: "all",
     apply: (s) => {
       s.maxHealth += 20;
       s.currentHealth = Math.min(s.currentHealth + 20, s.maxHealth);
@@ -264,15 +256,18 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   move_speed_boost: {
     id: "move_speed_boost", name: "Windwalker",
-    description: "+12% movement speed",
+    description: "+6% move speed and -8% dash cooldown",
     icon: "💨", maxStacks: 5, rarity: "common", classes: "all",
-    apply: (s) => { s.moveSpeed = parseFloat((s.moveSpeed * 1.12).toFixed(3)); },
+    apply: (s) => {
+      s.moveSpeed = parseFloat((s.moveSpeed * 1.06).toFixed(3));
+      s.dashCooldown = parseFloat((s.dashCooldown * 0.92).toFixed(2));
+    },
   },
   lifesteal_start: {
     id: "lifesteal_start", name: "Blood Price",
-    description: "Gain 4% lifesteal on hits",
+    description: "+25% all healing received, +1% lifesteal",
     icon: "🩸", maxStacks: 1, rarity: "rare", classes: "all",
-    apply: (s) => { s.lifesteal += 0.04; }, // was 0.06 — total lifesteal was too high
+    apply: (s) => { s.healingReceivedMult += 0.25; s.lifesteal += 0.01; },
   },
   lifesteal_boost: {
     id: "lifesteal_boost", name: "Bloodlord",
@@ -282,9 +277,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   double_strike: {
     id: "double_strike", name: "Twin Fang",
-    description: "+18% chance to strike twice",
-    icon: "⚡", maxStacks: 4, rarity: "rare", classes: "all",
-    apply: (s) => { s.doubleStrikeChance += 0.18; },
+    description: "+15% chance to strike twice",
+    icon: "⚡", maxStacks: 2, rarity: "rare", classes: "all",
+    apply: (s) => { s.doubleStrikeChance += 0.15; },
   },
   armor_boost: {
     id: "armor_boost", name: "Tempered Plate",
@@ -306,9 +301,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   xp_gain_boost: {
     id: "xp_gain_boost", name: "Scholar's Insight",
-    description: "+25% XP from all sources",
-    icon: "📖", maxStacks: 4, rarity: "common", classes: "all",
-    apply: (s) => { s.xpMultiplier = parseFloat((s.xpMultiplier * 1.25).toFixed(3)); },
+    description: "+20% XP from all sources",
+    icon: "📖", maxStacks: 2, rarity: "common", classes: "all",
+    apply: (s) => { s.xpMultiplier = parseFloat((s.xpMultiplier * 1.20).toFixed(3)); },
   },
   berserker_rage: {
     id: "berserker_rage", name: "Glass Cannon",
@@ -332,16 +327,6 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "👻", maxStacks: 5, rarity: "common", classes: "all",
     apply: (s) => { s.onKillHeal += 2; },
   },
-  overclock: {
-    id: "overclock", name: "Overclock",
-    description: "+5% attack speed and +5% move speed",
-    icon: "⚡", maxStacks: 5, rarity: "common", classes: "all",
-    apply: (s) => {
-      s.attackSpeed = parseFloat((s.attackSpeed * 1.05).toFixed(3));
-      s.moveSpeed   = parseFloat((s.moveSpeed   * 1.05).toFixed(3));
-    },
-  },
-
   // ════════════════════════════════════════════════════════════════════════════
   // WARRIOR-ONLY — melee is hard mode, so these are slightly stronger
   // ════════════════════════════════════════════════════════════════════════════
@@ -378,12 +363,6 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "💢", maxStacks: 1, rarity: "rare", classes: ["warrior"],
     apply: (s) => { s.ironReprisalEnabled = true; },
   },
-  fortress: {
-    id: "fortress", name: "Fortress",
-    description: "Gain +2 armor/sec while standing still (max +20).",
-    icon: "🏰", maxStacks: 1, rarity: "rare", classes: ["warrior"],
-    apply: (s) => { s.fortressArmorPerSec = 2; }, // was 3 (+30 cap) — reduced in GameScene too
-  },
   war_cry: {
     id: "war_cry", name: "Battle Roar",
     description: "War Cry damage bonus increased to +35% for 6 seconds.",
@@ -402,12 +381,6 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "💀", maxStacks: 3, rarity: "rare", classes: ["warrior"],
     apply: (s) => { s.weakeningBlowsPct += 0.02; },
   },
-  serrated_edge: {
-    id: "serrated_edge", name: "Serrated Edge",
-    description: "Critical hits apply a bleed: 6 damage/sec for 3s.",
-    icon: "🩸", maxStacks: 3, rarity: "rare", classes: ["warrior"],
-    apply: (s) => { s.serratedBleedDps += 6; },
-  },
   concussive_charge: {
     id: "concussive_charge", name: "Concussive Charge",
     description: "Dash knockback distance +50%. Knocked enemies take damage.",
@@ -420,15 +393,15 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   // ════════════════════════════════════════════════════════════════════════════
   chain_lightning: {
     id: "chain_lightning", name: "Chain Lightning",
-    description: "Projectile hits bounce to 2 nearby enemies for 60% damage.",
-    icon: "⚡", maxStacks: 3, rarity: "rare", classes: ["mage"],
+    description: "Projectile hits bounce to 2 nearby enemies for 55% damage.",
+    icon: "⚡", maxStacks: 2, rarity: "rare", classes: ["mage"],
     apply: (s) => { s.chainLightningBounces += 2; },
   },
   spell_echo: {
     id: "spell_echo", name: "Spell Echo",
-    description: "+25% chance to double-cast your projectile.",
-    icon: "🔮", maxStacks: 3, rarity: "rare", classes: ["mage"],
-    apply: (s) => { s.spellEchoChance = parseFloat((s.spellEchoChance + 0.25).toFixed(3)); },
+    description: "+20% chance to double-cast your projectile.",
+    icon: "🔮", maxStacks: 2, rarity: "rare", classes: ["mage"],
+    apply: (s) => { s.spellEchoChance = parseFloat((s.spellEchoChance + 0.20).toFixed(3)); },
   },
   arcane_fracture: {
     id: "arcane_fracture", name: "Arcane Fracture",
@@ -539,7 +512,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   extra_daggers: {
     id: "extra_daggers", name: "Fan of Knives",
     description: "Fire +1 additional dagger per attack.",
-    icon: "🔪", maxStacks: 3, rarity: "rare", classes: ["rogue"],
+    icon: "🔪", maxStacks: 2, rarity: "rare", classes: ["rogue"],
     apply: (s) => { s.rogueExtraDaggers += 1; },
   },
   toxic_dash: {
@@ -551,7 +524,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   deep_wounds: {
     id: "deep_wounds", name: "Deep Wounds",
     description: "Poison damage and duration increased by 50%.",
-    icon: "🧪", maxStacks: 2, rarity: "rare", classes: ["rogue"],
+    icon: "🧪", maxStacks: 1, rarity: "rare", classes: ["rogue"],
     apply: (s) => { s.deepWoundsMultiplier += 0.5; },
   },
 
@@ -560,9 +533,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   // ════════════════════════════════════════════════════════════════════════════
   relic_soulfire: {
     id: "relic_soulfire", name: "Soulfire Blade",
-    description: "Kills have a 20% chance to explode, dealing 1.5× your damage nearby.",
+    description: "Kills have a 20% chance to explode, dealing 1.0× your damage nearby.",
     icon: "🔥", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
-    apply: (s) => { s.soulfireChance = 0.20; },  // was 0.35
+    apply: (s) => { s.soulfireChance = 0.20; },
   },
   relic_vampiric: {
     id: "relic_vampiric", name: "Vampiric Shroud",
@@ -584,11 +557,11 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   relic_abyss_crown: {
     id: "relic_abyss_crown", name: "Abyss Crown",
-    description: "+40% XP gain. Cursed: you take 20% more damage.",
+    description: "+35% XP gain. Cursed: you take 15% more damage.",
     icon: "👑", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
     apply: (s) => {
-      s.xpMultiplier = parseFloat((s.xpMultiplier * 1.4).toFixed(3));  // was 1.6
-      s.incomingDamageMult = parseFloat((s.incomingDamageMult * 1.2).toFixed(3));  // was 1.25
+      s.xpMultiplier = parseFloat((s.xpMultiplier * 1.35).toFixed(3));
+      s.incomingDamageMult = parseFloat((s.incomingDamageMult * 1.15).toFixed(3));
     },
   },
   relic_blood_covenant: {
@@ -601,22 +574,16 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
       s.currentHealth = Math.min(s.currentHealth, s.maxHealth);
     },
   },
-  relic_storm_heart: {
-    id: "relic_storm_heart", name: "Storm Heart",
-    description: "Every 18s, lightning strikes up to 8 enemies for 1.2× your damage.",
-    icon: "⚡", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
-    apply: (s) => { s.stormCallInterval = 18; },  // was 16s/10 targets/1.8×
-  },
   relic_iron_oath: {
     id: "relic_iron_oath", name: "Iron Oath",
-    description: "+25 armor and +20% max HP. Your dash is disabled.",
+    description: "+10 armor and +10% max HP. Dash cooldown tripled.",
     icon: "⚙️", maxStacks: 1, rarity: "epic", classes: ["warrior"], isRelic: true,
     apply: (s) => {
-      s.armor += 25; // was 40 (orig 80) — still the biggest armor pick, balanced vs 80% cap
-      const bonus = Math.round(s.maxHealth * 0.20); // was 0.25 (orig 0.40)
+      s.armor += 10;
+      const bonus = Math.round(s.maxHealth * 0.10);
       s.maxHealth += bonus;
       s.currentHealth = Math.min(s.currentHealth + bonus, s.maxHealth);
-      s.dashCooldown = 9999;
+      s.dashCooldown *= 3;
     },
   },
 };
@@ -625,7 +592,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
 
 const RELIC_IDS: UpgradeId[] = [
   "relic_soulfire", "relic_vampiric", "relic_phantom_echo", "relic_deaths_bargain",
-  "relic_abyss_crown", "relic_blood_covenant", "relic_storm_heart", "relic_iron_oath",
+  "relic_abyss_crown", "relic_blood_covenant", "relic_iron_oath",
 ];
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────

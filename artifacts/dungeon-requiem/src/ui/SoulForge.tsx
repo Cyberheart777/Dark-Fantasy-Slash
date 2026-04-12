@@ -57,6 +57,8 @@ function computePreviewStats(
     dashCooldown: def.dashCooldown,
     critChance: def.critChance,
     attackRange: def.attackRange,
+    critDamageMultiplier: cls === "rogue" ? 2.0 : 1.85,
+    healthRegen: cls === "mage" ? 1.0 : 0.5,
   };
   const metaMods = buildMetaModifiers(purchased);
   const trialMods = buildTrialModifiers(trialWins);

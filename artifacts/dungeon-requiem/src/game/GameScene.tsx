@@ -54,9 +54,6 @@ export interface PlayerRuntime {
   meleeHitCounter: number;       // warrior: consecutive hit count for blood momentum / earthbreaker
   momentumTimer: number;         // warrior: 2s reset timer for blood momentum
   momentumStacks: number;        // warrior: current blood momentum damage stacks
-  fortressBonusArmor: number;    // warrior: accumulated fortress armor
-  fortressStillTimer: number;    // warrior: time standing still
-  lastX: number; lastZ: number;  // track movement for fortress
   warCryTimer: number;           // warrior: remaining war cry buff duration
   critCascadeTimer: number;      // rogue: remaining crit cascade buff duration
   invisTimer: number;            // rogue: evasion matrix invisibility
@@ -172,7 +169,6 @@ export interface GameState {
   goblinWaveSpawned: number;
   nemesisSpawned: boolean;
   nemesisId: string | null;
-  stormCallTimer: number;
   // Trial & Difficulty
   trialMode: boolean;
   trialChampionDefeated: boolean;
@@ -250,6 +246,9 @@ function makeProgWithMeta(cls: CharacterClass, race: RaceType): { progression: P
     dashCooldown: def.dashCooldown,
     critChance: Math.min(0.95, def.critChance + raceDef.critBonus),
     attackRange: def.attackRange,
+    // Class-specific base stats not stored in CharacterData
+    critDamageMultiplier: cls === "rogue" ? 2.0 : 1.85,
+    healthRegen: cls === "mage" ? 1.0 : 0.5,
   };
   // 2. Resolve meta flat bonuses + trial buffs on top (Layer 1 — flat additions only)
   const metaMods = buildMetaModifiers(useMetaStore.getState().purchased);
@@ -364,8 +363,9 @@ function spawnDeathFx(g: GameState, x: number, z: number, color: string): void {
 function healPlayer(p: PlayerRuntime, stats: PlayerStats, amount: number): void {
   if (amount <= 0) return;
   const ceiling = p.maxHp * (1 + stats.overhealShieldPct);
+  const amplified = amount * stats.healingReceivedMult;
   const before = p.hp;
-  p.hp = Math.min(ceiling, p.hp + amount);
+  p.hp = Math.min(ceiling, p.hp + amplified);
   const healed = p.hp - before;
   if (healed >= 1) {
     useGameStore.getState().addDamagePopup({
@@ -465,9 +465,6 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     meleeHitCounter: 0,
     momentumTimer: 0,
     momentumStacks: 0,
-    fortressBonusArmor: 0,
-    fortressStillTimer: 0,
-    lastX: 0, lastZ: 0,
     warCryTimer: 0,
     critCascadeTimer: 0,
     invisTimer: 0,
@@ -600,7 +597,7 @@ function equipGear(gear: GearDef, g: GameState): void {
 
 function triggerSoulfire(deadEnemy: EnemyRuntime, g: GameState): void {
   if (Math.random() > g.progression.stats.soulfireChance) return;
-  const dmg = Math.round(g.progression.stats.damage * 1.5);
+  const dmg = Math.round(g.progression.stats.damage * 1.0);
   for (const nearby of g.enemies) {
     if (nearby.dead || nearby.id === deadEnemy.id) continue;
     const dx = nearby.x - deadEnemy.x;
@@ -1062,11 +1059,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (stats.weakeningBlowsPct > 0) {
               e.weakenPct = Math.min((e.weakenPct || 0) + stats.weakeningBlowsPct, 0.30);
             }
-            // Warrior: Serrated Edge — bleed on crit
-            if (isCrit && stats.serratedBleedDps > 0) {
-              e.bleedDps = stats.serratedBleedDps;
-              e.bleedTimer = 3.0;
-            }
             if (e.hp <= 0) {
               e.dead = true;
               g.kills++;
@@ -1274,27 +1266,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
 
       // Warrior: War Cry timer
       if (p.warCryTimer > 0) p.warCryTimer -= delta;
-
-      // Warrior: Fortress — gain armor while standing still
-      if (stats.fortressArmorPerSec > 0) {
-        const moved = Math.abs(p.x - p.lastX) > 0.01 || Math.abs(p.z - p.lastZ) > 0.01;
-        if (!moved) {
-          p.fortressStillTimer += delta;
-          if (p.fortressStillTimer >= 1) {
-            p.fortressStillTimer = 0;
-            p.fortressBonusArmor = Math.min(20, p.fortressBonusArmor + stats.fortressArmorPerSec);
-            stats.armor += stats.fortressArmorPerSec; // directly modify; reset on move
-          }
-        } else {
-          if (p.fortressBonusArmor > 0) {
-            stats.armor -= p.fortressBonusArmor;
-            p.fortressBonusArmor = 0;
-          }
-          p.fortressStillTimer = 0;
-        }
-        p.lastX = p.x;
-        p.lastZ = p.z;
-      }
 
       // Rogue: Crit Cascade timer
       if (p.critCascadeTimer > 0) p.critCascadeTimer -= delta;
@@ -1693,7 +1664,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             }
             if (!closest) break;
             bounced.add(closest.id);
-            const chainDmg = Math.round(dmg * 0.6);
+            const chainDmg = Math.round(dmg * 0.55);
             closest.hp -= chainDmg;
             closest.hitFlashTimer = 0.12;
             if (closest.hp <= 0 && !closest.dead) {
@@ -2165,30 +2136,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       }
     }
 
-    // ── Storm Heart relic: auto-lightning every N seconds ────────────────
-    if (stats.stormCallInterval > 0) {
-      g.stormCallTimer -= delta;
-      if (g.stormCallTimer <= 0) {
-        g.stormCallTimer = stats.stormCallInterval;
-        const targets = g.enemies.filter((e) => !e.dead).slice(0, 8);
-        for (const t of targets) {
-          const stormDmg = Math.round(stats.damage * 1.2);
-          t.hp -= stormDmg; t.hitFlashTimer = 0.3;
-          if (t.hp <= 0 && !t.dead) {
-            t.dead = true; g.kills++; g.score += t.scoreValue;
-            if (g.trialMode && t.type.endsWith("_champion")) g.trialChampionDefeated = true;
-            if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
-            applyBloodforge(p, stats);
-            handleBossKillCleanup(t, g);
-            if (stats.soulfireChance > 0) triggerSoulfire(t, g);
-            trySpawnGear(t.type, t.x, t.z, g);
-            const xg = Math.round(t.xpReward * stats.xpMultiplier);
-            g.xpOrbs.push({ id: orbId(), x: t.x, z: t.z, value: xg, collected: false, floatOffset: Math.random() * Math.PI * 2, crystalTier: CRYSTAL_TIER[t.type] ?? "green", collectTimer: 0 });
-          }
-        }
-      }
-    }
-
     // ── Stale boss HP bar safeguard ───────────────────────────────────────
     // If the HUD thinks a boss/champion is alive but there's no matching enemy
     // in g.enemies, clear the bar. Also auto-trigger trial victory if a trial
@@ -2348,8 +2295,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         buffs.push({ id: "warcry", icon: "📯", label: "WAR CRY", value: p.warCryTimer, max: 4, isStacks: false, color: "#ff8844" });
       if (stats.bloodMomentumPerHit > 0 && p.momentumStacks > 0)
         buffs.push({ id: "momentum", icon: "🔴", label: "MOMENTUM", value: p.momentumStacks, max: 20, isStacks: true, color: "#ff4444" });
-      if (p.fortressBonusArmor > 0)
-        buffs.push({ id: "fortress", icon: "🏰", label: "FORTRESS", value: p.fortressBonusArmor, max: 20, isStacks: true, color: "#8888ff" });
       if (p.critCascadeTimer > 0)
         buffs.push({ id: "critcascade", icon: "💫", label: "CRIT CASCADE", value: p.critCascadeTimer, max: 3, isStacks: false, color: "#ffcc00" });
       if (p.invisTimer > 0)
@@ -2963,7 +2908,6 @@ export function GameScene({ onRestart }: GameSceneProps) {
       goblinWaveSpawned: 0,
       nemesisSpawned: false,
       nemesisId: null,
-      stormCallTimer: 0,
       trialMode,
       trialChampionDefeated: false,
       difficultyHpMult: diff.enemyHpMult,
@@ -3043,8 +2987,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           goblinWaveSpawned: 0,
           nemesisSpawned: false,
           nemesisId: null,
-          stormCallTimer: 0,
-          trialMode: resetTrialMode,
+              trialMode: resetTrialMode,
           trialChampionDefeated: false,
           difficultyHpMult: resetDiff.enemyHpMult,
           difficultyDmgMult: resetDiff.enemyDamageMult,
