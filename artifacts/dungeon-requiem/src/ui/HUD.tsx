@@ -34,7 +34,7 @@ export function HUD({ onExtract }: HUDProps) {
     highestBossWaveCleared, trialMode,
     equippedWeapon, equippedArmor, equippedTrinket,
     damagePopups, playerX, playerZ,
-    difficultyTier,
+    difficultyTier, activeBuffs,
   } = useGameStore();
   const diffDef = DIFFICULTY_DATA[difficultyTier];
 
@@ -305,33 +305,39 @@ export function HUD({ onExtract }: HUDProps) {
         </div>
       )}
 
-      {/* Floating damage numbers + text popups (e.g. gear drop notifications) */}
+      {/* Floating damage numbers + heal numbers + text popups */}
       {damagePopups.slice(-20).map((popup) => {
         const duration = popup.durationSec ?? 0.8;
         const age = (performance.now() - popup.spawnTime) / 1000;
         if (age > duration) return null;
+        // Heal numbers start with "+" and use short 0.8s duration — treat like
+        // damage numbers (fast rise, small font) rather than text popups.
+        const isHealNumber = !!popup.text && popup.text.startsWith("+") && duration <= 0.8;
         // Damage number toggle: text popups (Item Dropped, etc.) always render.
-        // Numeric popups are gated on the setting.
+        // Numeric popups AND heal numbers are gated on the setting.
         if (!popup.text && !settings.damageNumbers) return null;
+        if (isHealNumber && !settings.damageNumbers) return null;
         // Rough world-to-screen: offset from center based on difference from player position
         // Camera is isometric at ~28 units, viewport maps ~60 world units across ~100vw
         const dx = (popup.x - playerX) * 1.5; // % of viewport
         const dz = (popup.z - playerZ) * 1.2;
-        // Text popups rise slower and further; damage numbers keep the existing 60px/s rise
-        const isTextPopup = !!popup.text;
+        // Text popups (gear drops, etc.) rise slower; damage & heal numbers rise fast
+        const isTextPopup = !!popup.text && !isHealNumber;
         const rise = isTextPopup ? age * 40 + 20 : age * 60;
         const opacity = Math.max(0, 1 - age / duration);
         const scale = isTextPopup ? 1.1 + Math.min(0.3, age * 2) : (popup.isCrit ? 1.3 : 1);
         const defaultColor = popup.isPlayer ? "#ff4444" : popup.isCrit ? "#ffcc00" : "#ffffff";
         const color = popup.color ?? defaultColor;
-        const fontSize = isTextPopup ? 22 : popup.isCrit ? 18 : popup.isPlayer ? 16 : 14;
+        const fontSize = isTextPopup ? 22 : isHealNumber ? 14 : popup.isCrit ? 18 : popup.isPlayer ? 16 : 14;
         const textShadow = isTextPopup
           ? `0 0 10px ${color}, 0 0 20px ${color}, 0 2px 4px #000`
-          : popup.isCrit
-            ? "0 0 8px #ffaa00, 0 0 16px #ff6600"
-            : popup.isPlayer
-              ? "0 0 8px #ff0000"
-              : "0 0 6px #000000, 0 0 3px #000000";
+          : isHealNumber
+            ? `0 0 6px #22aa44, 0 0 12px #118833`
+            : popup.isCrit
+              ? "0 0 8px #ffaa00, 0 0 16px #ff6600"
+              : popup.isPlayer
+                ? "0 0 8px #ff0000"
+                : "0 0 6px #000000, 0 0 3px #000000";
         return (
           <div
             key={popup.id}
@@ -356,6 +362,44 @@ export function HUD({ onExtract }: HUDProps) {
           </div>
         );
       })}
+
+      {/* Active buffs/debuffs bar — bottom-center */}
+      {activeBuffs.length > 0 && (
+        <div style={styles.buffBar}>
+          {activeBuffs.map((b) => {
+            const fillPct = Math.min(100, (b.value / b.max) * 100);
+            return (
+              <div
+                key={b.id}
+                style={{
+                  ...styles.buffChip,
+                  borderColor: b.isDebuff ? "#882222" : b.color + "88",
+                  background: b.isDebuff ? "rgba(60,10,10,0.85)" : "rgba(10,8,20,0.85)",
+                }}
+              >
+                {/* Fill bar behind the content */}
+                <div style={{
+                  position: "absolute",
+                  left: 0, top: 0, bottom: 0,
+                  width: `${fillPct}%`,
+                  background: (b.isDebuff ? "#cc2222" : b.color) + "30",
+                  borderRadius: "inherit",
+                  transition: "width 0.15s",
+                }} />
+                <span style={styles.buffIcon}>{b.icon}</span>
+                <div style={styles.buffTextCol}>
+                  <div style={{ ...styles.buffLabel, color: b.isDebuff ? "#ff6666" : b.color }}>
+                    {b.label}
+                  </div>
+                  <div style={styles.buffValue}>
+                    {b.isStacks ? `${Math.round(b.value)}` : `${b.value.toFixed(1)}s`}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -692,5 +736,56 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: 4,
     marginTop: 6,
     textTransform: "uppercase" as const,
+  },
+  buffBar: {
+    position: "absolute",
+    bottom: 12,
+    left: "50%",
+    transform: "translateX(-50%)",
+    display: "flex",
+    gap: 6,
+    pointerEvents: "none",
+    zIndex: 20,
+    flexWrap: "wrap" as const,
+    justifyContent: "center",
+    maxWidth: "90vw",
+  },
+  buffChip: {
+    position: "relative" as const,
+    overflow: "hidden" as const,
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+    padding: "4px 8px",
+    borderRadius: 6,
+    border: "1px solid",
+    fontFamily: "monospace",
+    minWidth: 70,
+  },
+  buffIcon: {
+    fontSize: 14,
+    lineHeight: 1,
+    flexShrink: 0,
+    position: "relative" as const,
+    zIndex: 1,
+  },
+  buffTextCol: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 1,
+    position: "relative" as const,
+    zIndex: 1,
+  },
+  buffLabel: {
+    fontSize: 8,
+    fontWeight: 900,
+    letterSpacing: 1.5,
+    lineHeight: 1,
+  },
+  buffValue: {
+    fontSize: 10,
+    color: "#ccc",
+    fontWeight: 700,
+    lineHeight: 1,
   },
 };

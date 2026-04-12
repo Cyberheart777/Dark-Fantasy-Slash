@@ -12,6 +12,23 @@ import type { DifficultyTier } from "../data/DifficultyData";
 
 import type { GearDef } from "../data/GearData";
 
+/** Active buff/debuff shown on the HUD. */
+export interface ActiveBuff {
+  id: string;
+  icon: string;
+  label: string;
+  /** Timer remaining (seconds) or stack count. */
+  value: number;
+  /** Maximum duration or max stacks — used for the fill bar. */
+  max: number;
+  /** True = show value as integer stacks; false = show as countdown timer. */
+  isStacks: boolean;
+  /** Tint color for the buff chip background / bar. */
+  color: string;
+  /** True = harmful effect (shown in red-ish style). */
+  isDebuff?: boolean;
+}
+
 export type GamePhase =
   | "menu"
   | "charselect"
@@ -131,6 +148,9 @@ export interface GameUIState {
   runExtracted: boolean;
   extractedBonusShards: number;
 
+  // Active buffs/debuffs (synced each frame from the game loop)
+  activeBuffs: ActiveBuff[];
+
   // Gear
   equippedWeapon: GearDef | null;
   equippedArmor: GearDef | null;
@@ -168,6 +188,7 @@ export interface GameUIState {
   setExtractedBonusShards: (n: number) => void;
   setGearEquipped: (slot: string, gear: GearDef | null) => void;
   setInventory: (items: GearDef[]) => void;
+  setActiveBuffs: (buffs: ActiveBuff[]) => void;
   resetGame: () => void;
 }
 
@@ -215,6 +236,7 @@ const initialState = {
   highestBossWaveCleared: 0,
   runExtracted: false,
   extractedBonusShards: 0,
+  activeBuffs: [] as ActiveBuff[],
   equippedWeapon: null as GearDef | null,
   equippedArmor: null as GearDef | null,
   equippedTrinket: null as GearDef | null,
@@ -286,6 +308,8 @@ export const useGameStore = create<GameUIState>((set) => ({
   ),
 
   setInventory: (inventory) => set({ inventory }),
+
+  setActiveBuffs: (activeBuffs) => set({ activeBuffs }),
 
   resetGame: () =>
     set((s) => ({

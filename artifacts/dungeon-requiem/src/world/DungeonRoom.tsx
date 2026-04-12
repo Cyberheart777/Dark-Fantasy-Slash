@@ -89,10 +89,17 @@ function Walls() {
         <boxGeometry args={[FULL + W * 2, WH, W]} />
         <meshStandardMaterial color={WALL_COLOR} roughness={0.95} />
       </mesh>
-      {/* South wall */}
-      <mesh position={[0, WH / 2, H + W / 2]} receiveShadow castShadow>
+      {/* South wall — semi-transparent so the camera doesn't block gameplay
+           when the player is near the bottom edge of the arena */}
+      <mesh position={[0, WH / 2, H + W / 2]} receiveShadow>
         <boxGeometry args={[FULL + W * 2, WH, W]} />
-        <meshStandardMaterial color={WALL_COLOR} roughness={0.95} />
+        <meshStandardMaterial
+          color={WALL_COLOR}
+          roughness={0.95}
+          transparent
+          opacity={0.35}
+          side={THREE.DoubleSide}
+        />
       </mesh>
       {/* West wall */}
       <mesh position={[-H - W / 2, WH / 2, 0]} receiveShadow castShadow>
@@ -105,16 +112,23 @@ function Walls() {
         <meshStandardMaterial color={WALL_COLOR} roughness={0.95} />
       </mesh>
 
-      {/* Wall top trim */}
+      {/* Wall top trim — south trim matches the semi-transparent south wall */}
       {[
-        [0, WH, -H - W / 2, FULL + W * 2, 0.4, W * 1.2] as const,
-        [0, WH, H + W / 2, FULL + W * 2, 0.4, W * 1.2] as const,
-        [-H - W / 2, WH, 0, W * 1.2, 0.4, FULL] as const,
-        [H + W / 2, WH, 0, W * 1.2, 0.4, FULL] as const,
-      ].map(([x, y, z, w, h, d], i) => (
-        <mesh key={i} position={[x, y, z]} castShadow>
+        [0, WH, -H - W / 2, FULL + W * 2, 0.4, W * 1.2, false] as const,
+        [0, WH, H + W / 2, FULL + W * 2, 0.4, W * 1.2, true] as const,
+        [-H - W / 2, WH, 0, W * 1.2, 0.4, FULL, false] as const,
+        [H + W / 2, WH, 0, W * 1.2, 0.4, FULL, false] as const,
+      ].map(([x, y, z, w, h, d, isSouth], i) => (
+        <mesh key={i} position={[x, y, z]} castShadow={!isSouth}>
           <boxGeometry args={[w, h, d]} />
-          <meshStandardMaterial color={ACCENT_COLOR} roughness={0.8} metalness={0.1} />
+          <meshStandardMaterial
+            color={ACCENT_COLOR}
+            roughness={0.8}
+            metalness={0.1}
+            transparent={isSouth || undefined}
+            opacity={isSouth ? 0.35 : 1}
+            side={isSouth ? THREE.DoubleSide : THREE.FrontSide}
+          />
         </mesh>
       ))}
     </group>

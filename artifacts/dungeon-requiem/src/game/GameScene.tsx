@@ -358,12 +358,30 @@ function spawnDeathFx(g: GameState, x: number, z: number, color: string): void {
 /**
  * Heal helper that respects the Vampiric Shroud overheal ceiling.
  * Heals can overflow above maxHp up to maxHp * (1 + overhealShieldPct).
- * Use this for ALL healing sources (lifesteal, on-kill heal, regen).
+ * Spawns a green floating number (offset left of the player) when the
+ * heal is >= 1 HP so the player sees the feedback.
  */
 function healPlayer(p: PlayerRuntime, stats: PlayerStats, amount: number): void {
   if (amount <= 0) return;
   const ceiling = p.maxHp * (1 + stats.overhealShieldPct);
+  const before = p.hp;
   p.hp = Math.min(ceiling, p.hp + amount);
+  const healed = p.hp - before;
+  if (healed >= 1) {
+    useGameStore.getState().addDamagePopup({
+      id: popupId(), x: p.x - 1.5, z: p.z,
+      value: Math.round(healed), isCrit: false, isPlayer: false,
+      spawnTime: performance.now(),
+      text: `+${Math.round(healed)}`,
+      color: "#44ff88",
+      durationSec: 0.8,
+    });
+  }
+}
+
+/** Spawn a damage-taken popup offset slightly right of the player. */
+function spawnPlayerDmgPopup(p: PlayerRuntime, value: number): void {
+  spawnDmgPopup(p.x + 1.0, p.z, value, false, true);
 }
 
 /** Bloodforge: +1 max HP per kill, capped at +20. Called from every kill path. */
@@ -1430,7 +1448,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
               const afterShield = rawDmg - shielded;
               const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
-              p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
+              p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.8;
               // Iron Reprisal
               if (stats.ironReprisalEnabled) {
@@ -1480,7 +1498,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
               const afterShield = rawDmg - shielded;
               const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
-              p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
+              p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
               // Vampiric affix: heal 20% of damage dealt
               if (e.affix === "vampiric") {
@@ -1759,7 +1777,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
           if (!isDodged) {
             const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
-            p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
+            p.hp -= effective; spawnPlayerDmgPopup(p, effective);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.6;
             if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
             else { audioManager.play("player_hurt"); }
@@ -1858,7 +1876,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           if (dist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
             const rawDmg = e.damage * 3;
             const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult, 100);
-            p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
+            p.hp -= effective; spawnPlayerDmgPopup(p, effective);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
             if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
             else { audioManager.play("player_hurt"); }
@@ -2028,7 +2046,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (cDist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
               const rawDmg = e.damage * 1.5;
               const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
-              p.hp -= effective; spawnDmgPopup(p.x, p.z, effective, false, true);
+              p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
               if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
             }
@@ -2322,6 +2340,30 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     // called on the hot path.
     store.setWaveInfo(g.wave, g.score, g.kills, g.survivalTime);
     store.setHighestBossWaveCleared(g.highestBossWaveCleared);
+
+    // ── Sync active buffs/debuffs to UI store ────────────────────────────
+    {
+      const buffs: import("../store/gameStore").ActiveBuff[] = [];
+      if (p.warCryTimer > 0)
+        buffs.push({ id: "warcry", icon: "📯", label: "WAR CRY", value: p.warCryTimer, max: 4, isStacks: false, color: "#ff8844" });
+      if (stats.bloodMomentumPerHit > 0 && p.momentumStacks > 0)
+        buffs.push({ id: "momentum", icon: "🔴", label: "MOMENTUM", value: p.momentumStacks, max: 20, isStacks: true, color: "#ff4444" });
+      if (p.fortressBonusArmor > 0)
+        buffs.push({ id: "fortress", icon: "🏰", label: "FORTRESS", value: p.fortressBonusArmor, max: 20, isStacks: true, color: "#8888ff" });
+      if (p.critCascadeTimer > 0)
+        buffs.push({ id: "critcascade", icon: "💫", label: "CRIT CASCADE", value: p.critCascadeTimer, max: 3, isStacks: false, color: "#ffcc00" });
+      if (p.invisTimer > 0)
+        buffs.push({ id: "invis", icon: "🌫️", label: "INVISIBLE", value: p.invisTimer, max: 1, isStacks: false, color: "#88ddff" });
+      if (p.guaranteedCrit)
+        buffs.push({ id: "guarcrit", icon: "🎯", label: "NEXT CRIT", value: 1, max: 1, isStacks: true, color: "#ffaa00" });
+      if (p.singularityActiveTimer > 0)
+        buffs.push({ id: "singularity", icon: "🌀", label: "SINGULARITY", value: p.singularityActiveTimer, max: 3, isStacks: false, color: "#aa44ff" });
+      if (stats.overhealShieldPct > 0 && p.hp > p.maxHp)
+        buffs.push({ id: "overheal", icon: "🧛", label: "OVERHEAL", value: Math.round(p.hp - p.maxHp), max: Math.round(p.maxHp * stats.overhealShieldPct), isStacks: true, color: "#ffcc44" });
+      if (stats.hpDrainPerSec > 0)
+        buffs.push({ id: "drain", icon: "💉", label: "DRAIN", value: stats.hpDrainPerSec, max: stats.hpDrainPerSec, isStacks: true, color: "#cc2222", isDebuff: true });
+      store.setActiveBuffs(buffs);
+    }
 
     // ── Game over ─────────────────────────────────────────────────────────
     if (p.dead) {
