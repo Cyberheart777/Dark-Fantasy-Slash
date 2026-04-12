@@ -2990,7 +2990,7 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
     ref.current.position.set(ep.x, yOff, ep.z);
     if (ep.style === "dagger") {
       const angle = Math.atan2(ep.vx, ep.vz);
-      ref.current.rotation.y = angle;
+      ref.current.rotation.y = angle + Math.PI;
       ref.current.rotation.z = t.current * 12;
     } else if (ep.style === "crescent") {
       // Face travel direction, tilt forward slightly
