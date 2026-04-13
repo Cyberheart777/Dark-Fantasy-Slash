@@ -8,6 +8,7 @@ import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
 import { DIFFICULTY_DATA } from "../data/DifficultyData";
 import { useEffect, useRef, useState } from "react";
+import { AchievementToast } from "./AchievementToast";
 
 function useIsMobile() {
   const [mob, setMob] = useState(() => window.innerWidth < 900);
@@ -400,6 +401,9 @@ export function HUD({ onExtract }: HUDProps) {
           })}
         </div>
       )}
+
+      {/* Achievement unlock toast */}
+      <AchievementToast />
     </div>
   );
 }

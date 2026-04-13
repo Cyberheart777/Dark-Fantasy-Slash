@@ -8,6 +8,7 @@ import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
 import { audioManager } from "../audio/AudioManager";
 import { SettingsPanel } from "./SettingsPanel";
+import { AchievementsPanel } from "./AchievementsPanel";
 
 /** Play the UI click SFX and invoke the given handler. */
 const click = (fn: () => void) => () => { audioManager.play("menu_click"); fn(); };
@@ -38,7 +39,7 @@ function useIsMobile() {
   return mob;
 }
 
-type MenuView = "main" | "settings";
+type MenuView = "main" | "settings" | "achievements";
 
 export function MainMenu() {
   const isMobile = useIsMobile();
@@ -106,6 +107,10 @@ export function MainMenu() {
               )}
             </button>
 
+            <button style={styles.btnAchievements} onClick={click(() => setView("achievements"))}>
+              &#9733; ACHIEVEMENTS
+            </button>
+
             <button style={styles.btnSettings} onClick={click(() => setView("settings"))}>
               ⚙ SETTINGS
             </button>
@@ -138,6 +143,10 @@ export function MainMenu() {
               )}
             </div>
           </>
+        )}
+
+        {view === "achievements" && (
+          <AchievementsPanel onClose={() => setView("main")} />
         )}
 
         {view === "settings" && (
@@ -379,6 +388,21 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontFamily: "inherit",
     width: "100%",
+  },
+  btnAchievements: {
+    marginTop: 10,
+    padding: "12px 32px",
+    fontSize: 14,
+    fontWeight: "bold",
+    letterSpacing: 2,
+    color: "#ffe088",
+    background: "rgba(50,35,10,0.7)",
+    border: "1px solid rgba(200,160,40,0.4)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    width: "100%",
+    boxShadow: "0 0 10px rgba(200,150,0,0.12)",
   },
   btnSettings: {
     marginTop: 10,

@@ -39,3 +39,13 @@ canvas {
     border-color: rgba(180, 100, 240, 0.85);
   }
 }
+
+/* Achievement toast slide-in and fade-out */
+@keyframes achievementSlideIn {
+  from { transform: translateX(-50%) translateY(-40px); opacity: 0; }
+  to   { transform: translateX(-50%) translateY(0);     opacity: 1; }
+}
+@keyframes achievementFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}

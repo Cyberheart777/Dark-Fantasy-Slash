@@ -12,6 +12,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { DifficultyTier } from "../data/DifficultyData";
+import { useAchievementStore } from "./achievementStore";
 
 // ─── Trial buff definitions ──────────────────────────────────────────────────
 // Each class × difficulty gives a permanent stat bonus.
@@ -180,11 +181,14 @@ export const useMetaStore = create<MetaState>()(
     (set, get) => ({
       ...DEFAULT_STATE,
 
-      addShards: (amount) =>
+      addShards: (amount) => {
         set((s) => ({
           shards: s.shards + amount,
           totalShardsEarned: s.totalShardsEarned + amount,
-        })),
+        }));
+        const total = get().totalShardsEarned;
+        if (total >= 5000) useAchievementStore.getState().tryUnlock("soul_hoarder");
+      },
 
       spendShards: (amount) => {
         const s = get();
@@ -205,10 +209,18 @@ export const useMetaStore = create<MetaState>()(
           shards: s.shards - cost,
           purchased: { ...s.purchased, [id]: current + 1 },
         });
+        // Achievement: forge upgrades
+        const ach = useAchievementStore.getState();
+        ach.tryUnlock("first_upgrade");
+        const totalRanks = Object.values(get().purchased).reduce((sum, r) => sum + r, 0);
+        if (totalRanks >= 10) ach.tryUnlock("master_smith");
         return true;
       },
 
-      hardReset: () => set({ ...DEFAULT_STATE }),
+      hardReset: () => {
+        set({ ...DEFAULT_STATE });
+        useAchievementStore.getState().resetAchievements();
+      },
 
       unlockMilestone: (id) =>
         set((s) => ({
@@ -222,6 +234,11 @@ export const useMetaStore = create<MetaState>()(
         if (newTotal >= 100) newMilestones["kills100"] = true;
         if (newTotal >= 500) newMilestones["kills500"] = true;
         set({ totalKills: newTotal, milestones: newMilestones });
+        // Achievement: all-time kill milestones
+        const ach = useAchievementStore.getState();
+        if (newTotal >= 1000)  ach.tryUnlock("kills_1000");
+        if (newTotal >= 5000)  ach.tryUnlock("kills_5000");
+        if (newTotal >= 10000) ach.tryUnlock("kills_10000");
       },
 
       updateBestWave: (wave) => {
@@ -242,6 +259,12 @@ export const useMetaStore = create<MetaState>()(
         if (s.milestones["boss_kill"]) races.push("dwarf");
         if (s.milestones["wave10"]) races.push("elf");
         set({ unlockedClasses: classes, unlockedRaces: races });
+        // Achievement: class/race unlocks
+        const ach = useAchievementStore.getState();
+        if (classes.includes("mage"))  ach.tryUnlock("arcane_awakening");
+        if (classes.includes("rogue")) ach.tryUnlock("blade_in_dark");
+        if (races.includes("dwarf"))   ach.tryUnlock("stout_heart");
+        if (races.includes("elf"))     ach.tryUnlock("elven_grace");
       },
 
       recordDifficultyClear: (tier: DifficultyTier, wave: number) => {
@@ -251,6 +274,13 @@ export const useMetaStore = create<MetaState>()(
         set({
           difficultyClears: { ...s.difficultyClears, [tier]: wave },
         });
+        // Achievement: difficulty clears (wave 20 = final boss)
+        if (wave >= 20) {
+          const ach = useAchievementStore.getState();
+          if (tier === "normal")    ach.tryUnlock("normal_clear");
+          if (tier === "hard")      ach.tryUnlock("hard_clear");
+          if (tier === "nightmare") ach.tryUnlock("nightmare_clear");
+        }
       },
 
       completeTrial: (cls: string, difficulty: string = "normal") => {
@@ -262,16 +292,33 @@ export const useMetaStore = create<MetaState>()(
           set((s2) => ({
             milestones: { ...s2.milestones, [`trial_${cls}`]: true },
           }));
+          // Still unlock the achievement for this specific combination
+          useAchievementStore.getState().tryUnlock(`trial_${cls}_${difficulty}`);
           return;
         }
         set((s2) => ({
           trialWins: { ...s2.trialWins, [cls]: difficulty },
           milestones: { ...s2.milestones, [`trial_${cls}`]: true },
         }));
+        // Achievement: trial completions
+        const ach = useAchievementStore.getState();
+        ach.tryUnlock(`trial_${cls}_${difficulty}`);
+        // Champion of All: check if all 9 trials are done
+        const wins = get().trialWins;
+        const allClasses = ["warrior", "mage", "rogue"];
+        const allDiffs = ["normal", "hard", "nightmare"];
+        const allDone = allClasses.every((c) => {
+          const cleared = wins[c];
+          if (!cleared) return false;
+          return (DIFF_RANK[cleared] ?? 0) >= (DIFF_RANK["nightmare"] ?? 0);
+        });
+        if (allDone) ach.tryUnlock("champion_of_all");
       },
 
-      addGearToStash: (gear) =>
-        set((s) => ({ gearStash: [...s.gearStash, gear] })),
+      addGearToStash: (gear) => {
+        set((s) => ({ gearStash: [...s.gearStash, gear] }));
+        if (gear.rarity === "epic") useAchievementStore.getState().tryUnlock("legendary_discovery");
+      },
 
       sellGear: (index) => {
         const s = get();
@@ -325,8 +372,15 @@ export const useMetaStore = create<MetaState>()(
         const cost = costs[currentLevel + 1] ?? 400;
         if (s.shards < cost) return false;
         const newStash = [...s.gearStash];
-        newStash[stashIndex] = { ...item, enhanceLevel: currentLevel + 1 };
+        const newLevel = currentLevel + 1;
+        newStash[stashIndex] = { ...item, enhanceLevel: newLevel };
         set({ gearStash: newStash, shards: s.shards - cost });
+        // Achievement: max enhancement + golden arsenal
+        if (newLevel >= maxLevel) {
+          const ach = useAchievementStore.getState();
+          ach.tryUnlock("perfection");
+          if (item.rarity === "epic" && newLevel >= 7) ach.tryUnlock("golden_arsenal");
+        }
         return true;
       },
 

@@ -38,6 +38,7 @@ import { LevelUp } from "../ui/LevelUp";
 import { PauseMenu } from "../ui/PauseMenu";
 import { MobileControls } from "../ui/MobileControls";
 import { DevHUD } from "../ui/DevHUD";
+import { useAchievementStore } from "../store/achievementStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -451,6 +452,10 @@ function handleBossKillCleanup(e: EnemyRuntime, g: GameState): void {
     // Difficulty gating: clearing a boss on this difficulty advances the
     // unlock progress. Hard unlocks at normal >= 20, Nightmare at hard >= 20.
     meta.recordDifficultyClear(store.difficultyTier, g.wave);
+    // Achievement: first boss kill + nightmare boss
+    const achStore = useAchievementStore.getState();
+    achStore.tryUnlock("boss_slayer");
+    if (store.difficultyTier === "nightmare") achStore.tryUnlock("nightmare_boss");
   }
   // Clear the boss HP bar (used for both bosses and champions)
   store.setBossState(0, 0, "", false);
@@ -566,6 +571,7 @@ function handlePlayerFatalDmg(p: PlayerRuntime, g: GameState): boolean {
     stats.deathBargainActive = 0;
     p.invTimer = 1.5; // 1.5s of post-bargain invincibility
     audioManager.play("player_hurt");
+    useAchievementStore.getState().tryUnlock("deaths_bargain_save");
     return false; // survived
   }
   p.hp = 0; p.dead = true;
@@ -641,6 +647,7 @@ function equipGear(gear: GearDef, g: GameState): void {
     g.player.hp = Math.min(g.player.hp + newBonuses.maxHealth, g.player.maxHp);
   }
   g.equippedGear[gear.slot] = gear;
+  useAchievementStore.getState().tryUnlock("first_equip");
 }
 
 function triggerSoulfire(deadEnemy: EnemyRuntime, g: GameState): void {
@@ -1375,7 +1382,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       // Bypasses i-frames and incomingDamageMult — it's the cost of the relic.
       if (stats.hpDrainPerSec > 0 && !p.dead) {
         p.hp -= stats.hpDrainPerSec * delta;
-        if (p.hp <= 0) handlePlayerFatalDmg(p, g);
+        if (p.hp <= 0) {
+          useAchievementStore.getState().tryUnlock("another_bites_dust");
+          handlePlayerFatalDmg(p, g);
+        }
       }
 
       // ── Per-frame passive systems ────────────────────────────────────────
@@ -1711,6 +1721,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         triggerShake(g, 0.18, 0.14);
         triggerFreeze(g, 28);
       }
+    }
+    // Achievement: goblin kill detection (before dead enemies are swept)
+    if (g.enemies.some((e) => e.dead && e.type === "xp_goblin")) {
+      useAchievementStore.getState().tryUnlock("goblin_slayer");
     }
     g.enemies = g.enemies.filter((e) => !e.dead);
 
@@ -2456,6 +2470,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (nem && nem.dead) {
         g.nemesisId = null;
         store.setNemesisState(false, "NEMESIS DEFEATED!");
+        useAchievementStore.getState().tryUnlock("nemesis_vanquished");
         setTimeout(() => { store.setNemesisState(false, ""); }, 3500);
         // Bonus rewards: 25 shards + 3 purple XP crystals
         useGameStore.getState().addRunShards(25);
@@ -2498,6 +2513,16 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         g.waveTimer = 0;
         g.wave += 1;
         { const meta = useMetaStore.getState(); meta.updateBestWave(g.wave); meta.checkUnlocks(); }
+        // Achievement: wave milestones
+        {
+          const ach = useAchievementStore.getState();
+          if (g.wave >= 5)  ach.tryUnlock("wave_5");
+          if (g.wave >= 10) ach.tryUnlock("wave_10");
+          if (g.wave >= 15) ach.tryUnlock("wave_15");
+          if (g.wave >= 20) ach.tryUnlock("wave_20");
+          if (g.wave >= 25) ach.tryUnlock("wave_25");
+          if (g.wave >= 30) ach.tryUnlock("wave_30");
+        }
         useGameStore.getState().addGuaranteedShards(25); // 25 soul shards per wave completed — persists on death
         g.spawnInterval = Math.max(
           GAME_CONFIG.DIFFICULTY.MIN_SPAWN_INTERVAL,
@@ -2564,6 +2589,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     // called on the hot path.
     store.setWaveInfo(g.wave, g.score, g.kills, g.survivalTime);
     store.setHighestBossWaveCleared(g.highestBossWaveCleared);
+    // Achievement: single-run kill milestones + level milestone
+    {
+      const ach = useAchievementStore.getState();
+      if (g.kills >= 200) ach.tryUnlock("kills_200_run");
+      if (g.kills >= 500) ach.tryUnlock("kills_500_run");
+      if (g.progression.level >= 20) ach.tryUnlock("level_20_run");
+    }
 
     // ── Sync active buffs/debuffs to UI store ────────────────────────────
     {
@@ -3248,6 +3280,10 @@ export function GameScene({ onRestart }: GameSceneProps) {
       equipGear(fullGear, gs0);
       useGameStore.getState().setGearEquipped(slot, fullGear);
     }
+    // Achievement: full loadout check
+    if (loadout.weapon && loadout.armor && loadout.trinket) {
+      useAchievementStore.getState().tryUnlock("full_loadout");
+    }
     // Clear the loadout (gear is now consumed into the run)
     useMetaStore.getState().equippedLoadout = { weapon: null, armor: null, trinket: null };
   }
@@ -3332,6 +3368,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       useMetaStore.getState().addShards(bonus);
     }
     useGameStore.getState().setRunExtracted(true);
+    useAchievementStore.getState().tryUnlock("extraction_artist");
     // Transfer gear to stash on extraction — both equipped and spare inventory
     for (const slot of ["weapon", "armor", "trinket"] as const) {
       const gear = g.equippedGear[slot];
