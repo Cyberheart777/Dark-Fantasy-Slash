@@ -13,6 +13,7 @@ export interface RaceDef {
   title: string;
   lore: string;
   icon: string;
+  image: string;           // portrait filename in public/images/
   description: string;
   unlockCondition?: string;
   // Multipliers applied to class base stats
@@ -31,6 +32,7 @@ export const RACE_DATA: Record<RaceType, RaceDef> = {
     title: "Stalwart",
     lore: "Adaptable and unyielding. No weakness, no ceiling.",
     icon: "⚔",
+    image: "human.png",
     description: "Balanced stats. A clean slate for any build.",
     hpMult: 1,
     damageMult: 1,
@@ -45,6 +47,7 @@ export const RACE_DATA: Record<RaceType, RaceDef> = {
     title: "Shadowborn",
     lore: "Born of twilight and speed. They strike before you see them.",
     icon: "✦",
+    image: "elf.png",
     description: "+20% move speed · +18% atk speed · −18% HP · −8% damage",
     unlockCondition: "Reach Wave 10",
     hpMult: 0.82,
@@ -60,6 +63,7 @@ export const RACE_DATA: Record<RaceType, RaceDef> = {
     title: "Ironborn",
     lore: "Carved from stone. They do not fall easily.",
     icon: "⬡",
+    image: "dwarf.png",
     description: "+22% HP · +8 armor · +12% damage · −15% speed",
     unlockCondition: "Defeat The Warden (Boss)",
     hpMult: 1.22,

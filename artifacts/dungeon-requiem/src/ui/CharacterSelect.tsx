@@ -150,7 +150,11 @@ export function CharacterSelect() {
                     onClick={() => confirmRace(r)}
                   >
                     <div style={S.cardTop}>
-                      <span style={{ ...S.classIcon, color: locked ? "#4a3060" : "#a060e0" }}>{def.icon}</span>
+                      <img
+                        src={`${import.meta.env.BASE_URL}images/${def.image}`}
+                        alt={def.name}
+                        style={locked ? S.portraitLocked : S.portrait}
+                      />
                       <div style={S.cardTopText}>
                         <div style={{ ...S.className, color: locked ? "#4a3060" : "#c080ff" }}>{def.name}</div>
                         <div style={{ ...S.classTitle, color: locked ? "#3a2050" : "#8050b0" }}>{def.title}</div>
@@ -272,9 +276,11 @@ export function CharacterSelect() {
                     onClick={() => confirmClass(c)}
                   >
                     <div style={S.cardTop}>
-                      <span style={{ ...S.classIcon, color: locked ? "#4a3060" : def.accentColor }}>
-                        {c === "warrior" ? "⚔" : c === "mage" ? "✦" : "◆"}
-                      </span>
+                      <img
+                        src={`${import.meta.env.BASE_URL}images/${def.image}`}
+                        alt={def.name}
+                        style={locked ? S.portraitLocked : S.portrait}
+                      />
                       <div style={S.cardTopText}>
                         <div style={{ ...S.className, color: locked ? "#4a3060" : def.accentColor }}>{def.name}</div>
                         <div style={{ ...S.classTitle, color: locked ? "#3a2050" : def.color }}>{def.title}</div>
@@ -412,6 +418,14 @@ const S: Record<string, React.CSSProperties> = {
   },
   cardTop: { display: "flex", alignItems: "center", gap: 12 },
   classIcon: { fontSize: 26, filter: "drop-shadow(0 0 6px currentColor)", flexShrink: 0 },
+  portrait: {
+    width: 72, height: 72, borderRadius: 8, objectFit: "cover" as const, flexShrink: 0,
+    filter: "drop-shadow(0 0 8px rgba(140,80,255,0.4))",
+  },
+  portraitLocked: {
+    width: 72, height: 72, borderRadius: 8, objectFit: "cover" as const, flexShrink: 0,
+    opacity: 0.35, filter: "grayscale(1) brightness(0.4)",
+  },
   cardTopText: { flex: 1, display: "flex", flexDirection: "column", gap: 2 },
   className: { fontSize: 15, fontWeight: 900, letterSpacing: 3, fontFamily: "monospace" },
   classTitle: { fontSize: 10, letterSpacing: 2, fontFamily: "monospace", textTransform: "uppercase" },
