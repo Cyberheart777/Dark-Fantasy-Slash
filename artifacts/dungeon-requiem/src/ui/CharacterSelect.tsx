@@ -151,7 +151,7 @@ export function CharacterSelect() {
                   >
                     <div style={S.cardTop}>
                       <img
-                        src={`${import.meta.env.BASE_URL}images/${def.image}`}
+                        src={`${import.meta.env.BASE_URL}${def.image}`}
                         alt={def.name}
                         style={locked ? S.portraitLocked : S.portrait}
                       />
@@ -277,7 +277,7 @@ export function CharacterSelect() {
                   >
                     <div style={S.cardTop}>
                       <img
-                        src={`${import.meta.env.BASE_URL}images/${def.image}`}
+                        src={`${import.meta.env.BASE_URL}${def.image}`}
                         alt={def.name}
                         style={locked ? S.portraitLocked : S.portrait}
                       />

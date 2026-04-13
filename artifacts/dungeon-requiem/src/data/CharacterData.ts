@@ -63,7 +63,7 @@ export const CHARACTER_DATA: Record<CharacterClass, CharacterDef> = {
     color: "#4a80c0",
     accentColor: "#8090d0",
     auraColor: "#5070ff",
-    image: "warrior.png",
+    image: "Warrior.png",
   },
 
   mage: {
@@ -91,7 +91,7 @@ export const CHARACTER_DATA: Record<CharacterClass, CharacterDef> = {
     color: "#9030d0",
     accentColor: "#cc66ff",
     auraColor: "#a040e0",
-    image: "mage.png",
+    image: "Mage.png",
   },
 
   rogue: {
@@ -119,6 +119,6 @@ export const CHARACTER_DATA: Record<CharacterClass, CharacterDef> = {
     color: "#18b870",
     accentColor: "#40e8a0",
     auraColor: "#20c070",
-    image: "rogue.png",
+    image: "Rogue.png",
   },
 };
