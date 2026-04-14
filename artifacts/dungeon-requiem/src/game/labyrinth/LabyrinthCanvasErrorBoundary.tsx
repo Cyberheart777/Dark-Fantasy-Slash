@@ -27,6 +27,16 @@ interface State {
   message: string;
 }
 
+/** Global ring buffer of captured errors. Readable by the debug overlay
+ *  so iOS users without a console can see which subtree crashed.
+ *  Module-scope so every boundary instance writes to the same list. */
+export const LAB_ERROR_LOG: { label: string; message: string; at: number }[] = [];
+
+function pushLabError(label: string, message: string) {
+  LAB_ERROR_LOG.push({ label, message, at: Date.now() });
+  if (LAB_ERROR_LOG.length > 12) LAB_ERROR_LOG.shift();
+}
+
 export class LabyrinthCanvasErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, message: "" };
 
@@ -38,6 +48,8 @@ export class LabyrinthCanvasErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: unknown, info: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    pushLabError(this.props.label, msg);
     // eslint-disable-next-line no-console
     console.error(`[Labyrinth/${this.props.label}] render error — falling back`, error, info);
   }

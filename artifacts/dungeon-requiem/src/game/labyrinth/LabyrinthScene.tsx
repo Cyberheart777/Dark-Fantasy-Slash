@@ -398,9 +398,21 @@ function LabyrinthWorld({
       <PlayerTorch playerRef={playerRef} />
       <fog attach="fog" args={["#100820", 50, 140]} />
 
-      <LabyrinthMap3D maze={maze} />
-      <LabyrinthZone3D radius={currentRadius} isPaused={paused} />
-      <LabyrinthPortals3D portals={portalList} />
+      {/* Each visual subsystem is wrapped in an error boundary so a
+          silent throw in one (e.g. a shader, material, or geometry
+          failing to init on iOS) doesn't blank out the whole Canvas.
+          The boundaries log to the browser console AND leave the rest
+          of the scene visible, so a partial scene is visible instead
+          of a fully black canvas. */}
+      <LabyrinthCanvasErrorBoundary label="Map3D" fallback={null}>
+        <LabyrinthMap3D maze={maze} />
+      </LabyrinthCanvasErrorBoundary>
+      <LabyrinthCanvasErrorBoundary label="Zone3D" fallback={null}>
+        <LabyrinthZone3D radius={currentRadius} isPaused={paused} />
+      </LabyrinthCanvasErrorBoundary>
+      <LabyrinthCanvasErrorBoundary label="Portals3D" fallback={null}>
+        <LabyrinthPortals3D portals={portalList} />
+      </LabyrinthCanvasErrorBoundary>
       {/* Enemy renderer is wrapped in an error boundary so a shim-side
           crash can't cascade and blank out the rest of the Canvas. If
           it fails, enemies are invisible (a known degradation) but

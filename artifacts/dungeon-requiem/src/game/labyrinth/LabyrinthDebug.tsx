@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import type { PlayerAttackState } from "./LabyrinthCombat";
 import type { ZoneState } from "./LabyrinthZone";
 import type { LabDashState } from "./LabyrinthDash";
+import { LAB_ERROR_LOG } from "./LabyrinthCanvasErrorBoundary";
 
 /** Minimal duck-typed player shape the debug panel reads. Defined here
  *  (rather than importing LabPlayer from LabyrinthScene) to avoid a
@@ -38,14 +39,11 @@ interface DebugShared {
   extracted: boolean;
 }
 
-/** Returns `true` if `?debug=1` is in the current URL. */
+/** Returns `true` if `?debug=1` is in the current URL, OR always `true`
+ *  while we're diagnosing the "nothing renders in Canvas" bug. Flip
+ *  back to URL-gated when the diagnosis phase is done. */
 function isDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return new URLSearchParams(window.location.search).get("debug") === "1";
-  } catch {
-    return false;
-  }
+  return true;
 }
 
 interface Props {
@@ -65,6 +63,7 @@ export function LabyrinthDebug({ playerRef, sharedRef, attackStateRef, labDashRe
     poisonStacks: 0, poisonDps: 0,
     outsideZone: false, defeated: false, extracted: false,
     elapsedSec: 0, zoneRadius: 0,
+    errors: [] as { label: string; message: string }[],
   });
 
   useEffect(() => {
@@ -82,6 +81,7 @@ export function LabyrinthDebug({ playerRef, sharedRef, attackStateRef, labDashRe
         poisonStacks: s.poisonStacks, poisonDps: s.poisonDps,
         outsideZone: s.outsideZone, defeated: s.defeated, extracted: s.extracted,
         elapsedSec: s.zone.elapsedSec, zoneRadius: s.zone.radius,
+        errors: LAB_ERROR_LOG.slice(-4).map((e) => ({ label: e.label, message: e.message })),
       });
     }, 100);
     return () => clearInterval(iv);
@@ -104,6 +104,17 @@ export function LabyrinthDebug({ playerRef, sharedRef, attackStateRef, labDashRe
       <Row label="zone" value={`r=${n(snapshot.zoneRadius)} t=${n(snapshot.elapsedSec)}s ${snapshot.outsideZone ? "(OUTSIDE)" : ""}`} />
       {snapshot.defeated && <Row label="state" value="DEFEATED" />}
       {snapshot.extracted && <Row label="state" value="EXTRACTED" />}
+      {snapshot.errors.length > 0 && (
+        <div style={styles.errorBlock}>
+          <div style={styles.errorTitle}>CANVAS ERRORS</div>
+          {snapshot.errors.map((e, i) => (
+            <div key={i} style={styles.errorRow}>
+              <span style={styles.errorLabel}>{e.label}:</span>
+              <span style={styles.errorMessage}>{e.message.slice(0, 80)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -153,5 +164,29 @@ const styles: Record<string, React.CSSProperties> = {
   rowValue: {
     color: "#e0d0ff",
     fontWeight: 500,
+  },
+  errorBlock: {
+    marginTop: 8,
+    paddingTop: 6,
+    borderTop: "1px solid rgba(255,80,80,0.4)",
+  },
+  errorTitle: {
+    fontSize: 9,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    color: "#ff7070",
+    marginBottom: 4,
+  },
+  errorRow: {
+    display: "block",
+    marginBottom: 3,
+  },
+  errorLabel: {
+    color: "#ffaaaa",
+    marginRight: 6,
+    fontWeight: "bold",
+  },
+  errorMessage: {
+    color: "#ffdada",
   },
 };
