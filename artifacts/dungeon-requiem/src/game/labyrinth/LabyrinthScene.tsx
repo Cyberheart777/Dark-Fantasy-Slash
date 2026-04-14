@@ -115,6 +115,12 @@ import {
 } from "./LabyrinthProjectile";
 import { LabyrinthProjectiles3D } from "./LabyrinthProjectile3D";
 import {
+  spawnLabTraps,
+  tickLabTraps,
+  type LabTrap,
+} from "./LabyrinthTrap";
+import { LabyrinthTraps3D } from "./LabyrinthTrap3D";
+import {
   makeLabDashState,
   tickLabDashState,
   tryStartLabDash,
@@ -257,6 +263,14 @@ export function LabyrinthScene() {
   // collision-checked in CombatEnemyLoop; rendered via the main-game
   // Projectile3D.
   const projectilesRef = useRef<LabProjectile[]>([]);
+  // Wall-to-wall traps. Spawned once per run at scene mount (same as
+  // enemies), kept in a ref (stationary state machines — no React
+  // re-render needed for their phase changes; their emitter visuals
+  // poll phase directly each frame via useFrame).
+  const trapsRef = useRef<LabTrap[]>([]);
+  if (trapsRef.current.length === 0) {
+    trapsRef.current = spawnLabTraps(maze, LABYRINTH_CONFIG.TRAP_SPAWNER_COUNT);
+  }
   // Seed sharedRef with the progression's starting values so HUD reads
   // sensible defaults before the first tick runs.
   sharedRef.current.level = progressionRef.current.level;
@@ -309,6 +323,7 @@ export function LabyrinthScene() {
           xpOrbsRef={xpOrbsRef}
           warriorStateRef={warriorStateRef}
           projectilesRef={projectilesRef}
+          trapsRef={trapsRef}
           critChance={classDef.critChance}
           runStartMs={runStartMs}
         />
@@ -350,6 +365,7 @@ function LabyrinthWorld({
   xpOrbsRef,
   warriorStateRef,
   projectilesRef,
+  trapsRef,
   critChance,
   runStartMs,
 }: {
@@ -374,6 +390,7 @@ function LabyrinthWorld({
   xpOrbsRef: React.MutableRefObject<XPOrb[]>;
   warriorStateRef: React.MutableRefObject<LabWarriorState>;
   projectilesRef: React.MutableRefObject<LabProjectile[]>;
+  trapsRef: React.MutableRefObject<LabTrap[]>;
   critChance: number;
   runStartMs: React.MutableRefObject<number>;
 }) {
@@ -506,6 +523,7 @@ function LabyrinthWorld({
         xpOrbsRef={xpOrbsRef}
         warriorStateRef={warriorStateRef}
         projectilesRef={projectilesRef}
+        trapsRef={trapsRef}
         critChance={critChance}
         charClass={charClass}
         onEnemiesChange={setEnemyList}
@@ -513,6 +531,9 @@ function LabyrinthWorld({
         onXpOrbsChange={setXpOrbList}
         onProjectilesChange={setProjectileList}
       />
+      {/* Trap emitter visuals — small pulsing cubes on each anchor.
+          The actual projectile is drawn by LabyrinthProjectiles3D. */}
+      <LabyrinthTraps3D traps={trapsRef.current} />
       <ZoneTickLoop
         maze={maze}
         playerRef={playerRef}
@@ -959,6 +980,7 @@ function CombatEnemyLoop({
   xpOrbsRef,
   warriorStateRef,
   projectilesRef,
+  trapsRef,
   critChance,
   charClass,
   onEnemiesChange,
@@ -978,6 +1000,7 @@ function CombatEnemyLoop({
   xpOrbsRef: React.MutableRefObject<XPOrb[]>;
   warriorStateRef: React.MutableRefObject<LabWarriorState>;
   projectilesRef: React.MutableRefObject<LabProjectile[]>;
+  trapsRef: React.MutableRefObject<LabTrap[]>;
   critChance: number;
   charClass: CharacterClass;
   onEnemiesChange: (enemies: EnemyRuntime[]) => void;
@@ -1050,6 +1073,12 @@ function CombatEnemyLoop({
     for (const e of enemies) {
       updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum);
     }
+
+    // 3a) Tick wall-traps (warn → fire → cooldown state machines).
+    //     On the warn→fire transition a projectile is spawned into the
+    //     shared pool, which is then moved/collided by the projectile
+    //     tick just below.
+    tickLabTraps(trapsRef.current, projectilesRef.current, delta);
 
     // 3b) Projectiles — move, collide against walls/enemies/player.
     //     Enemy-owned projectiles roll into dmgAccum so the player-death
