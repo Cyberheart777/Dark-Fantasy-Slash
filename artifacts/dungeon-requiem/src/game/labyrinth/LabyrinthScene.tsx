@@ -28,6 +28,7 @@ import {
   WALL_N, WALL_E, WALL_S, WALL_W,
 } from "./LabyrinthMaze";
 import { LabyrinthMap3D } from "./LabyrinthMap3D";
+import { LabyrinthMobileControls } from "./LabyrinthMobileControls";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
 
@@ -45,34 +46,8 @@ export function LabyrinthScene() {
   // Generate maze once per scene mount — each run gets a fresh maze.
   const maze = useMemo(() => generateMaze(), []);
 
-  return (
-    <div style={styles.root}>
-      <Canvas
-        shadows
-        camera={{ position: [0, 28, 18], fov: 55, near: 0.5, far: 300 }}
-        gl={{ antialias: true }}
-      >
-        <LabyrinthWorld maze={maze} />
-      </Canvas>
-      <LabyrinthHUD maze={maze} />
-    </div>
-  );
-}
-
-// ─── 3D world contents ────────────────────────────────────────────────────────
-
-function LabyrinthWorld({ maze }: { maze: Maze }) {
-  // Spawn position from the maze generator.
-  const spawnWorld = useMemo(() => cellToWorld(maze.spawn.col, maze.spawn.row), [maze]);
-
-  const playerRef = useRef<LabPlayer>({
-    x: spawnWorld.x,
-    z: spawnWorld.z,
-    angle: 0,
-    vx: 0,
-    vz: 0,
-  });
-
+  // InputManager lives at the scene level so both the R3F Canvas and the
+  // mobile-touch overlay (which is outside Canvas) can share it.
   const inputRef = useRef<InputManager3D | null>(null);
   if (!inputRef.current) inputRef.current = new InputManager3D();
 
@@ -84,22 +59,55 @@ function LabyrinthWorld({ maze }: { maze: Maze }) {
   }, []);
 
   return (
+    <div style={styles.root}>
+      <Canvas
+        shadows
+        camera={{ position: [0, 28, 18], fov: 55, near: 0.5, far: 300 }}
+        gl={{ antialias: true }}
+      >
+        <LabyrinthWorld maze={maze} inputRef={inputRef} />
+      </Canvas>
+      <LabyrinthHUD maze={maze} />
+      <LabyrinthMobileControls inputRef={inputRef} />
+    </div>
+  );
+}
+
+// ─── 3D world contents ────────────────────────────────────────────────────────
+
+function LabyrinthWorld({
+  maze,
+  inputRef,
+}: {
+  maze: Maze;
+  inputRef: React.MutableRefObject<InputManager3D | null>;
+}) {
+  // Spawn position from the maze generator.
+  const spawnWorld = useMemo(() => cellToWorld(maze.spawn.col, maze.spawn.row), [maze]);
+
+  const playerRef = useRef<LabPlayer>({
+    x: spawnWorld.x,
+    z: spawnWorld.z,
+    angle: 0,
+    vx: 0,
+    vz: 0,
+  });
+
+  return (
     <>
-      {/* Lighting — warm-cool contrast matching the core dungeon */}
-      <ambientLight intensity={0.35} color="#6a4888" />
+      {/* Lighting — much brighter than the core dungeon so the whole
+          maze layout reads well. Step 2+ will add atmospheric fog on
+          top of this when the closing-zone visuals come in. */}
+      <ambientLight intensity={0.85} color="#a090c8" />
       <directionalLight
         position={[30, 50, 20]}
-        intensity={0.8}
-        color="#b090d0"
+        intensity={1.3}
+        color="#d0b0e8"
         castShadow
       />
-      <pointLight
-        position={[0, 8, 0]}
-        intensity={0.6}
-        color="#c080ff"
-        distance={40}
-      />
-      <fog attach="fog" args={["#080410", 20, 80]} />
+      {/* Player-follow torch — keeps the area around the player bright */}
+      <PlayerTorch playerRef={playerRef} />
+      <fog attach="fog" args={["#100820", 50, 140]} />
 
       <LabyrinthMap3D maze={maze} />
       <PlayerMarker playerRef={playerRef} />
@@ -109,28 +117,80 @@ function LabyrinthWorld({ maze }: { maze: Maze }) {
   );
 }
 
+// Bright point light that follows the player — so you can always see
+// yourself clearly against the dark floor.
+function PlayerTorch({ playerRef }: { playerRef: React.MutableRefObject<LabPlayer> }) {
+  const lightRef = useRef<THREE.PointLight>(null);
+  useFrame(() => {
+    if (!lightRef.current) return;
+    const p = playerRef.current;
+    lightRef.current.position.set(p.x, 8, p.z);
+  });
+  return (
+    <pointLight
+      ref={lightRef}
+      intensity={2.2}
+      color="#e0c0ff"
+      distance={24}
+      decay={1.2}
+    />
+  );
+}
+
 // ─── Player marker (placeholder cube — real class rendering comes later) ──────
 
 function PlayerMarker({ playerRef }: { playerRef: React.MutableRefObject<LabPlayer> }) {
-  const meshRef = useRef<THREE.Mesh>(null);
+  const groupRef = useRef<THREE.Group>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
 
-  useFrame(() => {
-    if (!meshRef.current) return;
+  useFrame((state) => {
+    if (!groupRef.current) return;
     const p = playerRef.current;
-    meshRef.current.position.set(p.x, 1.0, p.z);
-    meshRef.current.rotation.y = p.angle;
+    groupRef.current.position.set(p.x, 0, p.z);
+    groupRef.current.rotation.y = p.angle;
+    // Pulse the ring so the player's position is obviously visible
+    if (ringRef.current) {
+      const pulse = 1 + 0.18 * Math.sin(state.clock.elapsedTime * 3);
+      ringRef.current.scale.set(pulse, 1, pulse);
+    }
   });
 
   return (
-    <mesh ref={meshRef} castShadow>
-      <boxGeometry args={[1.2, 2.0, 1.2]} />
-      <meshStandardMaterial
-        color="#9040e0"
-        emissive="#7020c0"
-        emissiveIntensity={0.4}
-        roughness={0.5}
-      />
-    </mesh>
+    <group ref={groupRef}>
+      {/* Glowing ground ring under the player — pulsing indicator */}
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <ringGeometry args={[1.4, 1.8, 32]} />
+        <meshBasicMaterial color="#c080ff" transparent opacity={0.75} />
+      </mesh>
+      {/* Main body — taller + brighter emissive */}
+      <mesh position={[0, 1.2, 0]} castShadow>
+        <boxGeometry args={[1.3, 2.4, 1.3]} />
+        <meshStandardMaterial
+          color="#c080ff"
+          emissive="#9040e0"
+          emissiveIntensity={0.9}
+          roughness={0.4}
+        />
+      </mesh>
+      {/* Head marker — small cube on top for orientation */}
+      <mesh position={[0, 2.7, 0]} castShadow>
+        <boxGeometry args={[0.7, 0.6, 0.7]} />
+        <meshStandardMaterial
+          color="#ffccff"
+          emissive="#ff88ff"
+          emissiveIntensity={0.6}
+        />
+      </mesh>
+      {/* Facing indicator — small cube in front so you can see direction */}
+      <mesh position={[0, 1.2, -0.9]}>
+        <boxGeometry args={[0.4, 0.4, 0.4]} />
+        <meshStandardMaterial
+          color="#ffffff"
+          emissive="#ffddff"
+          emissiveIntensity={0.8}
+        />
+      </mesh>
+    </group>
   );
 }
 
@@ -144,8 +204,9 @@ function CameraFollow({ playerRef }: { playerRef: React.MutableRefObject<LabPlay
 
   useFrame((_, delta) => {
     const p = playerRef.current;
-    // Desired camera position: above and behind the player
-    const desired = new THREE.Vector3(p.x, 22, p.z + 14);
+    // Desired camera position: higher and further back so you can see
+    // more corridors around the player. Matches the core game's feel.
+    const desired = new THREE.Vector3(p.x, 30, p.z + 20);
     currentPos.current.lerp(desired, Math.min(1, delta * 6));
     camera.position.copy(currentPos.current);
     target.current.set(p.x, 0, p.z);
