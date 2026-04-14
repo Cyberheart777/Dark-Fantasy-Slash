@@ -89,6 +89,15 @@ import {
 } from "./LabyrinthGroundFx";
 import { LabyrinthGroundFx3D } from "./LabyrinthGroundFx3D";
 import {
+  makeLabProgression,
+  addLabXp,
+  spawnLabXpOrb,
+  tickLabXpOrbs,
+  type LabProgressionState,
+} from "./LabyrinthProgression";
+import { XPOrb3D } from "../../entities/XPOrb3D";
+import type { XPOrb } from "../GameScene";
+import {
   makeLabDashState,
   tickLabDashState,
   tryStartLabDash,
@@ -142,6 +151,13 @@ interface LabSharedState {
   enemyCount: number;
   /** Total enemies killed this run — shown on HUD / victory screens. */
   killCount: number;
+  /** Current player level (mirrored from LabProgressionState for HUD). */
+  level: number;
+  /** XP progress toward the next level. */
+  xp: number;
+  xpToNext: number;
+  /** Cumulative XP earned this run. */
+  totalXp: number;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -194,12 +210,22 @@ export function LabyrinthScene() {
     lastPortalPopupCount: 0,
     enemyCount: 0,
     killCount: 0,
+    level: 1,
+    xp: 0,
+    xpToNext: 0,
+    totalXp: 0,
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
   const deathFxRef = useRef<LabDeathFx[]>([]);
   const groundFxRef = useRef<LabGroundFx[]>([]);
   const shroudMistRef = useRef<LabShroudMistEmitter>(makeShroudMistEmitter());
+  const progressionRef = useRef<LabProgressionState>(makeLabProgression());
+  const xpOrbsRef = useRef<XPOrb[]>([]);
+  // Seed sharedRef with the progression's starting values so HUD reads
+  // sensible defaults before the first tick runs.
+  sharedRef.current.level = progressionRef.current.level;
+  sharedRef.current.xpToNext = progressionRef.current.xpToNext;
   // Enemies initialized once per scene mount (one maze = one enemy set).
   const enemiesRef = useRef<EnemyRuntime[]>([]);
   if (enemiesRef.current.length === 0) {
@@ -240,6 +266,8 @@ export function LabyrinthScene() {
           deathFxRef={deathFxRef}
           groundFxRef={groundFxRef}
           shroudMistRef={shroudMistRef}
+          progressionRef={progressionRef}
+          xpOrbsRef={xpOrbsRef}
           runStartMs={runStartMs}
         />
       </Canvas>
@@ -276,6 +304,8 @@ function LabyrinthWorld({
   deathFxRef,
   groundFxRef,
   shroudMistRef,
+  progressionRef,
+  xpOrbsRef,
   runStartMs,
 }: {
   maze: Maze;
@@ -295,6 +325,8 @@ function LabyrinthWorld({
   deathFxRef: React.MutableRefObject<LabDeathFx[]>;
   groundFxRef: React.MutableRefObject<LabGroundFx[]>;
   shroudMistRef: React.MutableRefObject<LabShroudMistEmitter>;
+  progressionRef: React.MutableRefObject<LabProgressionState>;
+  xpOrbsRef: React.MutableRefObject<XPOrb[]>;
   runStartMs: React.MutableRefObject<number>;
 }) {
   // Initialize spawn position from the maze generator on first mount.
@@ -321,6 +353,9 @@ function LabyrinthWorld({
   // Shroud-mist list mirror. ZoneTickLoop pushes new mist puffs while
   // the player is outside the safe zone and ticks their lifetime.
   const [groundFxList, setGroundFxList] = useState<LabGroundFx[]>([]);
+  // XP-orb list mirror. CombatEnemyLoop pushes on kill and evicts on
+  // collection animation completion.
+  const [xpOrbList, setXpOrbList] = useState<XPOrb[]>([]);
 
   return (
     <>
@@ -352,6 +387,12 @@ function LabyrinthWorld({
           while they're outside the safe zone. Purely visual; damage is
           handled separately by LabyrinthPoison. */}
       <LabyrinthGroundFx3D effects={groundFxList} />
+      {/* XP orb drops from guardian kills. Uses the main game's
+          XPOrb3D renderer (imported; no core edits) via a thin local
+          XPOrb struct. Collection logic is in CombatEnemyLoop. */}
+      {xpOrbList.map((orb) => (
+        <XPOrb3D key={orb.id} orb={orb} />
+      ))}
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
       {/* Guaranteed-visible baseline: the procedural PlayerMarker (purple
           glowing cube + pulsing ring) is always mounted. If LabyrinthPlayer3D
@@ -388,8 +429,11 @@ function LabyrinthWorld({
         attackStateRef={attackStateRef}
         enemiesRef={enemiesRef}
         deathFxRef={deathFxRef}
+        progressionRef={progressionRef}
+        xpOrbsRef={xpOrbsRef}
         onEnemiesChange={setEnemyList}
         onDeathFxChange={setDeathFxList}
+        onXpOrbsChange={setXpOrbList}
       />
       <ZoneTickLoop
         maze={maze}
@@ -636,8 +680,11 @@ function CombatEnemyLoop({
   attackStateRef,
   enemiesRef,
   deathFxRef,
+  progressionRef,
+  xpOrbsRef,
   onEnemiesChange,
   onDeathFxChange,
+  onXpOrbsChange,
 }: {
   maze: Maze;
   combatStats: LabCombatStats;
@@ -647,13 +694,18 @@ function CombatEnemyLoop({
   attackStateRef: React.MutableRefObject<PlayerAttackState>;
   enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
   deathFxRef: React.MutableRefObject<LabDeathFx[]>;
+  progressionRef: React.MutableRefObject<LabProgressionState>;
+  xpOrbsRef: React.MutableRefObject<XPOrb[]>;
   onEnemiesChange: (enemies: EnemyRuntime[]) => void;
   onDeathFxChange: (fx: LabDeathFx[]) => void;
+  onXpOrbsChange: (orbs: XPOrb[]) => void;
 }) {
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
   // Tracks the last death-fx list length we pushed to React state so we
   // don't re-render on every frame just because the tick ran.
   const lastEmittedFxLen = useRef(0);
+  // Same pattern for the XP-orb render mirror.
+  const lastEmittedOrbLen = useRef(0);
 
   useFrame((_, delta) => {
     const shared = sharedRef.current;
@@ -688,6 +740,9 @@ function CombatEnemyLoop({
               // guardian's emissive red carries through to the puff
               // color so kills feel chromatic rather than generic.
               spawnLabDeathFx(deathFxRef.current, e.x, e.z, "#ff3030");
+              // Drop an XP crystal at the kill site. Tier is weighted
+              // (see LabyrinthProgression.tierForGuardian).
+              spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
             }
           }
         }
@@ -738,6 +793,38 @@ function CombatEnemyLoop({
     if (tickedFx.length !== fxPrevLen) {
       lastEmittedFxLen.current = tickedFx.length;
       onDeathFxChange(tickedFx.slice());
+    }
+
+    // 7) XP orbs — pickup detection + collect-animation tick, then
+    //    award any XP to progression. On level-up: bump maxHp by +5,
+    //    heal the player to full, and play the level-up SFX.
+    const orbPrevLen = xpOrbsRef.current.length;
+    const orbTick = tickLabXpOrbs(xpOrbsRef.current, p.x, p.z, delta);
+    if (orbTick.awardedXp > 0) {
+      audioManager.play("xp_pickup");
+      addLabXp(progressionRef.current, orbTick.awardedXp);
+      while (progressionRef.current.pendingLevelUps > 0) {
+        progressionRef.current.pendingLevelUps -= 1;
+        // Flat per-level growth — matches the warrior's CLASS_GROWTH
+        // (ProgressionManager.ts:54-66 → +3 HP per level). Heal to
+        // full on level-up, same as the main game.
+        p.maxHp += 3;
+        p.hp = p.maxHp;
+        audioManager.play("level_up");
+      }
+    }
+    shared.level = progressionRef.current.level;
+    shared.xp = progressionRef.current.xp;
+    shared.xpToNext = progressionRef.current.xpToNext;
+    shared.totalXp = progressionRef.current.totalXp;
+    // Emit to React only when the orb list membership actually changes
+    // (spawn or eviction). The XPOrb3D components animate their own
+    // collection via orb.collectTimer which we mutate in place.
+    if (xpOrbsRef.current.length !== orbPrevLen || orbTick.changed) {
+      if (xpOrbsRef.current.length !== lastEmittedOrbLen.current) {
+        lastEmittedOrbLen.current = xpOrbsRef.current.length;
+        onXpOrbsChange(xpOrbsRef.current.slice());
+      }
     }
   });
 
@@ -1009,6 +1096,10 @@ function LabyrinthHUD({
     livePortalCount: 0,
     enemyCount: 0,
     killCount: 0,
+    level: 1,
+    xp: 0,
+    xpToNext: 1,
+    totalXp: 0,
   });
 
   useEffect(() => {
@@ -1053,6 +1144,10 @@ function LabyrinthHUD({
         livePortalCount: liveCount,
         enemyCount: s.enemyCount,
         killCount: s.killCount,
+        level: s.level,
+        xp: s.xp,
+        xpToNext: s.xpToNext,
+        totalXp: s.totalXp,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -1095,6 +1190,21 @@ function LabyrinthHUD({
             width: `${hpPct}%`,
             background: hpColor,
             boxShadow: `0 0 8px ${hpColor}`,
+          }} />
+        </div>
+        {/* XP + level — same style language as HP, one row below. */}
+        <div style={{ ...styles.hpLabel, marginTop: 6 }}>
+          <span style={{ color: "#70d0ff", fontWeight: "bold" }}>LV {display.level}</span>
+          <span style={{ color: "#ccc", fontSize: 13 }}>
+            {display.xp}/{display.xpToNext} XP
+          </span>
+        </div>
+        <div style={styles.hpTrack}>
+          <div style={{
+            ...styles.hpFill,
+            width: `${display.xpToNext > 0 ? Math.min(100, (display.xp / display.xpToNext) * 100) : 0}%`,
+            background: "#50a0ff",
+            boxShadow: "0 0 8px #50a0ff",
           }} />
         </div>
       </div>
