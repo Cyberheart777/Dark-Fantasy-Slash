@@ -167,3 +167,81 @@ visuals; only the combat pattern is warrior-only for now.
 added to `App.tsx` (LabyrinthCharSelect) and `MainMenu.tsx`
 (re-routed labyrinth button) — both are routing-only, no logic
 changes to the main game.
+
+### Labyrinth Mode — Step 3a-bis-II (visibility + dash + reused assets)
+
+**Dash.** Class-agnostic dash module lives in
+`src/game/labyrinth/LabyrinthDash.ts` (constants copied from
+`GameConfig.PLAYER`: `LAB_DASH_SPEED = 22`, `LAB_DASH_DURATION = 0.18`).
+Cooldown per-class from `CHARACTER_DATA[class].dashCooldown`
+(warrior 2.2 / mage 2.4 / rogue 1.2). `MovementLoop` consumes
+`input.state.dash`, overrides joystick velocity while `timer > 0`,
+and sets `LabPlayer.isDashing` so the character leans forward. Mobile
+gets a dedicated `↯` touch button next to the `⚔` attack button
+(`LabyrinthMobileControls.tsx`, separate `dashTouchId` for concurrent
+multi-touch). Desktop binds Shift.
+
+**Reused main-game assets via shims (zero core edits).** The labyrinth
+now pulls in six main-game systems via adapter modules:
+
+- **Audio** (`src/audio/AudioManager.ts`) — imported directly; called
+  from combat/dash/defeat paths for `attack_melee`, `enemy_death`,
+  `player_hurt`, `player_death`, `dash`, `xp_pickup`, `level_up`.
+- **DeathFx** — ported (not imported) into `LabyrinthDeathFx.ts` +
+  `LabyrinthDeathFx3D.tsx`. Matches the main game's 7-puff + flash
+  tuning 1:1 (`GameScene.tsx:227-235` / `:2701-2772`). Ported
+  because `DeathFx3D` isn't exported from `GameScene`.
+- **GroundEffect** — ported into `LabyrinthGroundFx.ts` +
+  `LabyrinthGroundFx3D.tsx`. Spawns short-lived toxic-green mist
+  pools under the player while outside the safe zone; visual-only
+  (damage is still handled by `LabyrinthPoison`).
+- **XPOrb3D** — imported directly from `src/entities/XPOrb3D.tsx`
+  (this one IS exported). Orbs drop on guardian kill via
+  `spawnLabXpOrb`, tier-weighted 70% blue / 20% green / 10% purple.
+  Pickup radius 3u. Collection plays `xp_pickup`.
+- **Labyrinth-local progression** (`LabyrinthProgression.ts`) —
+  mirrors `ProgressionManager`'s XP formula
+  (`BASE=70, EXP=1.45, per-10 ×1.15`) without importing the class
+  (which is coupled to upgrade-pick UI + meta-store). Level-up
+  grants +3 maxHp and a full heal, plays `level_up`.
+- **Warrior passives** (`LabyrinthWarrior.ts`) — crits (5% × 2×
+  from `CharacterData.ts:54`), Blood Momentum (+3%/stack to 20
+  stacks, 3s reset), Bloodforge (+1 maxHp/kill cap 20), auto War
+  Cry (+25% dmg for 4s at <30% HP, 20s cooldown). Gated on
+  `charClass === "warrior"`; mage/rogue take the base damage path.
+  HUD shows Blood Momentum pip row + War Cry state + Bloodforge
+  progress under the XP bar.
+
+**Visibility fallback.** `LabyrinthPlayer3D` (shim → `Player3D`
+→ warrior GLB) is temporarily commented-out in
+`LabyrinthScene.tsx`. In its place, `GeoCharacter` — a procedural
+humanoid warrior built entirely from `meshBasicMaterial` primitives
+with `depthWrite={false}` on every part. Uses the same walk cycle
+and swing animation pattern as the main game's
+`WarriorMeshAnimated` (`Player3D.tsx:192-278`). Robust to iOS
+Safari quirks that broke the PBR/shadow path. Re-enable the GLB
+on top once we confirm the stand-in renders reliably; the
+GeoCharacter then stays as the always-on safety net.
+
+**Scene lighting.** `Canvas` no longer has `shadows`; all
+`castShadow`/`receiveShadow` props removed. Ambient bumped
+(`0.85 → 1.6`), hemisphere fill added (`0.9`), directional
+(`1.3 → 2.2`), torch (`2.2 → 4.5`, reach `24 → 36`). Floor and
+walls got modest emissive so they read clearly without direct
+light. Fixes iOS Safari's dark-scene rendering issue.
+
+**Diagnostics.** `LabyrinthDebug.tsx` renders a fixed HTML overlay
+outside the Canvas (gated by `?debug=1`) with live player
+position/HP, swing + dash timers, zone state, enemy/kill counts,
+and a red `CANVAS ERRORS` block populated from
+`LabyrinthCanvasErrorBoundary.LAB_ERROR_LOG`. Map3D / Zone3D /
+Portals3D are now each wrapped in their own error boundary with
+`null` fallback so a subsystem crash can't blank the scene.
+
+**Invariant (continued):** every file touched in this step is under
+`src/game/labyrinth/` — `git diff --stat main..HEAD` confirms.
+`Player3D.tsx`, `Enemy3D.tsx`, `XPOrb3D.tsx`, `AudioManager.ts`,
+`InputManager3D.ts`, `GameScene.tsx`, all `data/*` tables, are
+untouched. Main dungeon / trial / boss modes are behaviourally
+identical to pre-change.
+

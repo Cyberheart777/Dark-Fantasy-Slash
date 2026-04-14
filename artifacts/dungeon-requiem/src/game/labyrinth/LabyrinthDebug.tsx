@@ -39,11 +39,16 @@ interface DebugShared {
   extracted: boolean;
 }
 
-/** Returns `true` if `?debug=1` is in the current URL, OR always `true`
- *  while we're diagnosing the "nothing renders in Canvas" bug. Flip
- *  back to URL-gated when the diagnosis phase is done. */
+/** Returns `true` if `?debug=1` is in the current URL. Default-off
+ *  for normal play; add `?debug=1` to show the overlay when you
+ *  need the error log or live state readout. */
 function isDebugEnabled(): boolean {
-  return true;
+  if (typeof window === "undefined") return false;
+  try {
+    return new URLSearchParams(window.location.search).get("debug") === "1";
+  } catch {
+    return false;
+  }
 }
 
 interface Props {
