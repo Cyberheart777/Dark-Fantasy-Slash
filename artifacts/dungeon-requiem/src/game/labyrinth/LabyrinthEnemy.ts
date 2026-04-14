@@ -50,6 +50,10 @@ export interface EnemyRuntime {
   attackCooldown: number;
   /** Seconds since death — drives the render fade-out. */
   deathFadeSec: number;
+  /** Short pulse (seconds remaining) that the renderer flashes on hit.
+   *  Set in damageEnemy, decays in updateEnemy. Same semantics as the
+   *  main game's `EnemyRuntime.hitFlashTimer`. */
+  hitFlashTimer: number;
   /** Current patrol waypoint in world coords (null while chasing). */
   patrolTargetX: number | null;
   patrolTargetZ: number | null;
@@ -123,6 +127,7 @@ export function spawnCorridorGuardians(
       aiTimer: 0,
       attackCooldown: 0,
       deathFadeSec: 0,
+      hitFlashTimer: 0,
       patrolTargetX: null,
       patrolTargetZ: null,
       lastMoveX: 0,
@@ -179,6 +184,7 @@ export function updateEnemy(
 
   // Cooldown decay is always on
   if (enemy.attackCooldown > 0) enemy.attackCooldown = Math.max(0, enemy.attackCooldown - delta);
+  if (enemy.hitFlashTimer > 0) enemy.hitFlashTimer = Math.max(0, enemy.hitFlashTimer - delta);
 
   // Act by state
   let desiredDx = 0, desiredDz = 0;
@@ -249,10 +255,16 @@ export function updateEnemy(
   }
 }
 
+/** Flash duration when an enemy takes a hit. Matches the main game's
+ *  approximate feel — short enough to read as a hit impact without
+ *  making the next swing feel slow. */
+const HIT_FLASH_SEC = 0.15;
+
 /** Apply damage. Marks enemy as dead when HP hits 0. Returns true on kill. */
 export function damageEnemy(enemy: EnemyRuntime, dmg: number): boolean {
   if (enemy.state === "dead") return false;
   enemy.hp = Math.max(0, enemy.hp - dmg);
+  enemy.hitFlashTimer = HIT_FLASH_SEC;
   if (enemy.hp <= 0) {
     enemy.state = "dead";
     enemy.deathFadeSec = 0;

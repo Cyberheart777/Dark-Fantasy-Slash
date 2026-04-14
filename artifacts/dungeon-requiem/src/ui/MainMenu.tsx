@@ -85,7 +85,7 @@ export function MainMenu() {
               ⚔ BEGIN DESCENT
             </button>
 
-            <button style={styles.btnLabyrinth} onClick={click(() => { setTrialMode(false); setPhase("labyrinth"); })}>
+            <button style={styles.btnLabyrinth} onClick={click(() => { setTrialMode(false); setPhase("labyrinth_charselect"); })}>
               🌀 THE LABYRINTH
               <span style={styles.labyrinthSub}>Shrinking maze · survive the closing dark</span>
             </button>

@@ -122,3 +122,48 @@ Stalkers, Warden mini-boss, XP/loot drops from kills.
 **Invariant (continued):** same self-contained rule — combat/enemy
 files live in `src/game/labyrinth/`, no imports from `GameScene.tsx`
 or the main game's enemy/projectile code. The main game is untouched.
+
+### Labyrinth Mode — Character Select + Shared Visual Layer (Step 3a-bis)
+
+**Character picker.** Main menu → `labyrinth_charselect` (new phase) →
+`LabyrinthCharSelect` (race → class → Begin). Writes
+`selectedRace` + `selectedClass` + `difficultyTier="nightmare"` +
+`trialMode=false` into the game store, then advances to `labyrinth`.
+- Race picker uses `RACE_DATA` unlock gating (shared with main game).
+- Class picker only enables Warrior via `LABYRINTH_CLASS_AVAILABLE`;
+  Mage + Rogue show as "coming soon". Flipping a flag enables them.
+- Difficulty is locked to nightmare (no picker).
+
+**Shared visuals via shims.** The Labyrinth no longer uses procedural
+placeholder meshes. Instead, a thin shim layer maps the labyrinth's
+AI-focused runtimes to the main game's `PlayerRuntime` /
+`EnemyRuntime` shape so the existing `Player3D` + `Enemy3D` renderers
+can draw the scene unchanged.
+- `LabyrinthShims.ts` — factories + per-frame updaters for the
+  GameState/EnemyRuntime shims. Casts through `unknown` to avoid
+  populating the entire (irrelevant) main-game surface area.
+- `LabyrinthPlayer3D.tsx` — holds one GameState shim, syncs every
+  frame from LabPlayer + PlayerAttackState, renders `<Player3D>`.
+  Bumps `shim.player.attackTrigger` on swing edges so the weapon
+  animation plays.
+- `LabyrinthEnemy3D.tsx` — holds a shim map keyed by enemy id,
+  syncs every frame from LabEnemy, renders `<Enemy3D>` per shim.
+  Corridor Guardian → `"elite"` type (Voidclaw Champion visuals).
+
+**Stats from CharacterData.** Combat stats come from
+`CHARACTER_DATA[selectedClass]` (damage, attackRange, attackSpeed →
+`1/attackSpeed` for cooldown). HP is `classDef.hp`. The old
+`LAB_COMBAT_BASELINE` is gone from the scene; it stays exported from
+`LabyrinthCombat.ts` as a reference for future tests.
+
+**Still single attack mode.** All classes currently use the 120°
+melee arc attack (warrior's native). Mage + Rogue are locked in
+char-select until step 3a-bis-II wires up a projectile attack
+pattern. The Player3D dispatch already handles all three classes'
+visuals; only the combat pattern is warrior-only for now.
+
+**Invariant (continued):** zero edits to `Player3D.tsx`, `Enemy3D.tsx`,
+`GameScene.tsx`, or any main-game data file. Two new imports were
+added to `App.tsx` (LabyrinthCharSelect) and `MainMenu.tsx`
+(re-routed labyrinth button) — both are routing-only, no logic
+changes to the main game.

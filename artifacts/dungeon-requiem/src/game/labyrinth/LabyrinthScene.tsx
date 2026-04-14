@@ -54,13 +54,13 @@ import {
 } from "./LabyrinthPortal";
 import { LabyrinthPortals3D } from "./LabyrinthPortal3D";
 import {
-  LAB_COMBAT_BASELINE,
   makePlayerAttackState,
   tickAttackState,
   tryStartSwing,
   isInSwingArc,
   SWING_VISUAL_DURATION_SEC,
   SWING_HALF_ARC,
+  type LabCombatStats,
   type PlayerAttackState,
 } from "./LabyrinthCombat";
 import {
@@ -71,6 +71,8 @@ import {
   type EnemyRuntime,
 } from "./LabyrinthEnemy";
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
+import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
+import { CHARACTER_DATA, type CharacterClass } from "../../data/CharacterData";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
 
@@ -121,6 +123,23 @@ export function LabyrinthScene() {
   // Generate maze once per scene mount — each run gets a fresh maze.
   const maze = useMemo(() => generateMaze(), []);
 
+  // Class picked in the character-select step before landing here. The
+  // store defaults to "warrior" so direct-to-labyrinth (eg. deep link,
+  // old flow) still works. Labyrinth-specific locks are handled in
+  // LabyrinthCharSelect — this component just reads whatever was set.
+  const selectedClass = useGameStore((s) => s.selectedClass) as CharacterClass;
+  const classDef = CHARACTER_DATA[selectedClass];
+
+  // Combat stats derived from the class definition. Same shape as
+  // combatStats so the combat system code is unchanged.
+  const combatStats: LabCombatStats = useMemo(() => ({
+    damage: classDef.damage,
+    atkRange: classDef.attackRange,
+    // attackSpeed is in swings-per-second in CharacterData; convert
+    // to seconds-per-swing for atkCooldown.
+    atkCooldown: 1 / Math.max(0.01, classDef.attackSpeed),
+  }), [classDef]);
+
   // InputManager lives at the scene level so both the R3F Canvas and the
   // mobile-touch overlay (which is outside Canvas) can share it.
   const inputRef = useRef<InputManager3D | null>(null);
@@ -130,7 +149,7 @@ export function LabyrinthScene() {
   // the HUD polls it on an interval so we don't re-render React at 60fps.
   const playerRef = useRef<LabPlayer>({
     x: 0, z: 0, angle: 0, vx: 0, vz: 0,
-    hp: 100, maxHp: 100,
+    hp: classDef.hp, maxHp: classDef.hp,
   });
   const sharedRef = useRef<LabSharedState>({
     zone: computeZoneState(0),
@@ -176,6 +195,8 @@ export function LabyrinthScene() {
       >
         <LabyrinthWorld
           maze={maze}
+          charClass={selectedClass}
+          combatStats={combatStats}
           inputRef={inputRef}
           playerRef={playerRef}
           sharedRef={sharedRef}
@@ -199,6 +220,8 @@ export function LabyrinthScene() {
 
 function LabyrinthWorld({
   maze,
+  charClass,
+  combatStats,
   inputRef,
   playerRef,
   sharedRef,
@@ -208,6 +231,8 @@ function LabyrinthWorld({
   runStartMs,
 }: {
   maze: Maze;
+  charClass: CharacterClass;
+  combatStats: LabCombatStats;
   inputRef: React.MutableRefObject<InputManager3D | null>;
   playerRef: React.MutableRefObject<LabPlayer>;
   sharedRef: React.MutableRefObject<LabSharedState>;
@@ -252,11 +277,16 @@ function LabyrinthWorld({
       <LabyrinthPortals3D portals={portalList} />
       <LabyrinthEnemies3D enemies={enemyList} />
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
-      <PlayerMarker playerRef={playerRef} />
+      <LabyrinthPlayer3D
+        charClass={charClass}
+        playerRef={playerRef}
+        attackStateRef={attackStateRef}
+      />
       <CameraFollow playerRef={playerRef} />
       <MovementLoop playerRef={playerRef} maze={maze} inputRef={inputRef} sharedRef={sharedRef} />
       <CombatEnemyLoop
         maze={maze}
+        combatStats={combatStats}
         playerRef={playerRef}
         sharedRef={sharedRef}
         inputRef={inputRef}
@@ -450,6 +480,7 @@ function MovementLoop({
 
 function CombatEnemyLoop({
   maze,
+  combatStats,
   playerRef,
   sharedRef,
   inputRef,
@@ -458,6 +489,7 @@ function CombatEnemyLoop({
   onEnemiesChange,
 }: {
   maze: Maze;
+  combatStats: LabCombatStats;
   playerRef: React.MutableRefObject<LabPlayer>;
   sharedRef: React.MutableRefObject<LabSharedState>;
   inputRef: React.MutableRefObject<InputManager3D | null>;
@@ -484,11 +516,11 @@ function CombatEnemyLoop({
     const inputState = input.state;
     if (inputState.attack) {
       input.consumeAttack();
-      if (tryStartSwing(atk, p.angle, LAB_COMBAT_BASELINE)) {
+      if (tryStartSwing(atk, p.angle, combatStats)) {
         for (const e of enemies) {
           if (e.state === "dead") continue;
           if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange)) {
-            const killed = damageEnemy(e, LAB_COMBAT_BASELINE.damage);
+            const killed = damageEnemy(e, combatStats.damage);
             if (killed) shared.killCount++;
           }
         }

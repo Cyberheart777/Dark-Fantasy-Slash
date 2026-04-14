@@ -14,6 +14,7 @@ import { SoulForge } from "./ui/SoulForge";
 import { GameOver } from "./ui/GameOver";
 import { TrialVictory } from "./ui/TrialVictory";
 import { LabyrinthScene } from "./game/labyrinth/LabyrinthScene";
+import { LabyrinthCharSelect } from "./game/labyrinth/LabyrinthCharSelect";
 
 /** Pick the music track that should be playing for a given phase. */
 function musicForPhase(phase: string): SoundKey | null {
@@ -21,6 +22,7 @@ function musicForPhase(phase: string): SoundKey | null {
     case "menu":
     case "charselect":
     case "soulforge":
+    case "labyrinth_charselect":
       return "music_menu";
     case "playing":
     case "paused":
@@ -106,12 +108,17 @@ export default function App() {
 
   return (
     <div style={styles.root}>
-      {phase === "menu"       && <MainMenu />}
-      {phase === "charselect" && <CharacterSelect />}
-      {phase === "soulforge"  && <SoulForge />}
-      {phase === "labyrinth"  && <LabyrinthScene />}
+      {phase === "menu"                 && <MainMenu />}
+      {phase === "charselect"           && <CharacterSelect />}
+      {phase === "soulforge"            && <SoulForge />}
+      {phase === "labyrinth_charselect" && <LabyrinthCharSelect />}
+      {phase === "labyrinth"            && <LabyrinthScene />}
 
-      {(phase !== "menu" && phase !== "charselect" && phase !== "soulforge" && phase !== "labyrinth") && (
+      {(phase !== "menu"
+        && phase !== "charselect"
+        && phase !== "soulforge"
+        && phase !== "labyrinth"
+        && phase !== "labyrinth_charselect") && (
         <GameScene onRestart={handleRestart} />
       )}
 

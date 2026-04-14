@@ -38,6 +38,7 @@ export type GamePhase =
   | "levelup"
   | "gameover"
   | "trialvictory"
+  | "labyrinth_charselect"
   | "labyrinth";
 
 export interface EnemyUIState {
