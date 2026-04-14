@@ -71,7 +71,9 @@ import {
   type EnemyRuntime,
 } from "./LabyrinthEnemy";
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
-import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
+// LabyrinthPlayer3D temporarily disabled while we verify GeoCharacter
+// renders reliably on iOS — re-import alongside the JSX mount below.
+// import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
 import { LabyrinthCanvasErrorBoundary } from "./LabyrinthCanvasErrorBoundary";
 import { LabyrinthDebug } from "./LabyrinthDebug";
 import {
@@ -443,16 +445,15 @@ function LabyrinthWorld({
         <XPOrb3D key={orb.id} orb={orb} />
       ))}
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
-      {/* Guaranteed-visible baseline: the procedural PlayerMarker (purple
-          glowing cube + pulsing ring) is always mounted. If LabyrinthPlayer3D
-          renders successfully, the warrior model sits right on top of the
-          PlayerMarker — the ring shows through as an intentional-looking
-          "selected unit" indicator. If LabyrinthPlayer3D throws for any
-          reason (missing GameState field, GLB parse failure, etc.), the
-          error boundary swallows the exception with a null fallback and
-          PlayerMarker alone marks the player position. The player is never
-          invisible. */}
-      <PlayerMarker playerRef={playerRef} />
+      {/* Temporary geometric character — meshBasicMaterial only, depthWrite
+          off so nothing can occlude it, plus a vertical beacon. Replaces
+          the old PlayerMarker (which used StandardMaterial and was
+          invisible on iOS even after the lighting fix). LabyrinthPlayer3D
+          / warrior GLB are temporarily commented-out below; once we've
+          confirmed the GeoCharacter shows up reliably we can re-mount the
+          GLB on top and the GeoCharacter becomes the safety net. */}
+      <GeoCharacter playerRef={playerRef} />
+      {/*
       <LabyrinthCanvasErrorBoundary label="Player3D" fallback={null}>
         <LabyrinthPlayer3D
           charClass={charClass}
@@ -460,6 +461,7 @@ function LabyrinthWorld({
           attackStateRef={attackStateRef}
         />
       </LabyrinthCanvasErrorBoundary>
+      */}
       <CameraFollow playerRef={playerRef} />
       <MovementLoop
         playerRef={playerRef}
@@ -523,57 +525,91 @@ function PlayerTorch({ playerRef }: { playerRef: React.MutableRefObject<LabPlaye
   );
 }
 
-// ─── Player marker (placeholder cube — real class rendering comes later) ──────
+// ─── Player marker (temporary geometric stand-in) ────────────────────────────
+// The previous PlayerMarker used meshStandardMaterial for the body/head, which
+// required lighting to render visibly. On iOS Safari with the PBR direct-light
+// pipeline weakened by the (now-removed) shadow map, the marker rendered but
+// was effectively invisible. This rewrite uses ONLY meshBasicMaterial — which
+// ignores lights entirely and renders at the requested color regardless of
+// scene illumination — plus depthWrite={false} on each mesh so nothing in the
+// scene can occlude the marker, plus a vertical beacon column that's visible
+// from any camera angle. Looks "video-gamey" rather than rendered, on purpose:
+// the goal is "you cannot miss the player," not "matches the warrior model."
+// LabyrinthPlayer3D is temporarily disabled (see below) until we're sure the
+// GLB pipeline renders on iOS — re-enable when verified.
 
-function PlayerMarker({ playerRef }: { playerRef: React.MutableRefObject<LabPlayer> }) {
+function GeoCharacter({ playerRef }: { playerRef: React.MutableRefObject<LabPlayer> }) {
   const groupRef = useRef<THREE.Group>(null);
   const ringRef = useRef<THREE.Mesh>(null);
+  const beaconRef = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
     if (!groupRef.current) return;
     const p = playerRef.current;
     groupRef.current.position.set(p.x, 0, p.z);
     groupRef.current.rotation.y = p.angle;
-    // Pulse the ring so the player's position is obviously visible
+    const t = state.clock.elapsedTime;
     if (ringRef.current) {
-      const pulse = 1 + 0.18 * Math.sin(state.clock.elapsedTime * 3);
+      const pulse = 1 + 0.22 * Math.sin(t * 3);
       ringRef.current.scale.set(pulse, 1, pulse);
+    }
+    if (beaconRef.current) {
+      // Beacon column slowly pulses in opacity for a "lighthouse" feel.
+      const mat = beaconRef.current.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(t * 1.6));
     }
   });
 
   return (
     <group ref={groupRef}>
-      {/* Glowing ground ring under the player — pulsing indicator */}
-      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <ringGeometry args={[1.4, 1.8, 32]} />
-        <meshBasicMaterial color="#c080ff" transparent opacity={0.75} />
-      </mesh>
-      {/* Main body — taller + brighter emissive */}
-      <mesh position={[0, 1.2, 0]}>
-        <boxGeometry args={[1.3, 2.4, 1.3]} />
-        <meshStandardMaterial
-          color="#c080ff"
-          emissive="#9040e0"
-          emissiveIntensity={0.9}
-          roughness={0.4}
+      {/* Ground ring — pulsing purple disc under the character. */}
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
+        <ringGeometry args={[1.5, 2.0, 32]} />
+        <meshBasicMaterial
+          color="#e0a0ff"
+          transparent
+          opacity={0.95}
+          depthWrite={false}
+          side={THREE.DoubleSide}
         />
       </mesh>
-      {/* Head marker — small cube on top for orientation */}
-      <mesh position={[0, 2.7, 0]}>
-        <boxGeometry args={[0.7, 0.6, 0.7]} />
-        <meshStandardMaterial
-          color="#ffccff"
-          emissive="#ff88ff"
-          emissiveIntensity={0.6}
+      {/* Inner solid disc for extra contrast against the floor. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+        <circleGeometry args={[1.4, 24]} />
+        <meshBasicMaterial
+          color="#7030c0"
+          transparent
+          opacity={0.55}
+          depthWrite={false}
         />
       </mesh>
-      {/* Facing indicator — small cube in front so you can see direction */}
-      <mesh position={[0, 1.2, -0.9]}>
-        <boxGeometry args={[0.4, 0.4, 0.4]} />
-        <meshStandardMaterial
-          color="#ffffff"
-          emissive="#ffddff"
-          emissiveIntensity={0.8}
+      {/* Body — bright magenta cube. */}
+      <mesh position={[0, 1.4, 0]}>
+        <boxGeometry args={[1.6, 2.8, 1.6]} />
+        <meshBasicMaterial color="#ff60ff" depthWrite={false} />
+      </mesh>
+      {/* Head — yellow sphere on top so it pops against the body. */}
+      <mesh position={[0, 3.2, 0]}>
+        <sphereGeometry args={[0.55, 16, 12]} />
+        <meshBasicMaterial color="#ffe040" depthWrite={false} />
+      </mesh>
+      {/* Facing arrow — a forward-pointing white wedge so direction is
+          unmistakable even from a top-down camera. */}
+      <mesh position={[0, 1.4, -1.2]}>
+        <boxGeometry args={[0.6, 0.5, 0.7]} />
+        <meshBasicMaterial color="#ffffff" depthWrite={false} />
+      </mesh>
+      {/* Vertical beacon column — tall translucent pillar that extends way
+          above the maze ceiling so the player is locatable even if the
+          camera frame ever shifts. depthWrite=false + transparent so it
+          doesn't block the view of anything behind it. */}
+      <mesh ref={beaconRef} position={[0, 8, 0]}>
+        <cylinderGeometry args={[0.18, 0.18, 16, 12]} />
+        <meshBasicMaterial
+          color="#ff80ff"
+          transparent
+          opacity={0.5}
+          depthWrite={false}
         />
       </mesh>
     </group>
