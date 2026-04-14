@@ -37,7 +37,8 @@ export type GamePhase =
   | "paused"
   | "levelup"
   | "gameover"
-  | "trialvictory";
+  | "trialvictory"
+  | "labyrinth";
 
 export interface EnemyUIState {
   id: string;

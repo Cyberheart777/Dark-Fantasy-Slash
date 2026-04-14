@@ -85,6 +85,11 @@ export function MainMenu() {
               ⚔ BEGIN DESCENT
             </button>
 
+            <button style={styles.btnLabyrinth} onClick={click(() => { setTrialMode(false); setPhase("labyrinth"); })}>
+              🌀 THE LABYRINTH
+              <span style={styles.labyrinthSub}>Shrinking maze · survive the closing dark</span>
+            </button>
+
             {bossKilled ? (
               <button style={styles.btnTrial} onClick={click(handleTrial)}>
                 <span style={{ color: "#ffd700", fontSize: 16 }}>🏆</span>
@@ -337,6 +342,31 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 0 20px rgba(100,0,180,0.5)",
     fontFamily: "inherit",
     width: "100%",
+  },
+  btnLabyrinth: {
+    marginTop: 10,
+    padding: "13px 32px",
+    fontSize: 14,
+    fontWeight: "bold",
+    letterSpacing: 2,
+    color: "#aadfff",
+    background: "rgba(10,25,50,0.8)",
+    border: "1px solid rgba(60,140,220,0.5)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    width: "100%",
+    boxShadow: "0 0 14px rgba(40,120,200,0.25)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 2,
+  },
+  labyrinthSub: {
+    fontSize: 10,
+    color: "rgba(170,223,255,0.6)",
+    letterSpacing: 1,
+    fontWeight: "normal",
   },
   btnTrial: {
     marginTop: 10,
