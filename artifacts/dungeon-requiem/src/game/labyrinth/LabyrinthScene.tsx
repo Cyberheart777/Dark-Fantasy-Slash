@@ -110,6 +110,11 @@ import {
   type LabWarriorState,
 } from "./LabyrinthWarrior";
 import {
+  tickLabProjectiles,
+  type LabProjectile,
+} from "./LabyrinthProjectile";
+import { LabyrinthProjectiles3D } from "./LabyrinthProjectile3D";
+import {
   makeLabDashState,
   tickLabDashState,
   tryStartLabDash,
@@ -247,6 +252,11 @@ export function LabyrinthScene() {
   // Warrior-only passives state. Created unconditionally (cheap), but
   // the combat loop only invokes it when charClass === "warrior".
   const warriorStateRef = useRef<LabWarriorState>(makeLabWarriorState());
+  // Projectile pool shared between all projectile sources (traps,
+  // turret enemies, warden starburst, mage/rogue attacks). Ticked and
+  // collision-checked in CombatEnemyLoop; rendered via the main-game
+  // Projectile3D.
+  const projectilesRef = useRef<LabProjectile[]>([]);
   // Seed sharedRef with the progression's starting values so HUD reads
   // sensible defaults before the first tick runs.
   sharedRef.current.level = progressionRef.current.level;
@@ -298,6 +308,7 @@ export function LabyrinthScene() {
           progressionRef={progressionRef}
           xpOrbsRef={xpOrbsRef}
           warriorStateRef={warriorStateRef}
+          projectilesRef={projectilesRef}
           critChance={classDef.critChance}
           runStartMs={runStartMs}
         />
@@ -338,6 +349,7 @@ function LabyrinthWorld({
   progressionRef,
   xpOrbsRef,
   warriorStateRef,
+  projectilesRef,
   critChance,
   runStartMs,
 }: {
@@ -361,6 +373,7 @@ function LabyrinthWorld({
   progressionRef: React.MutableRefObject<LabProgressionState>;
   xpOrbsRef: React.MutableRefObject<XPOrb[]>;
   warriorStateRef: React.MutableRefObject<LabWarriorState>;
+  projectilesRef: React.MutableRefObject<LabProjectile[]>;
   critChance: number;
   runStartMs: React.MutableRefObject<number>;
 }) {
@@ -391,6 +404,10 @@ function LabyrinthWorld({
   // XP-orb list mirror. CombatEnemyLoop pushes on kill and evicts on
   // collection animation completion.
   const [xpOrbList, setXpOrbList] = useState<XPOrb[]>([]);
+  // Projectile list mirror — same pattern. Any projectile source (wall
+  // traps, turret enemies, warden starburst, player ranged attacks)
+  // feeds through the same pool.
+  const [projectileList, setProjectileList] = useState<LabProjectile[]>([]);
 
   return (
     <>
@@ -444,6 +461,10 @@ function LabyrinthWorld({
       {xpOrbList.map((orb) => (
         <XPOrb3D key={orb.id} orb={orb} />
       ))}
+      {/* Active projectiles — wall-trap beams, enemy turret shots,
+          warden starburst, mage orbs, rogue daggers. Uses the main
+          game's Projectile3D via a shim-cast in LabyrinthProjectiles3D. */}
+      <LabyrinthProjectiles3D projectiles={projectileList} />
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
       {/* Robot-man warrior — procedural humanoid built from unlit
           primitives. Walks, swings, dashes. Stays as the fallback once
@@ -484,11 +505,13 @@ function LabyrinthWorld({
         progressionRef={progressionRef}
         xpOrbsRef={xpOrbsRef}
         warriorStateRef={warriorStateRef}
+        projectilesRef={projectilesRef}
         critChance={critChance}
         charClass={charClass}
         onEnemiesChange={setEnemyList}
         onDeathFxChange={setDeathFxList}
         onXpOrbsChange={setXpOrbList}
+        onProjectilesChange={setProjectileList}
       />
       <ZoneTickLoop
         maze={maze}
@@ -935,11 +958,13 @@ function CombatEnemyLoop({
   progressionRef,
   xpOrbsRef,
   warriorStateRef,
+  projectilesRef,
   critChance,
   charClass,
   onEnemiesChange,
   onDeathFxChange,
   onXpOrbsChange,
+  onProjectilesChange,
 }: {
   maze: Maze;
   combatStats: LabCombatStats;
@@ -952,11 +977,13 @@ function CombatEnemyLoop({
   progressionRef: React.MutableRefObject<LabProgressionState>;
   xpOrbsRef: React.MutableRefObject<XPOrb[]>;
   warriorStateRef: React.MutableRefObject<LabWarriorState>;
+  projectilesRef: React.MutableRefObject<LabProjectile[]>;
   critChance: number;
   charClass: CharacterClass;
   onEnemiesChange: (enemies: EnemyRuntime[]) => void;
   onDeathFxChange: (fx: LabDeathFx[]) => void;
   onXpOrbsChange: (orbs: XPOrb[]) => void;
+  onProjectilesChange: (projs: LabProjectile[]) => void;
 }) {
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
   // Tracks the last death-fx list length we pushed to React state so we
@@ -964,6 +991,8 @@ function CombatEnemyLoop({
   const lastEmittedFxLen = useRef(0);
   // Same pattern for the XP-orb render mirror.
   const lastEmittedOrbLen = useRef(0);
+  // And for projectiles.
+  const lastEmittedProjLen = useRef(0);
 
   useFrame((_, delta) => {
     const shared = sharedRef.current;
@@ -1021,6 +1050,35 @@ function CombatEnemyLoop({
     for (const e of enemies) {
       updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum);
     }
+
+    // 3b) Projectiles — move, collide against walls/enemies/player.
+    //     Enemy-owned projectiles roll into dmgAccum so the player-death
+    //     handling below covers both melee and ranged hits in one path.
+    //     Player-owned projectiles damage enemies directly with on-kill
+    //     callbacks that spawn death FX + XP orbs + warrior Bloodforge.
+    tickLabProjectiles(projectilesRef.current, delta, {
+      playerX: p.x,
+      playerZ: p.z,
+      playerRadius: 0.7,
+      enemies,
+      enemyRadius: 1.0,
+      segments,
+      wallThickness: LABYRINTH_CONFIG.WALL_THICKNESS,
+      playerDamageAccum: dmgAccum,
+      onEnemyKilled: (e) => {
+        shared.killCount++;
+        audioManager.play("enemy_death");
+        spawnLabDeathFx(deathFxRef.current, e.x, e.z, "#ff3030");
+        spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
+        if (isWarrior) {
+          const gained = registerKill(warriorStateRef.current);
+          if (gained > 0) {
+            p.maxHp += gained;
+            p.hp = Math.min(p.maxHp, p.hp + gained);
+          }
+        }
+      },
+    });
 
     // 4) Apply enemy damage to the player. Play player_hurt whenever
     //    a hit actually lands, and player_death on the killing blow —
@@ -1091,6 +1149,15 @@ function CombatEnemyLoop({
     shared.xp = progressionRef.current.xp;
     shared.xpToNext = progressionRef.current.xpToNext;
     shared.totalXp = progressionRef.current.totalXp;
+
+    // 8) Projectile render-list sync. Same pattern as death FX / XP orbs:
+    //    only push to React state when the list length actually changes.
+    //    Mid-flight animation runs inside each Projectile3D's useFrame.
+    if (projectilesRef.current.length !== lastEmittedProjLen.current) {
+      lastEmittedProjLen.current = projectilesRef.current.length;
+      onProjectilesChange(projectilesRef.current.slice());
+    }
+
     // Emit to React only when the orb list membership actually changes
     // (spawn or eviction). The XPOrb3D components animate their own
     // collection via orb.collectTimer which we mutate in place.
