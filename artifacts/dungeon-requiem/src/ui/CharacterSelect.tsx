@@ -380,10 +380,16 @@ const S: Record<string, React.CSSProperties> = {
   },
   content: {
     position: "relative", zIndex: 2,
-    width: "100%", maxWidth: 660, margin: "0 auto",
+    width: "100%", maxWidth: 620,
+    // Left-aligned on desktop (not centered) so the background art —
+    // title text and character silhouettes — stays visible to the right
+    // of the menu. Falls back to centered on narrow viewports.
+    marginLeft: "max(16px, calc((100vw - 1400px) / 2))",
+    marginRight: "auto",
     height: "100vh",
     display: "flex", flexDirection: "column",
-    padding: "12px 16px 0", boxSizing: "border-box",
+    // Reduced top padding so the BACK button sits at the visual top.
+    padding: "6px 16px 0", boxSizing: "border-box",
   },
   header: {
     textAlign: "center", display: "flex", flexDirection: "column",
@@ -431,12 +437,15 @@ const S: Record<string, React.CSSProperties> = {
     transition: "border-color 0.15s, box-shadow 0.15s, background 0.15s",
   },
   racePortrait: {
-    width: 64, height: 64, borderRadius: 8, objectFit: "cover" as const,
-    filter: "drop-shadow(0 0 8px rgba(140,80,255,0.4))",
+    width: 84, height: 84, borderRadius: 10, objectFit: "cover" as const,
+    border: "1.5px solid rgba(160,100,220,0.45)",
+    boxShadow: "0 0 18px rgba(160,80,220,0.55), 0 0 36px rgba(120,40,180,0.3), inset 0 0 12px rgba(0,0,0,0.4)",
+    filter: "brightness(1.15) contrast(1.12) saturate(1.1)",
   },
   racePortraitLocked: {
-    width: 64, height: 64, borderRadius: 8, objectFit: "cover" as const,
-    opacity: 0.35, filter: "grayscale(1) brightness(0.4)",
+    width: 84, height: 84, borderRadius: 10, objectFit: "cover" as const,
+    border: "1.5px solid #2a1f3d",
+    opacity: 0.4, filter: "grayscale(1) brightness(0.5)",
   },
   // ─── Class cards (vertical, collapsed/expanded) ───────────────────────────
   cards: { display: "flex", flexDirection: "column", gap: 8, width: "100%" },
@@ -448,12 +457,15 @@ const S: Record<string, React.CSSProperties> = {
   },
   cardTop: { display: "flex", alignItems: "center", gap: 12 },
   portrait: {
-    width: 56, height: 56, borderRadius: 8, objectFit: "cover" as const, flexShrink: 0,
-    filter: "drop-shadow(0 0 8px rgba(140,80,255,0.4))",
+    width: 72, height: 72, borderRadius: 10, objectFit: "cover" as const, flexShrink: 0,
+    border: "1.5px solid rgba(160,100,220,0.45)",
+    boxShadow: "0 0 16px rgba(160,80,220,0.5), 0 0 32px rgba(120,40,180,0.25), inset 0 0 10px rgba(0,0,0,0.35)",
+    filter: "brightness(1.15) contrast(1.12) saturate(1.1)",
   },
   portraitLocked: {
-    width: 56, height: 56, borderRadius: 8, objectFit: "cover" as const, flexShrink: 0,
-    opacity: 0.35, filter: "grayscale(1) brightness(0.4)",
+    width: 72, height: 72, borderRadius: 10, objectFit: "cover" as const, flexShrink: 0,
+    border: "1.5px solid #2a1f3d",
+    opacity: 0.4, filter: "grayscale(1) brightness(0.5)",
   },
   cardTopText: { flex: 1, display: "flex", flexDirection: "column", gap: 2 },
   className: { fontSize: 15, fontWeight: 900, letterSpacing: 3, fontFamily: "monospace" },
