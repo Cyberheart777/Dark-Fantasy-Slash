@@ -81,6 +81,7 @@ import {
   type LabDashState,
 } from "./LabyrinthDash";
 import { CHARACTER_DATA, type CharacterClass } from "../../data/CharacterData";
+import { audioManager } from "../../audio/AudioManager";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
 
@@ -520,7 +521,9 @@ function MovementLoop({
         dirX = Math.sin(p.angle);
         dirZ = -Math.cos(p.angle);
       }
-      tryStartLabDash(dashState, dirX, dirZ, dashCooldownSec);
+      if (tryStartLabDash(dashState, dirX, dirZ, dashCooldownSec)) {
+        audioManager.play("dash");
+      }
     }
 
     // Select active velocity. During a dash, the player glides at
@@ -613,16 +616,23 @@ function CombatEnemyLoop({
     // 1) Attack timers
     tickAttackState(atk, delta);
 
-    // 2) Attack input → swing → hit-test
+    // 2) Attack input → swing → hit-test. SFX mirrors the main game's
+    //    warrior attack pipeline: swing start plays "attack_melee",
+    //    each enemy actually hit plays "enemy_death" on kill, otherwise
+    //    the hit sound is implicit in the weapon swing.
     const inputState = input.state;
     if (inputState.attack) {
       input.consumeAttack();
       if (tryStartSwing(atk, p.angle, combatStats)) {
+        audioManager.play("attack_melee");
         for (const e of enemies) {
           if (e.state === "dead") continue;
           if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange)) {
             const killed = damageEnemy(e, combatStats.damage);
-            if (killed) shared.killCount++;
+            if (killed) {
+              shared.killCount++;
+              audioManager.play("enemy_death");
+            }
           }
         }
       }
@@ -634,10 +644,18 @@ function CombatEnemyLoop({
       updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum);
     }
 
-    // 4) Apply enemy damage to the player.
+    // 4) Apply enemy damage to the player. Play player_hurt whenever
+    //    a hit actually lands, and player_death on the killing blow —
+    //    matches the main game's damage-feedback SFX timing.
     if (dmgAccum.value > 0) {
+      const wasAlive = p.hp > 0;
       p.hp = Math.max(0, p.hp - dmgAccum.value);
-      if (p.hp <= 0) shared.defeated = true;
+      if (p.hp <= 0) {
+        shared.defeated = true;
+        if (wasAlive) audioManager.play("player_death");
+      } else {
+        audioManager.play("player_hurt");
+      }
     }
 
     // 5) Evict fully-faded dead enemies. Only re-emit the array when
@@ -764,11 +782,15 @@ function ZoneTickLoop({
     // labyrinth-local progression and pass them in — the power-ups will
     // then scale shroud damage automatically via the same formula used
     // for enemy poison at GameScene.tsx:1026-1034.
+    const hpBeforePoison = p.hp;
     tickLabPoison(labPoisonRef.current, inside, delta, undefined);
     applyLabPoisonDamage(p, labPoisonRef.current, delta);
     shared.poisonStacks = labPoisonRef.current.stacks;
     shared.poisonDps = labPoisonRef.current.dps;
-    if (p.hp <= 0) shared.defeated = true;
+    if (p.hp <= 0 && hpBeforePoison > 0) {
+      shared.defeated = true;
+      audioManager.play("player_death");
+    }
 
     // ── Portal milestones ──────────────────────────────────────────────
     // Spawn a burst when elapsedSec crosses each milestone threshold.
