@@ -81,9 +81,7 @@ import {
   clearWardenState,
 } from "./LabyrinthWarden";
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
-// LabyrinthPlayer3D temporarily disabled while we verify GeoCharacter
-// renders reliably on iOS — re-import alongside the JSX mount below.
-// import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
+import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
 import { LabyrinthCanvasErrorBoundary } from "./LabyrinthCanvasErrorBoundary";
 import { LabyrinthDebug } from "./LabyrinthDebug";
 import {
@@ -537,15 +535,15 @@ function LabyrinthWorld({
       <LabyrinthProjectiles3D projectiles={projectileList} />
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
       {/* Robot-man warrior — procedural humanoid built from unlit
-          primitives. Walks, swings, dashes. Stays as the fallback once
-          the GLB is re-enabled: if WarriorMeshGLB succeeds it renders
-          on top; if anything crashes in the GLB pipeline, the robot-man
-          alone stays visible. */}
+          primitives. Always rendered as the always-visible safety net.
+          If LabyrinthPlayer3D (GLB warrior, or procedural mage/rogue)
+          succeeds, its mesh draws on top and the robot-man is hidden
+          behind it; if the GLB pipeline throws, the error boundary
+          swallows it and the robot-man alone stays visible. */}
       <GeoCharacter
         playerRef={playerRef}
         attackStateRef={attackStateRef}
       />
-      {/*
       <LabyrinthCanvasErrorBoundary label="Player3D" fallback={null}>
         <LabyrinthPlayer3D
           charClass={charClass}
@@ -553,7 +551,6 @@ function LabyrinthWorld({
           attackStateRef={attackStateRef}
         />
       </LabyrinthCanvasErrorBoundary>
-      */}
       <CameraFollow playerRef={playerRef} />
       <MovementLoop
         playerRef={playerRef}
