@@ -445,14 +445,15 @@ function LabyrinthWorld({
         <XPOrb3D key={orb.id} orb={orb} />
       ))}
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
-      {/* Temporary geometric character — meshBasicMaterial only, depthWrite
-          off so nothing can occlude it, plus a vertical beacon. Replaces
-          the old PlayerMarker (which used StandardMaterial and was
-          invisible on iOS even after the lighting fix). LabyrinthPlayer3D
-          / warrior GLB are temporarily commented-out below; once we've
-          confirmed the GeoCharacter shows up reliably we can re-mount the
-          GLB on top and the GeoCharacter becomes the safety net. */}
-      <GeoCharacter playerRef={playerRef} />
+      {/* Robot-man warrior — procedural humanoid built from unlit
+          primitives. Walks, swings, dashes. Stays as the fallback once
+          the GLB is re-enabled: if WarriorMeshGLB succeeds it renders
+          on top; if anything crashes in the GLB pipeline, the robot-man
+          alone stays visible. */}
+      <GeoCharacter
+        playerRef={playerRef}
+        attackStateRef={attackStateRef}
+      />
       {/*
       <LabyrinthCanvasErrorBoundary label="Player3D" fallback={null}>
         <LabyrinthPlayer3D
@@ -525,93 +526,256 @@ function PlayerTorch({ playerRef }: { playerRef: React.MutableRefObject<LabPlaye
   );
 }
 
-// ─── Player marker (temporary geometric stand-in) ────────────────────────────
-// The previous PlayerMarker used meshStandardMaterial for the body/head, which
-// required lighting to render visibly. On iOS Safari with the PBR direct-light
-// pipeline weakened by the (now-removed) shadow map, the marker rendered but
-// was effectively invisible. This rewrite uses ONLY meshBasicMaterial — which
-// ignores lights entirely and renders at the requested color regardless of
-// scene illumination — plus depthWrite={false} on each mesh so nothing in the
-// scene can occlude the marker, plus a vertical beacon column that's visible
-// from any camera angle. Looks "video-gamey" rather than rendered, on purpose:
-// the goal is "you cannot miss the player," not "matches the warrior model."
-// LabyrinthPlayer3D is temporarily disabled (see below) until we're sure the
-// GLB pipeline renders on iOS — re-enable when verified.
+// ─── Player marker (robot-man warrior — geometric fallback) ──────────────────
+// A humanoid warrior built entirely from meshBasicMaterial primitives so it's
+// visible on every GPU/browser regardless of lighting state. Anatomy mirrors
+// the main game's WarriorMeshAnimated (Player3D.tsx:177-278): torso, two legs,
+// two arms, head, cape, sword. Walk cycle swings arms + legs while moving;
+// swing triggers a one-shot weapon arc keyed off attackStateRef. depthWrite
+// is off on every part so nothing can occlude him.
 
-function GeoCharacter({ playerRef }: { playerRef: React.MutableRefObject<LabPlayer> }) {
+function GeoCharacter({
+  playerRef,
+  attackStateRef,
+}: {
+  playerRef: React.MutableRefObject<LabPlayer>;
+  attackStateRef: React.MutableRefObject<PlayerAttackState>;
+}) {
   const groupRef = useRef<THREE.Group>(null);
   const ringRef = useRef<THREE.Mesh>(null);
-  const beaconRef = useRef<THREE.Mesh>(null);
+  const bodyRef = useRef<THREE.Mesh>(null);
+  const leftArmRef = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const leftLegRef = useRef<THREE.Group>(null);
+  const rightLegRef = useRef<THREE.Group>(null);
+  const weaponRef = useRef<THREE.Group>(null);
+  const capeRef = useRef<THREE.Mesh>(null);
+  const t = useRef(0);
+  const lastX = useRef(0);
+  const lastZ = useRef(0);
+  const weaponSwing = useRef(0);
+  const lastSwingVisualSec = useRef(0);
 
-  useFrame((state) => {
+  useFrame((_, delta) => {
     if (!groupRef.current) return;
+    t.current += delta;
     const p = playerRef.current;
+    const atk = attackStateRef.current;
+    // Position + facing. +π because the mesh "front" is -Z (head wedge
+    // and sword orientation), matching WarriorMeshAnimated's convention.
     groupRef.current.position.set(p.x, 0, p.z);
-    groupRef.current.rotation.y = p.angle;
-    const t = state.clock.elapsedTime;
-    if (ringRef.current) {
-      const pulse = 1 + 0.22 * Math.sin(t * 3);
-      ringRef.current.scale.set(pulse, 1, pulse);
+    groupRef.current.rotation.y = p.angle + Math.PI;
+
+    const isMoving =
+      Math.abs(p.x - lastX.current) > 0.001 ||
+      Math.abs(p.z - lastZ.current) > 0.001;
+    lastX.current = p.x;
+    lastZ.current = p.z;
+
+    // Walk cycle — arms + legs counter-swing at 8 Hz while moving.
+    if (leftArmRef.current && rightArmRef.current && leftLegRef.current && rightLegRef.current) {
+      if (isMoving && !p.isDashing) {
+        const freq = 8;
+        const amp = 0.5;
+        const s = Math.sin(t.current * freq) * amp;
+        leftArmRef.current.rotation.x = s;
+        rightArmRef.current.rotation.x = -s;
+        leftLegRef.current.rotation.x = s;
+        rightLegRef.current.rotation.x = -s;
+      } else {
+        // Idle sway.
+        const idle = Math.sin(t.current * 1.5) * 0.06;
+        leftArmRef.current.rotation.x = idle;
+        rightArmRef.current.rotation.x = idle + 0.1;
+        leftLegRef.current.rotation.x = 0;
+        rightLegRef.current.rotation.x = 0;
+      }
     }
-    if (beaconRef.current) {
-      // Beacon column slowly pulses in opacity for a "lighthouse" feel.
-      const mat = beaconRef.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(t * 1.6));
+    // Torso bob.
+    if (bodyRef.current) {
+      bodyRef.current.position.y = 1.0 + Math.sin(t.current * 1.5) * 0.03;
+    }
+    // Weapon swing — keyed off the combat system's swingVisualSec
+    // going from 0 to non-zero. One-shot 0.2s arc.
+    if (lastSwingVisualSec.current <= 0 && atk.swingVisualSec > 0) {
+      weaponSwing.current = 1;
+    }
+    lastSwingVisualSec.current = atk.swingVisualSec;
+    if (weaponSwing.current > 0) {
+      weaponSwing.current = Math.max(0, weaponSwing.current - delta * 5);
+    }
+    if (weaponRef.current) {
+      const sw = weaponSwing.current;
+      if (sw > 0) {
+        const prog = 1 - sw;
+        weaponRef.current.rotation.x = prog * Math.PI * 1.4 - Math.PI * 0.5;
+        weaponRef.current.rotation.z = Math.sin(prog * Math.PI) * 0.5;
+      } else {
+        weaponRef.current.rotation.x = THREE.MathUtils.lerp(weaponRef.current.rotation.x, 0, 0.15);
+        weaponRef.current.rotation.z = THREE.MathUtils.lerp(weaponRef.current.rotation.z, 0, 0.15);
+      }
+    }
+    // Dash lean.
+    groupRef.current.rotation.x = THREE.MathUtils.lerp(
+      groupRef.current.rotation.x,
+      p.isDashing ? -0.25 : 0,
+      0.2,
+    );
+    // Cape flap.
+    if (capeRef.current) {
+      capeRef.current.rotation.x = Math.sin(t.current * 3) * 0.1;
+    }
+    // Ring pulse.
+    if (ringRef.current) {
+      const pulse = 1 + 0.18 * Math.sin(t.current * 3);
+      ringRef.current.scale.set(pulse, 1, pulse);
     }
   });
 
+  // Warrior palette. Brighter than the main game's steel-blue because
+  // meshBasicMaterial renders flat at the literal color (no shading),
+  // so values that read as "metal" under PBR look washed-out here.
+  const ARMOR = "#9fb6d6";   // light steel blue
+  const ARMOR_DARK = "#5a7090";
+  const SKIN = "#d0a878";
+  const CAPE = "#c01040";    // bright crimson
+  const SWORD = "#f0f0ff";
+  const SWORD_GLOW = "#88aaff";
+  const BELT = "#6a4a15";
+  const BOOT = "#2a1a0a";
+  const HELM = "#3a5070";
+  const EYE = "#ff2200";
+  const SCALE = 1.6; // bigger than main-game warrior so he's easy to spot
+
   return (
-    <group ref={groupRef}>
-      {/* Ground ring — pulsing purple disc under the character. */}
-      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
-        <ringGeometry args={[1.5, 2.0, 32]} />
+    <group ref={groupRef} scale={SCALE}>
+      {/* Pulsing ground ring — orientation indicator. */}
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+        <ringGeometry args={[1.1, 1.35, 32]} />
         <meshBasicMaterial
-          color="#e0a0ff"
+          color="#ff80a0"
           transparent
-          opacity={0.95}
+          opacity={0.85}
           depthWrite={false}
           side={THREE.DoubleSide}
         />
       </mesh>
-      {/* Inner solid disc for extra contrast against the floor. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-        <circleGeometry args={[1.4, 24]} />
-        <meshBasicMaterial
-          color="#7030c0"
-          transparent
-          opacity={0.55}
-          depthWrite={false}
-        />
+      {/* Legs */}
+      <group ref={leftLegRef} position={[-0.2, 0.5, 0]}>
+        <mesh>
+          <boxGeometry args={[0.22, 0.55, 0.22]} />
+          <meshBasicMaterial color={ARMOR} depthWrite={false} />
+        </mesh>
+        <mesh position={[0, -0.32, 0.05]}>
+          <boxGeometry args={[0.25, 0.18, 0.32]} />
+          <meshBasicMaterial color={BOOT} depthWrite={false} />
+        </mesh>
+      </group>
+      <group ref={rightLegRef} position={[0.2, 0.5, 0]}>
+        <mesh>
+          <boxGeometry args={[0.22, 0.55, 0.22]} />
+          <meshBasicMaterial color={ARMOR} depthWrite={false} />
+        </mesh>
+        <mesh position={[0, -0.32, 0.05]}>
+          <boxGeometry args={[0.25, 0.18, 0.32]} />
+          <meshBasicMaterial color={BOOT} depthWrite={false} />
+        </mesh>
+      </group>
+      {/* Torso */}
+      <mesh ref={bodyRef} position={[0, 1.0, 0]}>
+        <boxGeometry args={[0.65, 0.70, 0.38]} />
+        <meshBasicMaterial color={ARMOR} depthWrite={false} />
       </mesh>
-      {/* Body — bright magenta cube. */}
-      <mesh position={[0, 1.4, 0]}>
-        <boxGeometry args={[1.6, 2.8, 1.6]} />
-        <meshBasicMaterial color="#ff60ff" depthWrite={false} />
+      {/* Belt */}
+      <mesh position={[0, 0.7, 0]}>
+        <boxGeometry args={[0.68, 0.12, 0.40]} />
+        <meshBasicMaterial color={BELT} depthWrite={false} />
       </mesh>
-      {/* Head — yellow sphere on top so it pops against the body. */}
-      <mesh position={[0, 3.2, 0]}>
-        <sphereGeometry args={[0.55, 16, 12]} />
-        <meshBasicMaterial color="#ffe040" depthWrite={false} />
+      {/* Shoulder pauldrons */}
+      <mesh position={[-0.42, 1.22, 0]}>
+        <boxGeometry args={[0.22, 0.18, 0.38]} />
+        <meshBasicMaterial color={ARMOR_DARK} depthWrite={false} />
       </mesh>
-      {/* Facing arrow — a forward-pointing white wedge so direction is
-          unmistakable even from a top-down camera. */}
-      <mesh position={[0, 1.4, -1.2]}>
-        <boxGeometry args={[0.6, 0.5, 0.7]} />
-        <meshBasicMaterial color="#ffffff" depthWrite={false} />
+      <mesh position={[0.42, 1.22, 0]}>
+        <boxGeometry args={[0.22, 0.18, 0.38]} />
+        <meshBasicMaterial color={ARMOR_DARK} depthWrite={false} />
       </mesh>
-      {/* Vertical beacon column — tall translucent pillar that extends way
-          above the maze ceiling so the player is locatable even if the
-          camera frame ever shifts. depthWrite=false + transparent so it
-          doesn't block the view of anything behind it. */}
-      <mesh ref={beaconRef} position={[0, 8, 0]}>
-        <cylinderGeometry args={[0.18, 0.18, 16, 12]} />
-        <meshBasicMaterial
-          color="#ff80ff"
-          transparent
-          opacity={0.5}
-          depthWrite={false}
-        />
+      {/* Cape */}
+      <mesh ref={capeRef} position={[0, 1.0, -0.25]}>
+        <boxGeometry args={[0.6, 0.8, 0.06]} />
+        <meshBasicMaterial color={CAPE} depthWrite={false} />
       </mesh>
+      {/* Left arm */}
+      <group ref={leftArmRef} position={[-0.45, 1.15, 0]}>
+        <mesh position={[0, -0.2, 0]}>
+          <boxGeometry args={[0.2, 0.45, 0.2]} />
+          <meshBasicMaterial color={ARMOR} depthWrite={false} />
+        </mesh>
+        <mesh position={[0, -0.47, 0]}>
+          <boxGeometry args={[0.22, 0.18, 0.22]} />
+          <meshBasicMaterial color={ARMOR_DARK} depthWrite={false} />
+        </mesh>
+        {/* Shield — strapped to left arm */}
+        <mesh position={[-0.08, -0.3, 0.15]}>
+          <boxGeometry args={[0.08, 0.4, 0.3]} />
+          <meshBasicMaterial color={ARMOR_DARK} depthWrite={false} />
+        </mesh>
+      </group>
+      {/* Right arm — holds the sword */}
+      <group ref={rightArmRef} position={[0.45, 1.15, 0]}>
+        <mesh position={[0, -0.2, 0]}>
+          <boxGeometry args={[0.2, 0.45, 0.2]} />
+          <meshBasicMaterial color={ARMOR} depthWrite={false} />
+        </mesh>
+        <mesh position={[0, -0.47, 0]}>
+          <boxGeometry args={[0.22, 0.18, 0.22]} />
+          <meshBasicMaterial color={ARMOR_DARK} depthWrite={false} />
+        </mesh>
+        <group ref={weaponRef} position={[0.1, -0.45, 0]}>
+          {/* Blade */}
+          <mesh position={[0, -0.5, 0]}>
+            <boxGeometry args={[0.08, 1.0, 0.04]} />
+            <meshBasicMaterial color={SWORD} depthWrite={false} />
+          </mesh>
+          {/* Sword glow halo — translucent, always-visible */}
+          <mesh position={[0, -0.5, 0]}>
+            <boxGeometry args={[0.18, 1.1, 0.14]} />
+            <meshBasicMaterial
+              color={SWORD_GLOW}
+              transparent
+              opacity={0.35}
+              depthWrite={false}
+            />
+          </mesh>
+          {/* Crossguard */}
+          <mesh position={[0, -0.02, 0]}>
+            <boxGeometry args={[0.28, 0.06, 0.08]} />
+            <meshBasicMaterial color="#c0a020" depthWrite={false} />
+          </mesh>
+        </group>
+      </group>
+      {/* Head + helmet */}
+      <group position={[0, 1.65, 0]}>
+        <mesh>
+          <boxGeometry args={[0.42, 0.42, 0.38]} />
+          <meshBasicMaterial color={SKIN} depthWrite={false} />
+        </mesh>
+        {/* Helmet top */}
+        <mesh position={[0, 0.2, 0]}>
+          <boxGeometry args={[0.46, 0.28, 0.42]} />
+          <meshBasicMaterial color={HELM} depthWrite={false} />
+        </mesh>
+        {/* Eye visor slit */}
+        <mesh position={[0, 0.12, 0.21]}>
+          <boxGeometry args={[0.3, 0.05, 0.02]} />
+          <meshBasicMaterial color={EYE} depthWrite={false} />
+        </mesh>
+        {/* Helmet crest — red plume running front-to-back */}
+        <mesh position={[0, 0.4, 0]}>
+          <boxGeometry args={[0.1, 0.2, 0.35]} />
+          <meshBasicMaterial color={CAPE} depthWrite={false} />
+        </mesh>
+      </group>
     </group>
   );
 }
