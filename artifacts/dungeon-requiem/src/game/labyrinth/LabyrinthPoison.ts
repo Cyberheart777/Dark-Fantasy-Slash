@@ -101,3 +101,18 @@ export function applyLabPoisonDamage(
   if (state.stacks <= 0 || state.dps <= 0) return;
   player.hp = Math.max(0, player.hp - state.stacks * state.dps * delta);
 }
+
+/** Inject poison stacks from an external source (e.g. a trapped chest
+ *  exploding on the player). Respects the max-stacks cap and sets the
+ *  dps baseline if not yet initialised. Does not affect the falloff
+ *  timer — the player's time-in-safe starts counting anew only when
+ *  they re-enter the safe zone. */
+export function addLabPoisonStacks(
+  state: LabPoisonState,
+  amount: number,
+  stats?: LabPoisonStats,
+): void {
+  state.stacks = Math.min(LAB_POISON_MAX_STACKS, state.stacks + amount);
+  if (state.dps <= 0) state.dps = computeShroudPerStackDps(stats);
+  state.timeInSafeSec = 0;
+}

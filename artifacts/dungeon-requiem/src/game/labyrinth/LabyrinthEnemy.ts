@@ -31,7 +31,7 @@ import {
 } from "./LabyrinthMaze";
 import { spawnLabProjectile, type LabProjectile } from "./LabyrinthProjectile";
 
-export type EnemyKind = "corridor_guardian" | "trap_spawner";
+export type EnemyKind = "corridor_guardian" | "trap_spawner" | "mimic";
 
 export type EnemyAiState = "patrol" | "chase" | "attack" | "dead";
 
@@ -89,6 +89,22 @@ const TRAP_SPAWNER_PROJECTILE_DAMAGE = 15;
 const TRAP_SPAWNER_PROJECTILE_SPEED = 14;
 const TRAP_SPAWNER_PROJECTILE_LIFETIME = TRAP_SPAWNER_RANGE / 14 + 0.2;
 const TRAP_SPAWNER_COLLISION_RADIUS = 0.8;
+
+// ─── Mimic tuning ────────────────────────────────────────────────────────────
+// Revealed chests turn into mimics that chase + melee. Faster than guardians
+// (4.5 vs 4.2) and hit harder (18 vs 10) to make the surprise hurt, but
+// lower HP (60 vs 60 — matching guardian for now; tweak if they feel too
+// tanky). Share the guardian patrol/chase/attack AI exactly — they're just
+// a guardian re-skinned with hotter numbers.
+
+export const MIMIC_HP = 60;
+const MIMIC_SPEED = 4.5;
+const MIMIC_DETECTION = LABYRINTH_CONFIG.CELL_SIZE * 3;
+const MIMIC_LEASH = LABYRINTH_CONFIG.CELL_SIZE * 6;  // more tenacious than guardians
+const MIMIC_ATTACK_RANGE = 1.9;
+const MIMIC_ATTACK_DAMAGE = 18;
+const MIMIC_ATTACK_COOLDOWN = 1.0;  // swings slightly faster than guardian (1.2)
+const MIMIC_COLLISION_RADIUS = 0.75;
 
 /** After death, how long the husk lingers before being evicted. */
 export const ENEMY_DEATH_FADE_SEC = 0.6;
@@ -151,6 +167,32 @@ export function spawnCorridorGuardians(
       fireTimer: 0,
     };
   });
+}
+
+let mimicIdCounter = 0;
+/** Create a mimic enemy at the given world position. Called by the
+ *  chest system when a mimic chest is triggered — the chest vanishes
+ *  and this enemy takes its place. Starts in `chase` so it comes
+ *  straight at the player who just poked it. */
+export function makeMimicEnemy(x: number, z: number): EnemyRuntime {
+  return {
+    id: `mimic-${mimicIdCounter++}`,
+    kind: "mimic",
+    x, z,
+    angle: 0,
+    hp: MIMIC_HP,
+    maxHp: MIMIC_HP,
+    state: "chase",
+    aiTimer: 0,
+    attackCooldown: 0,
+    deathFadeSec: 0,
+    hitFlashTimer: 0,
+    patrolTargetX: null,
+    patrolTargetZ: null,
+    lastMoveX: 0,
+    lastMoveZ: 0,
+    fireTimer: 0,
+  };
 }
 
 /**
@@ -231,13 +273,19 @@ export function updateEnemy(
     return;
   }
 
-  // Dispatch on enemy kind. Corridor Guardian runs the full patrol/chase/
-  // attack state machine below; Trap Spawner is stationary-turret only.
+  // Dispatch on enemy kind. Corridor Guardian + Mimic share the full
+  // patrol/chase/attack state machine below (with per-kind tuning);
+  // Trap Spawner is stationary-turret only.
   if (enemy.kind === "trap_spawner") {
     updateTrapSpawner(enemy, playerX, playerZ, segments, delta, projectiles);
     if (enemy.hitFlashTimer > 0) enemy.hitFlashTimer = Math.max(0, enemy.hitFlashTimer - delta);
     return;
   }
+
+  // Per-kind tuning for the shared chase-melee AI.
+  const tuning = enemy.kind === "mimic"
+    ? { speed: MIMIC_SPEED, detect: MIMIC_DETECTION, leash: MIMIC_LEASH, range: MIMIC_ATTACK_RANGE, damage: MIMIC_ATTACK_DAMAGE, cd: MIMIC_ATTACK_COOLDOWN, collR: MIMIC_COLLISION_RADIUS }
+    : { speed: GUARDIAN_SPEED, detect: GUARDIAN_DETECTION, leash: GUARDIAN_LEASH, range: GUARDIAN_ATTACK_RANGE, damage: GUARDIAN_ATTACK_DAMAGE, cd: GUARDIAN_ATTACK_COOLDOWN, collR: GUARDIAN_COLLISION_RADIUS };
 
   const dx = playerX - enemy.x;
   const dz = playerZ - enemy.z;
@@ -247,19 +295,19 @@ export function updateEnemy(
   // State transitions
   switch (enemy.state) {
     case "patrol":
-      if (dist < GUARDIAN_DETECTION) enemy.state = "chase";
+      if (dist < tuning.detect) enemy.state = "chase";
       break;
     case "chase":
-      if (dist > GUARDIAN_LEASH) {
+      if (dist > tuning.leash) {
         enemy.state = "patrol";
         enemy.patrolTargetX = null;
         enemy.patrolTargetZ = null;
-      } else if (dist <= GUARDIAN_ATTACK_RANGE) {
+      } else if (dist <= tuning.range) {
         enemy.state = "attack";
       }
       break;
     case "attack":
-      if (dist > GUARDIAN_ATTACK_RANGE + 0.4) enemy.state = "chase";
+      if (dist > tuning.range + 0.4) enemy.state = "chase";
       break;
   }
 
@@ -297,8 +345,8 @@ export function updateEnemy(
   } else if (enemy.state === "attack") {
     // Face the player and swing on cooldown
     if (enemy.attackCooldown <= 0) {
-      playerDamage.value += GUARDIAN_ATTACK_DAMAGE;
-      enemy.attackCooldown = GUARDIAN_ATTACK_COOLDOWN;
+      playerDamage.value += tuning.damage;
+      enemy.attackCooldown = tuning.cd;
     }
   }
 
@@ -320,12 +368,12 @@ export function updateEnemy(
   if (moveLen > 0.0001) {
     const nx = desiredDx / moveLen;
     const nz = desiredDz / moveLen;
-    const stepX = nx * GUARDIAN_SPEED * delta;
-    const stepZ = nz * GUARDIAN_SPEED * delta;
+    const stepX = nx * tuning.speed * delta;
+    const stepZ = nz * tuning.speed * delta;
     const nextX = enemy.x + stepX;
     const nextZ = enemy.z + stepZ;
-    if (!collidesWithAnyWallLocal(nextX, enemy.z, GUARDIAN_COLLISION_RADIUS, segments)) enemy.x = nextX;
-    if (!collidesWithAnyWallLocal(enemy.x, nextZ, GUARDIAN_COLLISION_RADIUS, segments)) enemy.z = nextZ;
+    if (!collidesWithAnyWallLocal(nextX, enemy.z, tuning.collR, segments)) enemy.x = nextX;
+    if (!collidesWithAnyWallLocal(enemy.x, nextZ, tuning.collR, segments)) enemy.z = nextZ;
     // Face the direction of travel (same atan2 convention as the player)
     enemy.angle = Math.atan2(nx, -nz);
     enemy.lastMoveX = nx;
@@ -447,6 +495,7 @@ export function enemyCollisionRadius(kind: EnemyKind): number {
   switch (kind) {
     case "trap_spawner": return TRAP_SPAWNER_COLLISION_RADIUS;
     case "corridor_guardian": return GUARDIAN_COLLISION_RADIUS;
+    case "mimic": return MIMIC_COLLISION_RADIUS;
   }
 }
 

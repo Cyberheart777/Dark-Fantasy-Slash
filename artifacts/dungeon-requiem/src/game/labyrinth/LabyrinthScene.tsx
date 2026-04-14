@@ -122,6 +122,13 @@ import {
 } from "./LabyrinthTrap";
 import { LabyrinthTraps3D } from "./LabyrinthTrap3D";
 import {
+  spawnLabChests,
+  tickLabChests,
+  type LabChest,
+} from "./LabyrinthChest";
+import { LabyrinthChests3D } from "./LabyrinthChest3D";
+import { addLabPoisonStacks } from "./LabyrinthPoison";
+import {
   makeLabDashState,
   tickLabDashState,
   tryStartLabDash,
@@ -272,6 +279,12 @@ export function LabyrinthScene() {
   if (trapsRef.current.length === 0) {
     trapsRef.current = spawnLabTraps(maze, LABYRINTH_CONFIG.WALL_TRAP_COUNT);
   }
+  // Loot chests — treasure (60%), trapped (25%), mimic (15%). Each
+  // consumed chest is marked state="consumed" and evicted lazily.
+  const chestsRef = useRef<LabChest[]>([]);
+  if (chestsRef.current.length === 0) {
+    chestsRef.current = spawnLabChests(maze, LABYRINTH_CONFIG.LOOT_CHEST_COUNT);
+  }
   // Seed sharedRef with the progression's starting values so HUD reads
   // sensible defaults before the first tick runs.
   sharedRef.current.level = progressionRef.current.level;
@@ -330,6 +343,7 @@ export function LabyrinthScene() {
           warriorStateRef={warriorStateRef}
           projectilesRef={projectilesRef}
           trapsRef={trapsRef}
+          chestsRef={chestsRef}
           critChance={classDef.critChance}
           runStartMs={runStartMs}
         />
@@ -372,6 +386,7 @@ function LabyrinthWorld({
   warriorStateRef,
   projectilesRef,
   trapsRef,
+  chestsRef,
   critChance,
   runStartMs,
 }: {
@@ -397,6 +412,7 @@ function LabyrinthWorld({
   warriorStateRef: React.MutableRefObject<LabWarriorState>;
   projectilesRef: React.MutableRefObject<LabProjectile[]>;
   trapsRef: React.MutableRefObject<LabTrap[]>;
+  chestsRef: React.MutableRefObject<LabChest[]>;
   critChance: number;
   runStartMs: React.MutableRefObject<number>;
 }) {
@@ -431,6 +447,10 @@ function LabyrinthWorld({
   // traps, turret enemies, warden starburst, player ranged attacks)
   // feeds through the same pool.
   const [projectileList, setProjectileList] = useState<LabProjectile[]>([]);
+  // Live chest list mirror. Chests are consumed exactly once; the render
+  // list filters out consumed chests so they visually disappear after
+  // their reveal animation finishes.
+  const [chestList, setChestList] = useState<LabChest[]>(() => chestsRef.current.slice());
 
   return (
     <>
@@ -530,16 +550,23 @@ function LabyrinthWorld({
         warriorStateRef={warriorStateRef}
         projectilesRef={projectilesRef}
         trapsRef={trapsRef}
+        chestsRef={chestsRef}
+        labPoisonRef={labPoisonRef}
+        groundFxRef={groundFxRef}
         critChance={critChance}
         charClass={charClass}
         onEnemiesChange={setEnemyList}
         onDeathFxChange={setDeathFxList}
         onXpOrbsChange={setXpOrbList}
         onProjectilesChange={setProjectileList}
+        onChestsChange={setChestList}
       />
       {/* Trap emitter visuals — small pulsing cubes on each anchor.
           The actual projectile is drawn by LabyrinthProjectiles3D. */}
       <LabyrinthTraps3D traps={trapsRef.current} />
+      {/* Loot chests — treasure / trapped / mimic. Consumed chests
+          filter out of the render list after their reveal plays. */}
+      <LabyrinthChests3D chests={chestList.filter((c) => c.state !== "consumed")} />
       <ZoneTickLoop
         maze={maze}
         playerRef={playerRef}
@@ -987,12 +1014,16 @@ function CombatEnemyLoop({
   warriorStateRef,
   projectilesRef,
   trapsRef,
+  chestsRef,
+  labPoisonRef,
+  groundFxRef,
   critChance,
   charClass,
   onEnemiesChange,
   onDeathFxChange,
   onXpOrbsChange,
   onProjectilesChange,
+  onChestsChange,
 }: {
   maze: Maze;
   combatStats: LabCombatStats;
@@ -1007,12 +1038,16 @@ function CombatEnemyLoop({
   warriorStateRef: React.MutableRefObject<LabWarriorState>;
   projectilesRef: React.MutableRefObject<LabProjectile[]>;
   trapsRef: React.MutableRefObject<LabTrap[]>;
+  chestsRef: React.MutableRefObject<LabChest[]>;
+  labPoisonRef: React.MutableRefObject<LabPoisonState>;
+  groundFxRef: React.MutableRefObject<LabGroundFx[]>;
   critChance: number;
   charClass: CharacterClass;
   onEnemiesChange: (enemies: EnemyRuntime[]) => void;
   onDeathFxChange: (fx: LabDeathFx[]) => void;
   onXpOrbsChange: (orbs: XPOrb[]) => void;
   onProjectilesChange: (projs: LabProjectile[]) => void;
+  onChestsChange: (chests: LabChest[]) => void;
 }) {
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
   // Tracks the last death-fx list length we pushed to React state so we
@@ -1186,6 +1221,42 @@ function CombatEnemyLoop({
     shared.xp = progressionRef.current.xp;
     shared.xpToNext = progressionRef.current.xpToNext;
     shared.totalXp = progressionRef.current.totalXp;
+
+    // 7b) Chest proximity + reveal tick. May spawn XP orbs (treasure),
+    //     push to groundFxRef (trapped — poison pool), or push to
+    //     enemies (mimic reveal). After the reveal animation the
+    //     chest's state flips to "consumed" and the render list
+    //     filters it out. Track the enemy-list length BEFORE ticking
+    //     so we can detect and emit a fresh mimic spawn this frame
+    //     (the main enemy-eviction path can't see spawns, only
+    //     evictions).
+    const enemiesBeforeChests = enemiesRef.current.length;
+    const chestTick = tickLabChests(
+      chestsRef.current,
+      p.x,
+      p.z,
+      delta,
+      {
+        xpOrbs: xpOrbsRef.current,
+        groundFx: groundFxRef.current,
+        enemies: enemiesRef.current,
+        playerHeal: (amount) => {
+          p.hp = Math.min(p.maxHp, p.hp + amount);
+        },
+        playerPoison: (stacks) => {
+          addLabPoisonStacks(labPoisonRef.current, stacks, undefined);
+        },
+        playAudio: (key) => audioManager.play(key),
+      },
+    );
+    if (chestTick.changed) {
+      onChestsChange(chestsRef.current.slice());
+    }
+    if (enemiesRef.current.length > enemiesBeforeChests) {
+      // A mimic appeared — refresh the enemy render list.
+      onEnemiesChange(enemiesRef.current.slice());
+      shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
+    }
 
     // 8) Projectile render-list sync. Same pattern as death FX / XP orbs:
     //    only push to React state when the list length actually changes.

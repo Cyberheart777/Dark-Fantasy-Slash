@@ -172,6 +172,7 @@ export function enemyTypeForKind(kind: LabEnemy["kind"]): string {
   switch (kind) {
     case "corridor_guardian": return "elite";
     case "trap_spawner": return "wraith";
+    case "mimic": return "scuttler";
     // Future mappings:
     //   shadow_stalker → "scuttler"
     //   warden         → "boss"
@@ -191,6 +192,8 @@ function visualsForKind(kind: LabEnemy["kind"]): {
       return { scale: 1.0, color: "#8b0000", emissive: "#300000" };
     case "trap_spawner":
       return { scale: 0.85, color: "#6020a0", emissive: "#40108c" };
+    case "mimic":
+      return { scale: 1.05, color: "#b07040", emissive: "#703018" };
   }
 }
 
