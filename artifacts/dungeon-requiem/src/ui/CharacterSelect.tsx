@@ -380,16 +380,12 @@ const S: Record<string, React.CSSProperties> = {
   },
   content: {
     position: "relative", zIndex: 2,
-    width: "100%", maxWidth: 620,
-    // Left-aligned on desktop (not centered) so the background art —
-    // title text and character silhouettes — stays visible to the right
-    // of the menu. Falls back to centered on narrow viewports.
-    marginLeft: "max(16px, calc((100vw - 1400px) / 2))",
-    marginRight: "auto",
+    width: "100%", maxWidth: 660, margin: "0 auto",
     height: "100vh",
     display: "flex", flexDirection: "column",
-    // Reduced top padding so the BACK button sits at the visual top.
-    padding: "6px 16px 0", boxSizing: "border-box",
+    // Push content down ~2 inches so it sits below the title art and
+    // gives the background composition room to breathe at the top.
+    padding: "192px 16px 0", boxSizing: "border-box",
   },
   header: {
     textAlign: "center", display: "flex", flexDirection: "column",
