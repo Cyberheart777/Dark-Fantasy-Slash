@@ -73,6 +73,7 @@ import {
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
 import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
 import { LabyrinthCanvasErrorBoundary } from "./LabyrinthCanvasErrorBoundary";
+import { LabyrinthDebug } from "./LabyrinthDebug";
 import { CHARACTER_DATA, type CharacterClass } from "../../data/CharacterData";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
@@ -213,6 +214,11 @@ export function LabyrinthScene() {
         sharedRef={sharedRef}
       />
       <LabyrinthMobileControls inputRef={inputRef} />
+      <LabyrinthDebug
+        playerRef={playerRef}
+        sharedRef={sharedRef}
+        attackStateRef={attackStateRef}
+      />
     </div>
   );
 }
@@ -284,15 +290,17 @@ function LabyrinthWorld({
         <LabyrinthEnemies3D enemies={enemyList} />
       </LabyrinthCanvasErrorBoundary>
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
-      {/* Player model via shim → Player3D. If the shim or Player3D throws
-          for any reason (missing GameState field, GLB fetch failure the
-          Suspense/ErrorBoundary inside Player3D didn't catch, etc.), we
-          fall back to the procedural PlayerMarker so the player is
-          always visible. */}
-      <LabyrinthCanvasErrorBoundary
-        label="Player3D"
-        fallback={<PlayerMarker playerRef={playerRef} />}
-      >
+      {/* Guaranteed-visible baseline: the procedural PlayerMarker (purple
+          glowing cube + pulsing ring) is always mounted. If LabyrinthPlayer3D
+          renders successfully, the warrior model sits right on top of the
+          PlayerMarker — the ring shows through as an intentional-looking
+          "selected unit" indicator. If LabyrinthPlayer3D throws for any
+          reason (missing GameState field, GLB parse failure, etc.), the
+          error boundary swallows the exception with a null fallback and
+          PlayerMarker alone marks the player position. The player is never
+          invisible. */}
+      <PlayerMarker playerRef={playerRef} />
+      <LabyrinthCanvasErrorBoundary label="Player3D" fallback={null}>
         <LabyrinthPlayer3D
           charClass={charClass}
           playerRef={playerRef}

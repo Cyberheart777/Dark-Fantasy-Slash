@@ -88,9 +88,14 @@ export function createPlayerShim(charClass: CharacterClass): GameState {
     lastAttackTime: 0,
     lastX: 0, lastZ: 0,
   };
-  // The shim is a GameState-shaped minimum: Player3D only reads
-  // `gs.current.charClass` and `gs.current.player`, so other fields can
-  // safely be empty arrays / zero. Cast keeps the TS compiler happy.
+  // Fully-populated GameState-shaped shim. Player3D today only reads
+  // `gs.current.charClass` and `gs.current.player`, but populating every
+  // primitive/array field eliminates any "undefined property access"
+  // failure mode — if a future Player3D update starts reading any of
+  // these fields, it'll see a safe default instead of throwing. Only
+  // `progression` and `input` are left null (those are non-trivial
+  // object instances we'd have to construct); if Player3D ever reads
+  // them, add minimal stubs here. Cast stays because of those two nulls.
   return {
     player,
     enemies: [],
@@ -101,10 +106,35 @@ export function createPlayerShim(charClass: CharacterClass): GameState {
     score: 0,
     kills: 0,
     survivalTime: 0,
+    wave: 0,
+    spawnTimer: 0,
+    waveTimer: 0,
+    spawnInterval: 0,
     charClass,
-    // Other GameState fields may exist but Player3D doesn't touch them.
-    // Cast through `unknown` because we intentionally don't populate the
-    // full surface area.
+    progression: null,
+    input: null,
+    running: true,
+    bossAlive: false,
+    bossId: null,
+    goblinWaveSpawned: 0,
+    nemesisSpawned: false,
+    nemesisId: null,
+    trialMode: false,
+    trialChampionDefeated: false,
+    difficultyHpMult: 1,
+    difficultyDmgMult: 1,
+    difficultySpeedMult: 1,
+    difficultyShardMult: 1,
+    difficultyGearMult: 1,
+    highestBossWaveCleared: 0,
+    gearDrops: [],
+    equippedGear: { weapon: null, armor: null, trinket: null },
+    inventory: [],
+    shakeTimer: 0,
+    shakeAmp: 0,
+    shakeDur: 0,
+    freezeUntil: 0,
+    deathFx: [],
   } as unknown as GameState;
 }
 
@@ -113,6 +143,7 @@ export function updatePlayerShim(
   source: LabPlayerVisualSource,
   attack: PlayerAttackState,
   prevSwingVisualSec: { value: number },
+  isDashing: boolean = false,
 ): void {
   const p = shim.player;
   p.x = source.x;
@@ -128,7 +159,10 @@ export function updatePlayerShim(
     p.attackAngle = attack.swingAngle;
   }
   prevSwingVisualSec.value = attack.swingVisualSec;
-  // Labyrinth doesn't use dash or invulnerability yet — leave as defaults.
+  // Dash-active flag drives the warrior "lean forward" animation in
+  // WarriorMeshAnimated (Player3D.tsx:201). Invulnerability isn't wired
+  // yet — leave as default.
+  p.isDashing = isDashing;
 }
 
 // ─── Enemy shim ──────────────────────────────────────────────────────────────
