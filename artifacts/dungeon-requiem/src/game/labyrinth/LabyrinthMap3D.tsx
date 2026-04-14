@@ -87,6 +87,12 @@ function Walls({ segments }: { segments: ReturnType<typeof extractWallSegments> 
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const wallH = LABYRINTH_CONFIG.WALL_HEIGHT;
   const wallT = LABYRINTH_CONFIG.WALL_THICKNESS;
+  // Wall bottoms sit just above the floor (y=0) and the zone overlay
+  // planes (y=0.008, y=0.011 in LabyrinthZone3D). With the tilted
+  // camera, coplanar geometry caused visible flicker along the wall
+  // bases — lifting the walls 0.05 units kills the z-fight without
+  // being noticeable on screen.
+  const WALL_LIFT = 0.05;
 
   // Update instance transforms whenever segments change
   useEffect(() => {
@@ -96,7 +102,7 @@ function Walls({ segments }: { segments: ReturnType<typeof extractWallSegments> 
 
     for (let i = 0; i < segments.length; i++) {
       const s = segments[i];
-      dummy.position.set(s.cx, wallH / 2, s.cz);
+      dummy.position.set(s.cx, wallH / 2 + WALL_LIFT, s.cz);
       dummy.rotation.set(0, 0, 0);
       if (s.orient === "h") {
         dummy.scale.set(s.length, wallH, wallT);

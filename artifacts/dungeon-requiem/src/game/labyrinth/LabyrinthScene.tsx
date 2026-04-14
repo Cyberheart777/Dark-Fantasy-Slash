@@ -137,7 +137,7 @@ export function LabyrinthScene() {
     <div style={styles.root}>
       <Canvas
         shadows
-        camera={{ position: [0, 28, 18], fov: 55, near: 0.5, far: 300 }}
+        camera={{ position: [0, 36, 8], fov: 55, near: 0.5, far: 300 }}
         gl={{ antialias: true }}
       >
         <LabyrinthWorld
@@ -306,13 +306,15 @@ function PlayerMarker({ playerRef }: { playerRef: React.MutableRefObject<LabPlay
 function CameraFollow({ playerRef }: { playerRef: React.MutableRefObject<LabPlayer> }) {
   const { camera } = useThree();
   const target = useRef(new THREE.Vector3());
-  const currentPos = useRef(new THREE.Vector3(0, 28, 18));
+  // Mostly top-down: ~12.5° tilt instead of the previous ~33.7°. This
+  // makes the safe-zone disc read as a circle on screen instead of a
+  // foreshortened ellipse, while keeping a hint of perspective so the
+  // walls still look 3D rather than flat.
+  const currentPos = useRef(new THREE.Vector3(0, 36, 8));
 
   useFrame((_, delta) => {
     const p = playerRef.current;
-    // Desired camera position: higher and further back so you can see
-    // more corridors around the player. Matches the core game's feel.
-    const desired = new THREE.Vector3(p.x, 30, p.z + 20);
+    const desired = new THREE.Vector3(p.x, 36, p.z + 8);
     currentPos.current.lerp(desired, Math.min(1, delta * 6));
     camera.position.copy(currentPos.current);
     target.current.set(p.x, 0, p.z);
