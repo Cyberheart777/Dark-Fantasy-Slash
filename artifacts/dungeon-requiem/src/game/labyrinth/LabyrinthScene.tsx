@@ -32,12 +32,27 @@ import { LabyrinthMobileControls } from "./LabyrinthMobileControls";
 import { LabyrinthZone3D } from "./LabyrinthZone3D";
 import {
   computeZoneState,
-  computeZoneDpsPct,
   isInsideZone,
   formatZoneTime,
   ZONE_INITIAL_RADIUS,
   type ZoneState,
 } from "./LabyrinthZone";
+import {
+  makeLabPoisonState,
+  tickLabPoison,
+  applyLabPoisonDamage,
+  LAB_POISON_MAX_STACKS,
+  type LabPoisonState,
+} from "./LabyrinthPoison";
+import {
+  spawnPortalsForMilestone,
+  portalCollision,
+  isPortalConsumed,
+  isPortalFadeoutDone,
+  PORTAL_MILESTONES,
+  type ExtractionPortal,
+} from "./LabyrinthPortal";
+import { LabyrinthPortals3D } from "./LabyrinthPortal3D";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
 
@@ -56,11 +71,26 @@ interface LabSharedState {
   zone: ZoneState;
   /** true once HP <= 0 or zone has fully closed on player. */
   defeated: boolean;
+  /** true once the player has used an extraction portal (win condition). */
+  extracted: boolean;
   /** true if the player is currently outside the safe zone. */
   outsideZone: boolean;
   /** World direction TO the safe-zone center from the player, normalized. */
   safeDirX: number;
   safeDirZ: number;
+  /** Shroud poison-stack count (0..LAB_POISON_MAX_STACKS), for HUD display. */
+  poisonStacks: number;
+  /** Per-stack DPS — so the HUD can show an indicator of upgrade scaling. */
+  poisonDps: number;
+  /** Live portal list (mirrored for HUD — direction arrow + popups). */
+  portals: ExtractionPortal[];
+  /** Milestone indices that have already spawned their portals. */
+  spawnedMilestones: Set<number>;
+  /** Timestamp (sec elapsed) of the most recent portal spawn burst —
+   *  drives the HUD "EXTRACTION PORTAL OPENED" popup. */
+  lastPortalPopupSec: number;
+  /** Count of portals spawned in the most recent burst (for the popup). */
+  lastPortalPopupCount: number;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -83,9 +113,17 @@ export function LabyrinthScene() {
   const sharedRef = useRef<LabSharedState>({
     zone: computeZoneState(0),
     defeated: false,
+    extracted: false,
     outsideZone: false,
     safeDirX: 0, safeDirZ: 0,
+    poisonStacks: 0,
+    poisonDps: 0,
+    portals: [],
+    spawnedMilestones: new Set<number>(),
+    lastPortalPopupSec: -Infinity,
+    lastPortalPopupCount: 0,
   });
+  const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const runStartMs = useRef(performance.now());
 
   useEffect(() => {
@@ -107,6 +145,7 @@ export function LabyrinthScene() {
           inputRef={inputRef}
           playerRef={playerRef}
           sharedRef={sharedRef}
+          labPoisonRef={labPoisonRef}
           runStartMs={runStartMs}
         />
       </Canvas>
@@ -127,12 +166,14 @@ function LabyrinthWorld({
   inputRef,
   playerRef,
   sharedRef,
+  labPoisonRef,
   runStartMs,
 }: {
   maze: Maze;
   inputRef: React.MutableRefObject<InputManager3D | null>;
   playerRef: React.MutableRefObject<LabPlayer>;
   sharedRef: React.MutableRefObject<LabSharedState>;
+  labPoisonRef: React.MutableRefObject<LabPoisonState>;
   runStartMs: React.MutableRefObject<number>;
 }) {
   // Initialize spawn position from the maze generator on first mount.
@@ -146,6 +187,10 @@ function LabyrinthWorld({
 
   const [currentRadius, setCurrentRadius] = useState(ZONE_INITIAL_RADIUS);
   const [paused, setPaused] = useState(false);
+  // Live portal list mirror — drives the renderer. Kept in React state so
+  // adding/removing portals re-renders the Canvas tree. Updated by
+  // ZoneTickLoop at spawn / consumption events (not every frame).
+  const [portalList, setPortalList] = useState<ExtractionPortal[]>([]);
 
   return (
     <>
@@ -161,14 +206,18 @@ function LabyrinthWorld({
 
       <LabyrinthMap3D maze={maze} />
       <LabyrinthZone3D radius={currentRadius} isPaused={paused} />
+      <LabyrinthPortals3D portals={portalList} />
       <PlayerMarker playerRef={playerRef} />
       <CameraFollow playerRef={playerRef} />
       <MovementLoop playerRef={playerRef} maze={maze} inputRef={inputRef} sharedRef={sharedRef} />
       <ZoneTickLoop
+        maze={maze}
         playerRef={playerRef}
         sharedRef={sharedRef}
+        labPoisonRef={labPoisonRef}
         runStartMs={runStartMs}
         onRadiusChange={(r, p) => { setCurrentRadius(r); setPaused(p); }}
+        onPortalsChange={setPortalList}
       />
     </>
   );
@@ -293,7 +342,7 @@ function MovementLoop({
   useFrame((_, delta) => {
     const input = inputRef.current;
     if (!input) return;
-    if (sharedRef.current.defeated) return;
+    if (sharedRef.current.defeated || sharedRef.current.extracted) return;
     const s = input.state;
     const p = playerRef.current;
 
@@ -332,21 +381,27 @@ function MovementLoop({
 // useFrame anyway.
 
 function ZoneTickLoop({
+  maze,
   playerRef,
   sharedRef,
+  labPoisonRef,
   runStartMs,
   onRadiusChange,
+  onPortalsChange,
 }: {
+  maze: Maze;
   playerRef: React.MutableRefObject<LabPlayer>;
   sharedRef: React.MutableRefObject<LabSharedState>;
+  labPoisonRef: React.MutableRefObject<LabPoisonState>;
   runStartMs: React.MutableRefObject<number>;
   onRadiusChange: (radius: number, paused: boolean) => void;
+  onPortalsChange: (portals: ExtractionPortal[]) => void;
 }) {
   const lastVisualUpdate = useRef(0);
 
   useFrame((_, delta) => {
     const shared = sharedRef.current;
-    if (shared.defeated) return;
+    if (shared.defeated || shared.extracted) return;
 
     const elapsedSec = (performance.now() - runStartMs.current) / 1000;
     const zone = computeZoneState(elapsedSec);
@@ -362,16 +417,78 @@ function ZoneTickLoop({
     shared.safeDirX = -p.x / dist;
     shared.safeDirZ = -p.z / dist;
 
-    // Damage tick
-    if (!inside) {
-      const dpsPct = computeZoneDpsPct(elapsedSec);
-      const dmg = p.maxHp * dpsPct * delta;
-      p.hp = Math.max(0, p.hp - dmg);
-      if (p.hp <= 0) shared.defeated = true;
+    // ── Poison shroud ──────────────────────────────────────────────────
+    // Outside zone → accrue stacks; inside zone for 3s → reset.
+    // See LabyrinthPoison.ts for the full model. We intentionally pass
+    // `undefined` for stats here because the Labyrinth mode doesn't yet
+    // wire up player upgrades (step 5 in the build order). When that
+    // happens, read venomStackDps + deepWoundsMultiplier from the
+    // labyrinth-local progression and pass them in — the power-ups will
+    // then scale shroud damage automatically via the same formula used
+    // for enemy poison at GameScene.tsx:1026-1034.
+    tickLabPoison(labPoisonRef.current, inside, delta, undefined);
+    applyLabPoisonDamage(p, labPoisonRef.current, delta);
+    shared.poisonStacks = labPoisonRef.current.stacks;
+    shared.poisonDps = labPoisonRef.current.dps;
+    if (p.hp <= 0) shared.defeated = true;
+
+    // ── Portal milestones ──────────────────────────────────────────────
+    // Spawn a burst when elapsedSec crosses each milestone threshold.
+    let portalsChanged = false;
+    for (let i = 0; i < PORTAL_MILESTONES.length; i++) {
+      const m = PORTAL_MILESTONES[i];
+      if (elapsedSec < m.atSec) continue;
+      if (shared.spawnedMilestones.has(i)) continue;
+      const newPortals = spawnPortalsForMilestone(
+        maze,
+        zone,
+        shared.portals,
+        m.count,
+      );
+      if (newPortals.length > 0) {
+        shared.portals = shared.portals.concat(newPortals);
+        shared.lastPortalPopupSec = elapsedSec;
+        shared.lastPortalPopupCount = newPortals.length;
+        portalsChanged = true;
+      }
+      shared.spawnedMilestones.add(i);
     }
 
-    // If zone has fully closed and player is outside, defeat is imminent.
-    // The damage loop will kill them; nothing extra needed here.
+    // ── Portal consumption ─────────────────────────────────────────────
+    // Mark portals as consumed the moment the zone overtakes them.
+    // Fade-out is driven by the renderer (portal.fadeElapsedSec++).
+    for (const portal of shared.portals) {
+      if (portal.consumed) continue;
+      if (isPortalConsumed(portal, zone.radius)) {
+        portal.consumed = true;
+        // eslint-disable-next-line no-console
+        console.log("portal consumed", portal.id);
+        portalsChanged = true;
+      }
+    }
+
+    // ── Portal collision (extraction) ──────────────────────────────────
+    for (const portal of shared.portals) {
+      if (portalCollision(p.x, p.z, portal)) {
+        shared.extracted = true;
+        // Freeze the player in place at the portal center for visual
+        // consistency with the victory screen.
+        p.x = portal.x;
+        p.z = portal.z;
+        break;
+      }
+    }
+
+    // Drop fully-faded portals from the render list. We keep them in
+    // the shared list briefly so the fade-out plays, then evict.
+    const beforeLen = shared.portals.length;
+    shared.portals = shared.portals.filter((pt) => !isPortalFadeoutDone(pt));
+    if (shared.portals.length !== beforeLen) portalsChanged = true;
+
+    if (portalsChanged) {
+      // Pass a shallow copy so React state compare triggers a re-render.
+      onPortalsChange(shared.portals.slice());
+    }
 
     // Throttle visual updates (mesh scale is smooth via useFrame in Zone3D
     // anyway; this state just drives the "isPaused" color tint).
@@ -428,23 +545,62 @@ function LabyrinthHUD({
   const [display, setDisplay] = useState({
     hp: 100, maxHp: 100,
     timeRemaining: LABYRINTH_CONFIG.ZONE_TOTAL_DURATION,
+    elapsedSec: 0,
     isPaused: false,
     outsideZone: false,
     safeDirX: 0, safeDirZ: 0,
     defeated: false,
+    extracted: false,
+    poisonStacks: 0,
+    poisonDps: 0,
+    nearestPortalDirX: 0,
+    nearestPortalDirZ: 0,
+    hasPortal: false,
+    lastPortalPopupSec: -Infinity,
+    lastPortalPopupCount: 0,
+    livePortalCount: 0,
   });
 
   useEffect(() => {
     const iv = setInterval(() => {
+      const s = sharedRef.current;
+      const p = playerRef.current;
+      // Nearest live portal → direction vector for the edge arrow.
+      let nearestDsq = Infinity;
+      let ndx = 0, ndz = 0;
+      let liveCount = 0;
+      for (const portal of s.portals) {
+        if (portal.consumed) continue;
+        liveCount++;
+        const dx = portal.x - p.x;
+        const dz = portal.z - p.z;
+        const dsq = dx * dx + dz * dz;
+        if (dsq < nearestDsq) {
+          nearestDsq = dsq;
+          const d = Math.sqrt(dsq) || 1;
+          ndx = dx / d;
+          ndz = dz / d;
+        }
+      }
       setDisplay({
-        hp: playerRef.current.hp,
-        maxHp: playerRef.current.maxHp,
-        timeRemaining: sharedRef.current.zone.timeRemaining,
-        isPaused: sharedRef.current.zone.isPaused,
-        outsideZone: sharedRef.current.outsideZone,
-        safeDirX: sharedRef.current.safeDirX,
-        safeDirZ: sharedRef.current.safeDirZ,
-        defeated: sharedRef.current.defeated,
+        hp: p.hp,
+        maxHp: p.maxHp,
+        timeRemaining: s.zone.timeRemaining,
+        elapsedSec: s.zone.elapsedSec,
+        isPaused: s.zone.isPaused,
+        outsideZone: s.outsideZone,
+        safeDirX: s.safeDirX,
+        safeDirZ: s.safeDirZ,
+        defeated: s.defeated,
+        extracted: s.extracted,
+        poisonStacks: s.poisonStacks,
+        poisonDps: s.poisonDps,
+        nearestPortalDirX: ndx,
+        nearestPortalDirZ: ndz,
+        hasPortal: liveCount > 0,
+        lastPortalPopupSec: s.lastPortalPopupSec,
+        lastPortalPopupCount: s.lastPortalPopupCount,
+        livePortalCount: liveCount,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -505,28 +661,69 @@ function LabyrinthHUD({
         </div>
       </div>
 
+      {/* Poison stack pip bar (only visible when stacks > 0) */}
+      {display.poisonStacks > 0 && !display.defeated && !display.extracted && (
+        <PoisonPips
+          stacks={display.poisonStacks}
+          dps={display.poisonDps}
+        />
+      )}
+
       {/* Zone warning banner when outside safe zone */}
-      {display.outsideZone && !display.defeated && (
+      {display.outsideZone && !display.defeated && !display.extracted && (
         <div style={styles.zoneWarning}>
-          <div style={styles.zoneWarningText}>⚠ OUTSIDE SAFE ZONE ⚠</div>
+          <div style={styles.zoneWarningText}>⚠ POISON SHROUD ⚠</div>
           <div style={styles.zoneWarningSub}>
-            Move toward the center — HP draining
+            Return to the safe zone — stacks building
           </div>
         </div>
       )}
 
       {/* Screen-edge arrow pointing toward safe zone (when outside) */}
-      {display.outsideZone && !display.defeated && (
+      {display.outsideZone && !display.defeated && !display.extracted && (
         <SafeZoneArrow dx={display.safeDirX} dz={display.safeDirZ} />
       )}
 
+      {/* Nearest-portal edge arrow (gold/purple) — separate from the safe-zone arrow */}
+      {display.hasPortal && !display.defeated && !display.extracted && (
+        <PortalArrow
+          dx={display.nearestPortalDirX}
+          dz={display.nearestPortalDirZ}
+        />
+      )}
+
+      {/* Portal-opened popup (fades in for ~3s after a milestone spawn) */}
+      <PortalPopup
+        elapsedSec={display.elapsedSec}
+        popupAtSec={display.lastPortalPopupSec}
+        count={display.lastPortalPopupCount}
+      />
+
+      {/* Extracted (win) screen — takes precedence over defeat */}
+      {display.extracted && (
+        <div style={styles.extractedOverlay}>
+          <div style={styles.extractedPanel}>
+            <div style={styles.extractedTitle}>⬭ EXTRACTED</div>
+            <div style={styles.extractedSub}>
+              You escaped the labyrinth. The vault lets you pass.
+            </div>
+            <div style={styles.extractedStats}>
+              TIME SURVIVED · {formatZoneTime(display.elapsedSec)}
+            </div>
+            <button style={styles.escBtn} onClick={exit}>
+              ⌂ RETURN TO MAIN MENU
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Defeat screen */}
-      {display.defeated && (
+      {display.defeated && !display.extracted && (
         <div style={styles.defeatOverlay}>
           <div style={styles.defeatPanel}>
             <div style={styles.defeatTitle}>CONSUMED BY THE DARK</div>
             <div style={styles.defeatSub}>
-              The labyrinth has claimed you. The vault remembers.
+              The shroud has claimed you. The vault remembers.
             </div>
             <button style={styles.escBtn} onClick={exit}>
               ⌂ RETURN TO MAIN MENU
@@ -546,6 +743,90 @@ function LabyrinthHUD({
         </div>
       )}
     </>
+  );
+}
+
+/** Poison-stack pip bar shown under the HP bar while the shroud is active. */
+function PoisonPips({ stacks, dps }: { stacks: number; dps: number }) {
+  // Integer pip count (ceil so a partial stack still shows as 1 pip).
+  const pipCount = Math.max(0, Math.min(LAB_POISON_MAX_STACKS, Math.ceil(stacks)));
+  const pips = [];
+  for (let i = 0; i < LAB_POISON_MAX_STACKS; i++) {
+    const on = i < pipCount;
+    pips.push(
+      <div
+        key={i}
+        style={{
+          width: 14,
+          height: 14,
+          borderRadius: "50%",
+          background: on ? "#4ade80" : "rgba(60,40,70,0.55)",
+          border: "1px solid " + (on ? "#2c8a4a" : "#2a2035"),
+          boxShadow: on ? "0 0 6px #4ade80" : "none",
+          transition: "background 0.15s, box-shadow 0.15s",
+        }}
+      />,
+    );
+  }
+  const totalDps = stacks * dps;
+  return (
+    <div style={styles.poisonBox}>
+      <div style={styles.poisonLabel}>
+        <span style={{ color: "#4ade80", fontWeight: "bold" }}>POISON</span>
+        <span style={{ color: "#a0b0a0", fontSize: 11 }}>
+          {totalDps.toFixed(1)} DPS
+        </span>
+      </div>
+      <div style={styles.poisonPipRow}>{pips}</div>
+    </div>
+  );
+}
+
+/** Screen-edge arrow pointing toward the nearest live extraction portal. */
+function PortalArrow({ dx, dz }: { dx: number; dz: number }) {
+  const angleDeg = Math.atan2(dx, -dz) * (180 / Math.PI);
+  return (
+    <div style={{
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: `translate(-50%, -50%) rotate(${angleDeg}deg) translateY(-min(22vh, 180px))`,
+      pointerEvents: "none",
+      fontSize: 36,
+      color: "#c080ff",
+      textShadow: "0 0 14px #a040ff, 0 0 28px #6030cc",
+      opacity: 0.75,
+    }}>
+      ⬭
+    </div>
+  );
+}
+
+/** Popup that fades in/out for ~3 seconds after a milestone portal spawn. */
+function PortalPopup({
+  elapsedSec,
+  popupAtSec,
+  count,
+}: {
+  elapsedSec: number;
+  popupAtSec: number;
+  count: number;
+}) {
+  const age = elapsedSec - popupAtSec;
+  if (age < 0 || age > 3.5 || count <= 0) return null;
+  // Fade: in over 0.2s, hold, out over last 0.7s.
+  let opacity = 1;
+  if (age < 0.2) opacity = age / 0.2;
+  else if (age > 2.8) opacity = Math.max(0, 1 - (age - 2.8) / 0.7);
+  return (
+    <div style={{ ...styles.portalPopup, opacity }}>
+      <div style={styles.portalPopupTitle}>⬭ EXTRACTION PORTAL OPENED</div>
+      <div style={styles.portalPopupSub}>
+        {count === 1
+          ? "1 NEW SITE · WALK INTO IT TO ESCAPE"
+          : `${count} NEW SITES · WALK INTO ONE TO ESCAPE`}
+      </div>
+    </div>
   );
 }
 
@@ -738,6 +1019,101 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(10,25,50,0.8)",
     border: "1px solid rgba(60,140,220,0.5)",
     borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
+  },
+  poisonBox: {
+    position: "absolute",
+    top: 100,
+    left: 20,
+    width: 220,
+    background: "rgba(0,20,10,0.65)",
+    border: "1px solid rgba(74,222,128,0.35)",
+    borderRadius: 8,
+    padding: "8px 12px",
+    backdropFilter: "blur(4px)",
+    pointerEvents: "none",
+  },
+  poisonLabel: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: 6,
+    fontSize: 12,
+    fontFamily: "monospace",
+    letterSpacing: 1,
+  },
+  poisonPipRow: {
+    display: "flex",
+    gap: 6,
+    justifyContent: "flex-start",
+  },
+  portalPopup: {
+    position: "absolute",
+    top: "18%",
+    left: "50%",
+    transform: "translateX(-50%)",
+    padding: "14px 28px",
+    background: "rgba(30,10,50,0.85)",
+    border: "1px solid rgba(160,80,255,0.55)",
+    borderRadius: 10,
+    boxShadow: "0 0 24px rgba(160,80,255,0.4)",
+    pointerEvents: "none",
+    textAlign: "center" as const,
+    transition: "opacity 0.15s",
+  },
+  portalPopupTitle: {
+    fontSize: 18,
+    fontWeight: 900,
+    letterSpacing: 4,
+    color: "#e0a8ff",
+    textShadow: "0 0 10px rgba(200,120,255,0.7)",
+  },
+  portalPopupSub: {
+    fontSize: 11,
+    letterSpacing: 2,
+    color: "rgba(220,180,255,0.85)",
+    marginTop: 5,
+    fontFamily: "monospace",
+  },
+  extractedOverlay: {
+    position: "absolute",
+    inset: 0,
+    background: "rgba(8,0,20,0.88)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    backdropFilter: "blur(10px)",
+    zIndex: 100,
+  },
+  extractedPanel: {
+    padding: "44px 56px",
+    background: "rgba(14,6,28,0.96)",
+    border: "1px solid rgba(160,80,255,0.65)",
+    borderRadius: 16,
+    boxShadow: "0 0 40px rgba(160,80,255,0.4)",
+    textAlign: "center" as const,
+    minWidth: 400,
+  },
+  extractedTitle: {
+    fontSize: 32,
+    fontWeight: 900,
+    letterSpacing: 8,
+    color: "#d0a0ff",
+    textShadow: "0 0 14px rgba(200,120,255,0.8), 0 0 28px rgba(120,60,200,0.6)",
+    marginBottom: 12,
+  },
+  extractedSub: {
+    fontSize: 13,
+    color: "rgba(220,180,255,0.8)",
+    letterSpacing: 1,
+    fontFamily: "monospace",
+    marginBottom: 14,
+    fontStyle: "italic" as const,
+  },
+  extractedStats: {
+    fontSize: 12,
+    color: "rgba(160,200,255,0.85)",
+    letterSpacing: 3,
+    fontFamily: "monospace",
+    marginBottom: 22,
   },
 };
 

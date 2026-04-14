@@ -47,3 +47,40 @@
 7. XPOrb spawns need `collectTimer: 0`.
 8. Gear spawns via `trySpawnGear()` after enemy death audio plays.
 9. Projectile interface has `isFracture?` — fracture projectiles must not chain.
+
+### Labyrinth Mode — Shroud + Extraction Portals
+
+**Zone shroud applies poison stacks, not percent-HP damage.**
+While the player is outside the safe zone in Labyrinth mode, the zone
+applies **poison stacks** (same mechanic as the Rogue's Venom Stack
+upgrade). The player-side poison state lives in `LabyrinthPoison.ts`
+as a *Labyrinth-local mirror* of the enemy poison system — the base
+`PlayerRuntime` is intentionally NOT modified.
+
+- Accumulation: +1 stack per second outside the zone, capped at 5.
+- Per-stack damage: `max(3, stats.venomStackDps) * stats.deepWoundsMultiplier`,
+  identical to the formula at `GameScene.tsx:1026-1034`. When the
+  Labyrinth wires up its own progression stats in a later step, the
+  Rogue's Venom Stack and Deep Wounds power-ups automatically scale
+  shroud damage.
+- Falloff: full reset to 0 after 3 continuous seconds in the safe zone.
+  (Base game poison has no decay — this 3s falloff is Labyrinth-local.)
+
+**Extraction portals are an alternative win condition.**
+Oval purple portals spawn at milestones — 3 @ 3:00, 2 @ 5:00, 1 @ 7:00
+(6 total). They spawn in the "about to close" ring (inside current safe
+radius, outside next zone target) with buffer margins. Walking into
+one triggers an **EXTRACTED** victory screen. Portals are consumed
+when the zone overtakes their position (fade-out + console log
+`"portal consumed"`).
+
+**Files:**
+- `src/game/labyrinth/LabyrinthPoison.ts` — poison state + tick math mirror
+- `src/game/labyrinth/LabyrinthPortal.ts` — portal data + spawn algorithm
+- `src/game/labyrinth/LabyrinthPortal3D.tsx` — oval portal renderer
+- `src/game/labyrinth/LabyrinthScene.tsx` — wired via `ZoneTickLoop`
+
+**Invariant:** All poison/portal changes are fully self-contained in the
+Labyrinth folder. No edits to `GameScene.tsx`, `UpgradeData.ts`, or any
+other non-Labyrinth source. Normal dungeon mode and trial mode are
+untouched.
