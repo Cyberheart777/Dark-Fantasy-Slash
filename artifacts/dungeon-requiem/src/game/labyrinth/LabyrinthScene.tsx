@@ -81,6 +81,14 @@ import {
 } from "./LabyrinthDeathFx";
 import { LabyrinthDeathFx3D } from "./LabyrinthDeathFx3D";
 import {
+  makeShroudMistEmitter,
+  tickShroudMist,
+  tickGroundFx,
+  type LabGroundFx,
+  type LabShroudMistEmitter,
+} from "./LabyrinthGroundFx";
+import { LabyrinthGroundFx3D } from "./LabyrinthGroundFx3D";
+import {
   makeLabDashState,
   tickLabDashState,
   tryStartLabDash,
@@ -190,6 +198,8 @@ export function LabyrinthScene() {
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
   const deathFxRef = useRef<LabDeathFx[]>([]);
+  const groundFxRef = useRef<LabGroundFx[]>([]);
+  const shroudMistRef = useRef<LabShroudMistEmitter>(makeShroudMistEmitter());
   // Enemies initialized once per scene mount (one maze = one enemy set).
   const enemiesRef = useRef<EnemyRuntime[]>([]);
   if (enemiesRef.current.length === 0) {
@@ -228,6 +238,8 @@ export function LabyrinthScene() {
           dashCooldownSec={classDef.dashCooldown}
           enemiesRef={enemiesRef}
           deathFxRef={deathFxRef}
+          groundFxRef={groundFxRef}
+          shroudMistRef={shroudMistRef}
           runStartMs={runStartMs}
         />
       </Canvas>
@@ -262,6 +274,8 @@ function LabyrinthWorld({
   dashCooldownSec,
   enemiesRef,
   deathFxRef,
+  groundFxRef,
+  shroudMistRef,
   runStartMs,
 }: {
   maze: Maze;
@@ -279,6 +293,8 @@ function LabyrinthWorld({
   dashCooldownSec: number;
   enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
   deathFxRef: React.MutableRefObject<LabDeathFx[]>;
+  groundFxRef: React.MutableRefObject<LabGroundFx[]>;
+  shroudMistRef: React.MutableRefObject<LabShroudMistEmitter>;
   runStartMs: React.MutableRefObject<number>;
 }) {
   // Initialize spawn position from the maze generator on first mount.
@@ -302,6 +318,9 @@ function LabyrinthWorld({
   // Death-burst list mirror. CombatEnemyLoop pushes new bursts and
   // evicts expired ones; this state drives the Canvas-tree re-render.
   const [deathFxList, setDeathFxList] = useState<LabDeathFx[]>([]);
+  // Shroud-mist list mirror. ZoneTickLoop pushes new mist puffs while
+  // the player is outside the safe zone and ticks their lifetime.
+  const [groundFxList, setGroundFxList] = useState<LabGroundFx[]>([]);
 
   return (
     <>
@@ -329,6 +348,10 @@ function LabyrinthWorld({
           enemy visuals error out, the kill-feedback particles still play
           (they read only from deathFxList, not from GameState). */}
       <LabyrinthDeathFx3D bursts={deathFxList} />
+      {/* Shroud-mist ground trail — toxic green pools under the player
+          while they're outside the safe zone. Purely visual; damage is
+          handled separately by LabyrinthPoison. */}
+      <LabyrinthGroundFx3D effects={groundFxList} />
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
       {/* Guaranteed-visible baseline: the procedural PlayerMarker (purple
           glowing cube + pulsing ring) is always mounted. If LabyrinthPlayer3D
@@ -373,6 +396,9 @@ function LabyrinthWorld({
         playerRef={playerRef}
         sharedRef={sharedRef}
         labPoisonRef={labPoisonRef}
+        groundFxRef={groundFxRef}
+        shroudMistRef={shroudMistRef}
+        onGroundFxChange={setGroundFxList}
         runStartMs={runStartMs}
         onRadiusChange={(r, p) => { setCurrentRadius(r); setPaused(p); }}
         onPortalsChange={setPortalList}
@@ -784,6 +810,9 @@ function ZoneTickLoop({
   playerRef,
   sharedRef,
   labPoisonRef,
+  groundFxRef,
+  shroudMistRef,
+  onGroundFxChange,
   runStartMs,
   onRadiusChange,
   onPortalsChange,
@@ -792,11 +821,15 @@ function ZoneTickLoop({
   playerRef: React.MutableRefObject<LabPlayer>;
   sharedRef: React.MutableRefObject<LabSharedState>;
   labPoisonRef: React.MutableRefObject<LabPoisonState>;
+  groundFxRef: React.MutableRefObject<LabGroundFx[]>;
+  shroudMistRef: React.MutableRefObject<LabShroudMistEmitter>;
+  onGroundFxChange: (fx: LabGroundFx[]) => void;
   runStartMs: React.MutableRefObject<number>;
   onRadiusChange: (radius: number, paused: boolean) => void;
   onPortalsChange: (portals: ExtractionPortal[]) => void;
 }) {
   const lastVisualUpdate = useRef(0);
+  const lastEmittedGroundFxLen = useRef(0);
 
   useFrame((_, delta) => {
     const shared = sharedRef.current;
@@ -833,6 +866,18 @@ function ZoneTickLoop({
     if (p.hp <= 0 && hpBeforePoison > 0) {
       shared.defeated = true;
       audioManager.play("player_death");
+    }
+
+    // ── Shroud mist visual ────────────────────────────────────────────
+    // While outside, drop a toxic-green pool at the player's feet every
+    // 0.35s. The mist is visual-only (damage is via LabyrinthPoison).
+    tickShroudMist(shroudMistRef.current, groundFxRef.current, !inside, p.x, p.z, delta);
+    const prevFxLen = lastEmittedGroundFxLen.current;
+    const survivors = tickGroundFx(groundFxRef.current, delta);
+    groundFxRef.current = survivors;
+    if (survivors.length !== prevFxLen) {
+      lastEmittedGroundFxLen.current = survivors.length;
+      onGroundFxChange(survivors.slice());
     }
 
     // ── Portal milestones ──────────────────────────────────────────────
