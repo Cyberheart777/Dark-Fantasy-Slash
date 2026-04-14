@@ -81,7 +81,8 @@ import {
   clearWardenState,
 } from "./LabyrinthWarden";
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
-import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
+// LabyrinthPlayer3D temporarily disabled again — see JSX below.
+// import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
 import { LabyrinthCanvasErrorBoundary } from "./LabyrinthCanvasErrorBoundary";
 import { LabyrinthDebug } from "./LabyrinthDebug";
 import {
@@ -535,15 +536,18 @@ function LabyrinthWorld({
       <LabyrinthProjectiles3D projectiles={projectileList} />
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
       {/* Robot-man warrior — procedural humanoid built from unlit
-          primitives. Always rendered as the always-visible safety net.
-          If LabyrinthPlayer3D (GLB warrior, or procedural mage/rogue)
-          succeeds, its mesh draws on top and the robot-man is hidden
-          behind it; if the GLB pipeline throws, the error boundary
-          swallows it and the robot-man alone stays visible. */}
+          primitives. Always-on safety net visible on every GPU.
+          LabyrinthPlayer3D was re-enabled in step 4 commit H but
+          caused a regression: the Canvas blanked on mobile iOS even
+          though the error boundary was in place. Suspect is the
+          warrior GLB preload interfering with the module-level
+          evaluation on iOS. Temporarily disabled again until we
+          can diagnose with the debug overlay forced on. */}
       <GeoCharacter
         playerRef={playerRef}
         attackStateRef={attackStateRef}
       />
+      {/*
       <LabyrinthCanvasErrorBoundary label="Player3D" fallback={null}>
         <LabyrinthPlayer3D
           charClass={charClass}
@@ -551,6 +555,7 @@ function LabyrinthWorld({
           attackStateRef={attackStateRef}
         />
       </LabyrinthCanvasErrorBoundary>
+      */}
       <CameraFollow playerRef={playerRef} />
       <MovementLoop
         playerRef={playerRef}

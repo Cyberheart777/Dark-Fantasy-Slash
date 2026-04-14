@@ -39,16 +39,10 @@ interface DebugShared {
   extracted: boolean;
 }
 
-/** Returns `true` if `?debug=1` is in the current URL. Default-off
- *  for normal play; add `?debug=1` to show the overlay when you
- *  need the error log or live state readout. */
+/** Force-on while we diagnose the post-step-4 mobile regression.
+ *  Flip back to URL-gated once the scene renders reliably on iOS. */
 function isDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return new URLSearchParams(window.location.search).get("debug") === "1";
-  } catch {
-    return false;
-  }
+  return true;
 }
 
 interface Props {
