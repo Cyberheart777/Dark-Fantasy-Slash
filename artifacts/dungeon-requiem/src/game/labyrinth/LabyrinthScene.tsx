@@ -98,6 +98,16 @@ import {
 import { XPOrb3D } from "../../entities/XPOrb3D";
 import type { XPOrb } from "../GameScene";
 import {
+  makeLabWarriorState,
+  tickLabWarrior,
+  maybeTriggerWarCry,
+  modifyOutgoingDamage,
+  registerHit,
+  registerKill,
+  snapshotLabWarrior,
+  type LabWarriorState,
+} from "./LabyrinthWarrior";
+import {
   makeLabDashState,
   tickLabDashState,
   tryStartLabDash,
@@ -158,6 +168,15 @@ interface LabSharedState {
   xpToNext: number;
   /** Cumulative XP earned this run. */
   totalXp: number;
+  /** Warrior-only passives snapshot — null for non-warrior classes. */
+  warrior: {
+    momentumStacks: number;
+    momentumMult: number;
+    warCryActive: boolean;
+    warCrySec: number;
+    bloodforgeGain: number;
+    bloodforgeCap: number;
+  } | null;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -214,6 +233,7 @@ export function LabyrinthScene() {
     xp: 0,
     xpToNext: 0,
     totalXp: 0,
+    warrior: null,
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
@@ -222,6 +242,9 @@ export function LabyrinthScene() {
   const shroudMistRef = useRef<LabShroudMistEmitter>(makeShroudMistEmitter());
   const progressionRef = useRef<LabProgressionState>(makeLabProgression());
   const xpOrbsRef = useRef<XPOrb[]>([]);
+  // Warrior-only passives state. Created unconditionally (cheap), but
+  // the combat loop only invokes it when charClass === "warrior".
+  const warriorStateRef = useRef<LabWarriorState>(makeLabWarriorState());
   // Seed sharedRef with the progression's starting values so HUD reads
   // sensible defaults before the first tick runs.
   sharedRef.current.level = progressionRef.current.level;
@@ -268,6 +291,8 @@ export function LabyrinthScene() {
           shroudMistRef={shroudMistRef}
           progressionRef={progressionRef}
           xpOrbsRef={xpOrbsRef}
+          warriorStateRef={warriorStateRef}
+          critChance={classDef.critChance}
           runStartMs={runStartMs}
         />
       </Canvas>
@@ -306,6 +331,8 @@ function LabyrinthWorld({
   shroudMistRef,
   progressionRef,
   xpOrbsRef,
+  warriorStateRef,
+  critChance,
   runStartMs,
 }: {
   maze: Maze;
@@ -327,6 +354,8 @@ function LabyrinthWorld({
   shroudMistRef: React.MutableRefObject<LabShroudMistEmitter>;
   progressionRef: React.MutableRefObject<LabProgressionState>;
   xpOrbsRef: React.MutableRefObject<XPOrb[]>;
+  warriorStateRef: React.MutableRefObject<LabWarriorState>;
+  critChance: number;
   runStartMs: React.MutableRefObject<number>;
 }) {
   // Initialize spawn position from the maze generator on first mount.
@@ -431,6 +460,9 @@ function LabyrinthWorld({
         deathFxRef={deathFxRef}
         progressionRef={progressionRef}
         xpOrbsRef={xpOrbsRef}
+        warriorStateRef={warriorStateRef}
+        critChance={critChance}
+        charClass={charClass}
         onEnemiesChange={setEnemyList}
         onDeathFxChange={setDeathFxList}
         onXpOrbsChange={setXpOrbList}
@@ -682,6 +714,9 @@ function CombatEnemyLoop({
   deathFxRef,
   progressionRef,
   xpOrbsRef,
+  warriorStateRef,
+  critChance,
+  charClass,
   onEnemiesChange,
   onDeathFxChange,
   onXpOrbsChange,
@@ -696,6 +731,9 @@ function CombatEnemyLoop({
   deathFxRef: React.MutableRefObject<LabDeathFx[]>;
   progressionRef: React.MutableRefObject<LabProgressionState>;
   xpOrbsRef: React.MutableRefObject<XPOrb[]>;
+  warriorStateRef: React.MutableRefObject<LabWarriorState>;
+  critChance: number;
+  charClass: CharacterClass;
   onEnemiesChange: (enemies: EnemyRuntime[]) => void;
   onDeathFxChange: (fx: LabDeathFx[]) => void;
   onXpOrbsChange: (orbs: XPOrb[]) => void;
@@ -717,13 +755,15 @@ function CombatEnemyLoop({
     const atk = attackStateRef.current;
     const enemies = enemiesRef.current;
 
-    // 1) Attack timers
+    // 1) Attack + warrior timers
     tickAttackState(atk, delta);
+    const isWarrior = charClass === "warrior";
+    if (isWarrior) tickLabWarrior(warriorStateRef.current, delta);
 
-    // 2) Attack input → swing → hit-test. SFX mirrors the main game's
-    //    warrior attack pipeline: swing start plays "attack_melee",
-    //    each enemy actually hit plays "enemy_death" on kill, otherwise
-    //    the hit sound is implicit in the weapon swing.
+    // 2) Attack input → swing → hit-test. For warrior, damage flows
+    //    through modifyOutgoingDamage (applies Blood Momentum stacks,
+    //    War Cry buff, and crit roll) and each hit/kill registers
+    //    against the warrior state (stacks + bloodforge).
     const inputState = input.state;
     if (inputState.attack) {
       input.consumeAttack();
@@ -732,17 +772,24 @@ function CombatEnemyLoop({
         for (const e of enemies) {
           if (e.state === "dead") continue;
           if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange)) {
-            const killed = damageEnemy(e, combatStats.damage);
+            const dmg = isWarrior
+              ? modifyOutgoingDamage(warriorStateRef.current, combatStats.damage, critChance)
+              : combatStats.damage;
+            const killed = damageEnemy(e, dmg);
+            if (isWarrior) registerHit(warriorStateRef.current);
             if (killed) {
               shared.killCount++;
               audioManager.play("enemy_death");
-              // Spawn a death burst at the guardian's position. The
-              // guardian's emissive red carries through to the puff
-              // color so kills feel chromatic rather than generic.
               spawnLabDeathFx(deathFxRef.current, e.x, e.z, "#ff3030");
-              // Drop an XP crystal at the kill site. Tier is weighted
-              // (see LabyrinthProgression.tierForGuardian).
               spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
+              // Bloodforge — each kill grants +1 maxHp (cap 20 per run).
+              if (isWarrior) {
+                const gained = registerKill(warriorStateRef.current);
+                if (gained > 0) {
+                  p.maxHp += gained;
+                  p.hp = Math.min(p.maxHp, p.hp + gained);
+                }
+              }
             }
           }
         }
@@ -757,7 +804,8 @@ function CombatEnemyLoop({
 
     // 4) Apply enemy damage to the player. Play player_hurt whenever
     //    a hit actually lands, and player_death on the killing blow —
-    //    matches the main game's damage-feedback SFX timing.
+    //    matches the main game's damage-feedback SFX timing. After
+    //    damage, auto-pop War Cry if HP dropped into the trigger band.
     if (dmgAccum.value > 0) {
       const wasAlive = p.hp > 0;
       p.hp = Math.max(0, p.hp - dmgAccum.value);
@@ -766,8 +814,14 @@ function CombatEnemyLoop({
         if (wasAlive) audioManager.play("player_death");
       } else {
         audioManager.play("player_hurt");
+        if (isWarrior && maybeTriggerWarCry(warriorStateRef.current, p.hp, p.maxHp)) {
+          audioManager.play("boss_special");
+        }
       }
     }
+
+    // Snapshot warrior state for HUD consumption.
+    shared.warrior = isWarrior ? snapshotLabWarrior(warriorStateRef.current) : null;
 
     // 5) Evict fully-faded dead enemies. Only re-emit the array when
     //    membership actually changes — avoids churn on every frame.
@@ -1100,6 +1154,7 @@ function LabyrinthHUD({
     xp: 0,
     xpToNext: 1,
     totalXp: 0,
+    warrior: null as LabSharedState["warrior"],
   });
 
   useEffect(() => {
@@ -1148,6 +1203,7 @@ function LabyrinthHUD({
         xp: s.xp,
         xpToNext: s.xpToNext,
         totalXp: s.totalXp,
+        warrior: s.warrior,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -1207,6 +1263,41 @@ function LabyrinthHUD({
             boxShadow: "0 0 8px #50a0ff",
           }} />
         </div>
+        {/* Warrior passives readout — only shown when class is warrior
+            so mage/rogue don't see stale zeros. War Cry flashes red
+            while active; Blood Momentum stacks shown as pips. */}
+        {display.warrior && (
+          <div style={styles.warriorBox}>
+            <div style={styles.warriorRow}>
+              <span style={{ color: "#ff7760", fontWeight: "bold", fontSize: 11 }}>
+                BLOOD MOMENTUM
+              </span>
+              <span style={{ color: "#ffb080", fontSize: 11 }}>
+                x{display.warrior.momentumMult.toFixed(2)} · {display.warrior.momentumStacks}/20
+              </span>
+            </div>
+            <div style={styles.pipRow}>
+              {Array.from({ length: 20 }).map((_, i) => (
+                <div
+                  key={i}
+                  style={{
+                    ...styles.pip,
+                    background: i < display.warrior!.momentumStacks ? "#ff6040" : "#301010",
+                    boxShadow: i < display.warrior!.momentumStacks ? "0 0 4px #ff4020" : "none",
+                  }}
+                />
+              ))}
+            </div>
+            <div style={styles.warriorRow}>
+              <span style={{ color: "#ff4040", fontSize: 11, fontWeight: "bold" }}>
+                {display.warrior.warCryActive ? `⚔ WAR CRY ${display.warrior.warCrySec.toFixed(1)}s` : "⚔ WAR CRY ready"}
+              </span>
+              <span style={{ color: "#aa8866", fontSize: 11 }}>
+                +{display.warrior.bloodforgeGain}/{display.warrior.bloodforgeCap} HP
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Top-right: zone timer */}
@@ -1492,6 +1583,28 @@ const styles: Record<string, React.CSSProperties> = {
     height: "100%",
     borderRadius: 5,
     transition: "width 0.18s, background 0.2s",
+  },
+  warriorBox: {
+    marginTop: 10,
+    padding: "6px 0 0 0",
+    borderTop: "1px solid rgba(180,80,40,0.25)",
+  },
+  warriorRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: 3,
+  },
+  pipRow: {
+    display: "flex",
+    gap: 2,
+    marginBottom: 4,
+  },
+  pip: {
+    flex: 1,
+    height: 5,
+    borderRadius: 1,
+    background: "#301010",
+    transition: "background 0.12s, box-shadow 0.12s",
   },
   timerBox: {
     position: "absolute",
