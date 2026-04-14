@@ -607,8 +607,12 @@ function PlayerAttackArc({
       return;
     }
     m.visible = true;
-    // Place the arc at the player's feet, rotated to face the swing angle.
-    m.position.set(p.x, 0.12, p.z);
+    // Place the arc above the player's feet, rotated to face the swing
+    // angle. Lifted from 0.12 to 0.35 so the additive-blended wedge
+    // reads cleanly above the floor shading (the previous height was
+    // close enough to the floor that the wedge was nearly invisible
+    // against the stone texture on certain GPU blend paths).
+    m.position.set(p.x, 0.35, p.z);
     m.rotation.set(-Math.PI / 2, 0, -atk.swingAngle);
     // Scale the base unit-circle geometry up to the swing's range.
     const s = atk.swingRange;
