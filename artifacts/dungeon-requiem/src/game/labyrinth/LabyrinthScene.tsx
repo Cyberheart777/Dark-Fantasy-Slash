@@ -270,10 +270,14 @@ export function LabyrinthScene() {
   return (
     <div style={styles.root}>
       <Canvas
-        shadows
         camera={{ position: [0, 36, 8], fov: 55, near: 0.5, far: 300 }}
         gl={{ antialias: true }}
       >
+        {/* Shadows removed from the Canvas (previously `shadows` prop).
+            iOS Safari's shadow-map pipeline was leaving the whole scene
+            near-black on mobile — walls and floor rendered, but the
+            StandardMaterial PBR lighting was cancelled out. Losing
+            shadow casting is a cheap readability win. */}
         <LabyrinthWorld
           maze={maze}
           charClass={selectedClass}
@@ -388,12 +392,16 @@ function LabyrinthWorld({
 
   return (
     <>
-      <ambientLight intensity={0.85} color="#a090c8" />
+      {/* Ambient cranked from 0.85 → 1.6 and directional from 1.3 → 2.2
+          to recover the brightness lost when shadows were disabled.
+          Added a hemisphereLight as a sky/ground fill so walls and
+          floor read clearly even on iOS where PBR tends to flatten. */}
+      <ambientLight intensity={1.6} color="#a090c8" />
+      <hemisphereLight args={["#b0a0e0", "#20103a", 0.9]} />
       <directionalLight
         position={[30, 50, 20]}
-        intensity={1.3}
+        intensity={2.2}
         color="#d0b0e8"
-        castShadow
       />
       <PlayerTorch playerRef={playerRef} />
       <fog attach="fog" args={["#100820", 50, 140]} />
@@ -507,10 +515,10 @@ function PlayerTorch({ playerRef }: { playerRef: React.MutableRefObject<LabPlaye
   return (
     <pointLight
       ref={lightRef}
-      intensity={2.2}
+      intensity={4.5}
       color="#e0c0ff"
-      distance={24}
-      decay={1.2}
+      distance={36}
+      decay={1.0}
     />
   );
 }
@@ -541,7 +549,7 @@ function PlayerMarker({ playerRef }: { playerRef: React.MutableRefObject<LabPlay
         <meshBasicMaterial color="#c080ff" transparent opacity={0.75} />
       </mesh>
       {/* Main body — taller + brighter emissive */}
-      <mesh position={[0, 1.2, 0]} castShadow>
+      <mesh position={[0, 1.2, 0]}>
         <boxGeometry args={[1.3, 2.4, 1.3]} />
         <meshStandardMaterial
           color="#c080ff"
@@ -551,7 +559,7 @@ function PlayerMarker({ playerRef }: { playerRef: React.MutableRefObject<LabPlay
         />
       </mesh>
       {/* Head marker — small cube on top for orientation */}
-      <mesh position={[0, 2.7, 0]} castShadow>
+      <mesh position={[0, 2.7, 0]}>
         <boxGeometry args={[0.7, 0.6, 0.7]} />
         <meshStandardMaterial
           color="#ffccff"
