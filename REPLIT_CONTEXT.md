@@ -245,3 +245,94 @@ Portals3D are now each wrapped in their own error boundary with
 untouched. Main dungeon / trial / boss modes are behaviourally
 identical to pre-change.
 
+### Labyrinth Mode — Step 4 (Full Roster)
+
+The Labyrinth's originally-spec'd roster — 4 enemy types, traps, loot,
+boss, and all three classes — now exists. Nine discrete commits under
+`src/game/labyrinth/`, zero core-game edits.
+
+**Projectile system** (`LabyrinthProjectile.ts` + `LabyrinthProjectile3D.tsx`).
+`LabProjectile` matches the main game's `Projectile` interface
+field-for-field plus an `owner: "player" | "enemy"` discriminator, so
+`Projectile3D` can render shim projectiles via a structural cast
+(no renderer edits). `tickLabProjectiles` handles wall collision,
+enemy-circle hit for player-owned, player-circle hit for enemy-owned,
+and accumulates damage into the shared `dmgAccum`. Feeds from: wall
+traps, turret enemies, warden starburst, mage orbs, rogue daggers.
+
+**Wall traps** (`LabyrinthTrap.ts` + `LabyrinthTrap3D.tsx`). Six
+corridor cells with walls on exactly two opposite sides become
+beam traps: warn (0.8s, red pulsing anchor cubes) → fire (0.25s,
+fat orb travelling cross-corridor) → cooldown (2.2-3.5s randomised
+so the maze doesn't pulse in sync). 30 damage. `WALL_TRAP_COUNT=6`
+in `LabyrinthConfig.ts`.
+
+**Loot chests** (`LabyrinthChest.ts` + `LabyrinthChest3D.tsx`). Ten
+chests at dead-end cells. Kinds weighted:
+- **60% treasure** — 3–5 XP orbs + 10 HP heal, `gear_drop` SFX.
+- **25% trapped** — poison puddle (`LabGroundFx`) + 2 poison stacks
+  on the player, `boss_special` SFX.
+- **15% mimic** — 0.35s reveal animation, then converts to a fast
+  melee enemy (kind `mimic`, mapped to `scuttler` visual). `boss_spawn`
+  SFX.
+
+Interaction is proximity-only (1.5u). Reveal glow colour is the tell:
+gold/green/red. All chest visuals use `meshBasicMaterial` +
+`depthWrite={false}` so they survive iOS PBR weirdness.
+
+**Enemy roster** (`LabyrinthEnemy.ts` extended with 4 new `EnemyKind`s).
+
+| Kind | HP | Speed | Attack | Shim maps to |
+|------|----|-------|--------|--------------|
+| corridor_guardian | 60 | 4.2 | melee 10 dmg @ 1.2s | elite |
+| trap_spawner (turret) | 80 | 0 (stationary) | ranged 15 dmg orb @ 1.8s | wraith |
+| mimic (from chest) | 60 | 4.5 | melee 18 dmg @ 1.0s | scuttler |
+| shadow_stalker | 40 | 5.5 | melee 20 dmg @ 0.9s | wraith |
+| warden (boss) | 800 | 3.0 (4.5 enraged) | melee 35 dmg + starburst + minions | boss |
+
+Corridor Guardian + Mimic + Shadow Stalker share the patrol/chase/
+attack state machine via a per-kind tuning object. Trap Spawner has
+its own stationary-turret AI with line-of-sight raycasting. Shadow
+Stalker flips the shim's `phasing` / `phaseTimer` fields when far from
+player so the main-game wraith renderer draws it semi-transparent —
+snaps to opaque at `STALKER_REVEAL_DIST` (1.5 cells). Only one stalker
+alive at a time; spawns every `SHADOW_STALKER_INTERVAL_SEC` (45s) at
+the farthest dead-end from the player.
+
+**Warden boss** (`LabyrinthWarden.ts`). Spawns once per run at the
+centre 3×3 chamber, gated by elapsed time (>=5min) AND zone radius
+(<50% initial). Three-phase AI:
+- Phase 1 (>66% HP): chase + melee, 35 dmg / 1.6s cd.
+- Phase 2 (33-66%): adds a 0.6s-telegraphed 8-projectile starburst
+  every 5s (22 dmg per orb).
+- Phase 3 (<33%): enrage — speed +50%, summons 2 corridor guardian
+  minions every 10s.
+
+Killing the warden sets `shared.victory = true` → new ⚔ WARDEN SLAIN
+end screen variant (distinct from ⬭ EXTRACTED portal win).
+
+**Mage + rogue ranged unlock** (`LabyrinthRangedAttack.ts`). Both
+classes now selectable in `LabyrinthCharSelect.tsx`. Attack dispatch
+in `CombatEnemyLoop` branches on `charClass`:
+- Warrior — existing melee arc (unchanged).
+- Mage — piercing arcane orb, 20 dmg, 0.95s cd, `attack_orb` SFX.
+- Rogue — 3-dagger fan, 12 dmg each, 0.6s cd, `attack_dagger` SFX.
+
+Projectile kills route through the same on-kill callback as warrior
+swings (XP orbs, death FX, warden-victory detection).
+
+**Warrior GLB re-enabled.** `LabyrinthPlayer3D` now mounts on top of
+the procedural robot-man `GeoCharacter` (the always-on safety net).
+If the GLB pipeline throws, the error boundary swallows it and the
+robot-man stays visible. Mage + rogue get their main-game procedural
+meshes from the same `Player3D` dispatch.
+
+**Invariant (continued):** `git log --name-only main..HEAD` for the
+step-4 commits (A–I) lists only files under
+`artifacts/dungeon-requiem/src/game/labyrinth/` (+ this doc for step
+I). `src/entities/Projectile3D.tsx`, `src/entities/XPOrb3D.tsx`,
+`src/entities/Enemy3D.tsx`, `src/entities/Player3D.tsx`,
+`src/audio/AudioManager.ts`, `src/game/GameScene.tsx`, and every
+`src/data/*` table are untouched. Main dungeon / trial / boss modes
+are behaviourally identical to pre-change.
+
