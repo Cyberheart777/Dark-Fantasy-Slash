@@ -71,8 +71,15 @@ import {
   isEnemyEvictable,
   makeShadowStalker,
   findStalkerSpawnCell,
+  makeCorridorGuardianAt,
   type EnemyRuntime,
 } from "./LabyrinthEnemy";
+import {
+  makeWarden,
+  updateWarden,
+  shouldSpawnWarden,
+  clearWardenState,
+} from "./LabyrinthWarden";
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
 // LabyrinthPlayer3D temporarily disabled while we verify GeoCharacter
 // renders reliably on iOS — re-import alongside the JSX mount below.
@@ -162,6 +169,10 @@ interface LabSharedState {
   defeated: boolean;
   /** true once the player has used an extraction portal (win condition). */
   extracted: boolean;
+  /** true once the Warden has been slain (alternate win condition). */
+  victory: boolean;
+  /** true once a warden has been spawned this run (prevents re-spawn). */
+  wardenSpawned: boolean;
   /** true if the player is currently outside the safe zone. */
   outsideZone: boolean;
   /** World direction TO the safe-zone center from the player, normalized. */
@@ -242,6 +253,8 @@ export function LabyrinthScene() {
     zone: computeZoneState(0),
     defeated: false,
     extracted: false,
+    victory: false,
+    wardenSpawned: false,
     outsideZone: false,
     safeDirX: 0, safeDirZ: 0,
     poisonStacks: 0,
@@ -576,7 +589,9 @@ function LabyrinthWorld({
         labPoisonRef={labPoisonRef}
         groundFxRef={groundFxRef}
         shroudMistRef={shroudMistRef}
+        enemiesRef={enemiesRef}
         onGroundFxChange={setGroundFxList}
+        onEnemiesChange={setEnemyList}
         runStartMs={runStartMs}
         onRadiusChange={(r, p) => { setCurrentRadius(r); setPaused(p); }}
         onPortalsChange={setPortalList}
@@ -907,7 +922,7 @@ function MovementLoop({
   useFrame((_, delta) => {
     const input = inputRef.current;
     if (!input) return;
-    if (sharedRef.current.defeated || sharedRef.current.extracted) return;
+    if (sharedRef.current.defeated || sharedRef.current.extracted || sharedRef.current.victory) return;
     const s = input.state;
     const p = playerRef.current;
     const dashState = labDashRef.current;
@@ -1065,7 +1080,7 @@ function CombatEnemyLoop({
 
   useFrame((_, delta) => {
     const shared = sharedRef.current;
-    if (shared.defeated || shared.extracted) return;
+    if (shared.defeated || shared.extracted || shared.victory) return;
     const input = inputRef.current;
     if (!input) return;
 
@@ -1098,7 +1113,7 @@ function CombatEnemyLoop({
             if (killed) {
               shared.killCount++;
               audioManager.play("enemy_death");
-              spawnLabDeathFx(deathFxRef.current, e.x, e.z, "#ff3030");
+              spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" ? "#ff40ff" : "#ff3030");
               spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
               // Bloodforge — each kill grants +1 maxHp (cap 20 per run).
               if (isWarrior) {
@@ -1107,6 +1122,11 @@ function CombatEnemyLoop({
                   p.maxHp += gained;
                   p.hp = Math.min(p.maxHp, p.hp + gained);
                 }
+              }
+              if (e.kind === "warden") {
+                shared.victory = true;
+                clearWardenState(e.id);
+                audioManager.play("wave_clear");
               }
             }
           }
@@ -1117,9 +1137,21 @@ function CombatEnemyLoop({
     // 3) Enemy AI + melee; accumulate damage they deal the player.
     //    Trap Spawner turrets also spawn projectiles into the shared
     //    pool via this same dispatch (handled inside updateEnemy).
+    //    The Warden uses its own dedicated tick (3-phase state machine)
+    //    since it needs starburst + minion-spawn scheduling.
     const dmgAccum = { value: 0 };
     for (const e of enemies) {
-      updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum, projectilesRef.current);
+      if (e.state === "dead") { updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum, projectilesRef.current); continue; }
+      if (e.kind === "warden") {
+        updateWarden(
+          e, p.x, p.z, delta,
+          dmgAccum,
+          projectilesRef.current,
+          (mx, mz) => enemies.push(makeCorridorGuardianAt(mx, mz)),
+        );
+      } else {
+        updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum, projectilesRef.current);
+      }
     }
 
     // 3a) Tick wall-traps (warn → fire → cooldown state machines).
@@ -1145,7 +1177,7 @@ function CombatEnemyLoop({
       onEnemyKilled: (e) => {
         shared.killCount++;
         audioManager.play("enemy_death");
-        spawnLabDeathFx(deathFxRef.current, e.x, e.z, "#ff3030");
+        spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" ? "#ff40ff" : "#ff3030");
         spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
         if (isWarrior) {
           const gained = registerKill(warriorStateRef.current);
@@ -1153,6 +1185,11 @@ function CombatEnemyLoop({
             p.maxHp += gained;
             p.hp = Math.min(p.maxHp, p.hp + gained);
           }
+        }
+        if (e.kind === "warden") {
+          shared.victory = true;
+          clearWardenState(e.id);
+          audioManager.play("wave_clear");
         }
       },
     });
@@ -1373,7 +1410,9 @@ function ZoneTickLoop({
   labPoisonRef,
   groundFxRef,
   shroudMistRef,
+  enemiesRef,
   onGroundFxChange,
+  onEnemiesChange,
   runStartMs,
   onRadiusChange,
   onPortalsChange,
@@ -1384,7 +1423,9 @@ function ZoneTickLoop({
   labPoisonRef: React.MutableRefObject<LabPoisonState>;
   groundFxRef: React.MutableRefObject<LabGroundFx[]>;
   shroudMistRef: React.MutableRefObject<LabShroudMistEmitter>;
+  enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
   onGroundFxChange: (fx: LabGroundFx[]) => void;
+  onEnemiesChange: (enemies: EnemyRuntime[]) => void;
   runStartMs: React.MutableRefObject<number>;
   onRadiusChange: (radius: number, paused: boolean) => void;
   onPortalsChange: (portals: ExtractionPortal[]) => void;
@@ -1394,7 +1435,7 @@ function ZoneTickLoop({
 
   useFrame((_, delta) => {
     const shared = sharedRef.current;
-    if (shared.defeated || shared.extracted) return;
+    if (shared.defeated || shared.extracted || shared.victory) return;
 
     const elapsedSec = (performance.now() - runStartMs.current) / 1000;
     const zone = computeZoneState(elapsedSec);
@@ -1439,6 +1480,18 @@ function ZoneTickLoop({
     if (survivors.length !== prevFxLen) {
       lastEmittedGroundFxLen.current = survivors.length;
       onGroundFxChange(survivors.slice());
+    }
+
+    // ── Warden spawn ────────────────────────────────────────────────────
+    // Gated by BOTH elapsed time (>= 5min) AND zone radius (< 50% of
+    // initial). Spawns once at the centre chamber; shared.wardenSpawned
+    // prevents re-spawn after he's killed.
+    if (shouldSpawnWarden(elapsedSec, zone.radius, ZONE_INITIAL_RADIUS, shared.wardenSpawned)) {
+      enemiesRef.current.push(makeWarden(maze));
+      onEnemiesChange(enemiesRef.current.slice());
+      shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
+      shared.wardenSpawned = true;
+      audioManager.play("boss_spawn");
     }
 
     // ── Portal milestones ──────────────────────────────────────────────
@@ -1560,6 +1613,7 @@ function LabyrinthHUD({
     safeDirX: 0, safeDirZ: 0,
     defeated: false,
     extracted: false,
+    victory: false,
     poisonStacks: 0,
     poisonDps: 0,
     nearestPortalDirX: 0,
@@ -1609,6 +1663,7 @@ function LabyrinthHUD({
         safeDirZ: s.safeDirZ,
         defeated: s.defeated,
         extracted: s.extracted,
+        victory: s.victory,
         poisonStacks: s.poisonStacks,
         poisonDps: s.poisonDps,
         nearestPortalDirX: ndx,
@@ -1784,8 +1839,28 @@ function LabyrinthHUD({
         count={display.lastPortalPopupCount}
       />
 
-      {/* Extracted (win) screen — takes precedence over defeat */}
-      {display.extracted && (
+      {/* Warden-slain victory screen — takes precedence over everything */}
+      {display.victory && (
+        <div style={styles.extractedOverlay}>
+          <div style={styles.extractedPanel}>
+            <div style={{ ...styles.extractedTitle, color: "#ff60ff" }}>
+              ⚔ WARDEN SLAIN
+            </div>
+            <div style={styles.extractedSub}>
+              The vault's keeper is dead. The labyrinth is yours.
+            </div>
+            <div style={styles.extractedStats}>
+              TIME · {formatZoneTime(display.elapsedSec)} · KILLS · {display.killCount}
+            </div>
+            <button style={styles.escBtn} onClick={exit}>
+              ⌂ RETURN TO MAIN MENU
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Extracted (portal win) screen */}
+      {display.extracted && !display.victory && (
         <div style={styles.extractedOverlay}>
           <div style={styles.extractedPanel}>
             <div style={styles.extractedTitle}>⬭ EXTRACTED</div>
@@ -1803,7 +1878,7 @@ function LabyrinthHUD({
       )}
 
       {/* Defeat screen */}
-      {display.defeated && !display.extracted && (
+      {display.defeated && !display.extracted && !display.victory && (
         <div style={styles.defeatOverlay}>
           <div style={styles.defeatPanel}>
             <div style={styles.defeatTitle}>CONSUMED BY THE DARK</div>

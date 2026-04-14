@@ -31,7 +31,7 @@ import {
 } from "./LabyrinthMaze";
 import { spawnLabProjectile, type LabProjectile } from "./LabyrinthProjectile";
 
-export type EnemyKind = "corridor_guardian" | "trap_spawner" | "mimic" | "shadow_stalker";
+export type EnemyKind = "corridor_guardian" | "trap_spawner" | "mimic" | "shadow_stalker" | "warden";
 
 export type EnemyAiState = "patrol" | "chase" | "attack" | "dead";
 
@@ -213,6 +213,30 @@ export function makeMimicEnemy(x: number, z: number): EnemyRuntime {
   };
 }
 
+let minionIdCounter = 0;
+/** Create a single Corridor Guardian at a specific world position.
+ *  Used by the Warden's phase-3 minion summons. */
+export function makeCorridorGuardianAt(x: number, z: number): EnemyRuntime {
+  return {
+    id: `minion-${minionIdCounter++}`,
+    kind: "corridor_guardian",
+    x, z,
+    angle: 0,
+    hp: GUARDIAN_HP,
+    maxHp: GUARDIAN_HP,
+    state: "chase",
+    aiTimer: 0,
+    attackCooldown: 0,
+    deathFadeSec: 0,
+    hitFlashTimer: 0,
+    patrolTargetX: null,
+    patrolTargetZ: null,
+    lastMoveX: 0,
+    lastMoveZ: 0,
+    fireTimer: 0,
+  };
+}
+
 let stalkerIdCounter = 0;
 /** Create a shadow stalker at the given world position. Starts in
  *  `chase` so it immediately hunts the player from wherever it
@@ -338,11 +362,19 @@ export function updateEnemy(
     return;
   }
 
-  // Dispatch on enemy kind. Corridor Guardian + Mimic share the full
-  // patrol/chase/attack state machine below (with per-kind tuning);
-  // Trap Spawner is stationary-turret only.
+  // Dispatch on enemy kind. Corridor Guardian + Mimic + Shadow Stalker
+  // share the full patrol/chase/attack state machine below (with per-
+  // kind tuning). Trap Spawner is stationary-turret only. The Warden
+  // runs its own state machine in LabyrinthWarden.ts — callers route
+  // that kind through updateWarden before reaching this function, so
+  // if we see one here something's wrong; fall through to a no-op.
   if (enemy.kind === "trap_spawner") {
     updateTrapSpawner(enemy, playerX, playerZ, segments, delta, projectiles);
+    if (enemy.hitFlashTimer > 0) enemy.hitFlashTimer = Math.max(0, enemy.hitFlashTimer - delta);
+    return;
+  }
+  if (enemy.kind === "warden") {
+    // Warden tick is handled by LabyrinthWarden.updateWarden; skip here.
     if (enemy.hitFlashTimer > 0) enemy.hitFlashTimer = Math.max(0, enemy.hitFlashTimer - delta);
     return;
   }
@@ -565,6 +597,7 @@ export function enemyCollisionRadius(kind: EnemyKind): number {
     case "corridor_guardian": return GUARDIAN_COLLISION_RADIUS;
     case "mimic": return MIMIC_COLLISION_RADIUS;
     case "shadow_stalker": return STALKER_COLLISION_RADIUS;
+    case "warden": return 1.8;
   }
 }
 
