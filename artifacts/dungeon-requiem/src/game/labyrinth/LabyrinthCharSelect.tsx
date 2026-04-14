@@ -25,12 +25,13 @@ const clickSfx = () => audioManager.play("menu_click");
 
 const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue"];
 
-/** Which classes are playable in the labyrinth today. Flip a flag to
- *  enable Mage or Rogue in a future session. */
+/** Which classes are playable in the labyrinth today. All three
+ *  unlocked as of step 4 commit G — mage + rogue get ranged
+ *  projectile attacks via LabyrinthRangedAttack.ts. */
 const LABYRINTH_CLASS_AVAILABLE: Record<CharacterClass, boolean> = {
   warrior: true,
-  mage: false,
-  rogue: false,
+  mage: true,
+  rogue: true,
 };
 
 const LABYRINTH_CLASS_COMING_SOON_HINT = "Playable in a future labyrinth update.";

@@ -125,6 +125,13 @@ import {
 } from "./LabyrinthProjectile";
 import { LabyrinthProjectiles3D } from "./LabyrinthProjectile3D";
 import {
+  makeRangedAttackState,
+  tickRangedAttack,
+  tryFireMageOrb,
+  tryFireRogueFan,
+  type RangedAttackState,
+} from "./LabyrinthRangedAttack";
+import {
   spawnLabTraps,
   tickLabTraps,
   type LabTrap,
@@ -281,6 +288,8 @@ export function LabyrinthScene() {
   // Warrior-only passives state. Created unconditionally (cheap), but
   // the combat loop only invokes it when charClass === "warrior".
   const warriorStateRef = useRef<LabWarriorState>(makeLabWarriorState());
+  // Ranged attack cooldown for mage + rogue. Warrior ignores.
+  const rangedAttackStateRef = useRef<RangedAttackState>(makeRangedAttackState());
   // Projectile pool shared between all projectile sources (traps,
   // turret enemies, warden starburst, mage/rogue attacks). Ticked and
   // collision-checked in CombatEnemyLoop; rendered via the main-game
@@ -356,6 +365,7 @@ export function LabyrinthScene() {
           progressionRef={progressionRef}
           xpOrbsRef={xpOrbsRef}
           warriorStateRef={warriorStateRef}
+          rangedAttackStateRef={rangedAttackStateRef}
           projectilesRef={projectilesRef}
           trapsRef={trapsRef}
           chestsRef={chestsRef}
@@ -399,6 +409,7 @@ function LabyrinthWorld({
   progressionRef,
   xpOrbsRef,
   warriorStateRef,
+  rangedAttackStateRef,
   projectilesRef,
   trapsRef,
   chestsRef,
@@ -425,6 +436,7 @@ function LabyrinthWorld({
   progressionRef: React.MutableRefObject<LabProgressionState>;
   xpOrbsRef: React.MutableRefObject<XPOrb[]>;
   warriorStateRef: React.MutableRefObject<LabWarriorState>;
+  rangedAttackStateRef: React.MutableRefObject<RangedAttackState>;
   projectilesRef: React.MutableRefObject<LabProjectile[]>;
   trapsRef: React.MutableRefObject<LabTrap[]>;
   chestsRef: React.MutableRefObject<LabChest[]>;
@@ -563,6 +575,7 @@ function LabyrinthWorld({
         progressionRef={progressionRef}
         xpOrbsRef={xpOrbsRef}
         warriorStateRef={warriorStateRef}
+        rangedAttackStateRef={rangedAttackStateRef}
         projectilesRef={projectilesRef}
         trapsRef={trapsRef}
         chestsRef={chestsRef}
@@ -1029,6 +1042,7 @@ function CombatEnemyLoop({
   progressionRef,
   xpOrbsRef,
   warriorStateRef,
+  rangedAttackStateRef,
   projectilesRef,
   trapsRef,
   chestsRef,
@@ -1053,6 +1067,7 @@ function CombatEnemyLoop({
   progressionRef: React.MutableRefObject<LabProgressionState>;
   xpOrbsRef: React.MutableRefObject<XPOrb[]>;
   warriorStateRef: React.MutableRefObject<LabWarriorState>;
+  rangedAttackStateRef: React.MutableRefObject<RangedAttackState>;
   projectilesRef: React.MutableRefObject<LabProjectile[]>;
   trapsRef: React.MutableRefObject<LabTrap[]>;
   chestsRef: React.MutableRefObject<LabChest[]>;
@@ -1088,48 +1103,58 @@ function CombatEnemyLoop({
     const atk = attackStateRef.current;
     const enemies = enemiesRef.current;
 
-    // 1) Attack + warrior timers
+    // 1) Attack + warrior timers + ranged cooldown
     tickAttackState(atk, delta);
     const isWarrior = charClass === "warrior";
+    const isMage = charClass === "mage";
+    const isRogue = charClass === "rogue";
     if (isWarrior) tickLabWarrior(warriorStateRef.current, delta);
+    if (!isWarrior) tickRangedAttack(rangedAttackStateRef.current, delta);
 
-    // 2) Attack input → swing → hit-test. For warrior, damage flows
-    //    through modifyOutgoingDamage (applies Blood Momentum stacks,
-    //    War Cry buff, and crit roll) and each hit/kill registers
-    //    against the warrior state (stacks + bloodforge).
+    // 2) Attack input dispatch per class.
+    //    Warrior → melee swing arc (existing path).
+    //    Mage    → piercing arcane orb (spawns a player projectile).
+    //    Rogue   → 3-dagger fan (spawns three player projectiles).
+    //    Ranged kills flow through the existing projectile tick's
+    //    onEnemyKilled callback — no duplicate handling needed here.
     const inputState = input.state;
     if (inputState.attack) {
       input.consumeAttack();
-      if (tryStartSwing(atk, p.angle, combatStats)) {
-        audioManager.play("attack_melee");
-        for (const e of enemies) {
-          if (e.state === "dead") continue;
-          if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange)) {
-            const dmg = isWarrior
-              ? modifyOutgoingDamage(warriorStateRef.current, combatStats.damage, critChance)
-              : combatStats.damage;
-            const killed = damageEnemy(e, dmg);
-            if (isWarrior) registerHit(warriorStateRef.current);
-            if (killed) {
-              shared.killCount++;
-              audioManager.play("enemy_death");
-              spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" ? "#ff40ff" : "#ff3030");
-              spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
-              // Bloodforge — each kill grants +1 maxHp (cap 20 per run).
-              if (isWarrior) {
+      if (isWarrior) {
+        if (tryStartSwing(atk, p.angle, combatStats)) {
+          audioManager.play("attack_melee");
+          for (const e of enemies) {
+            if (e.state === "dead") continue;
+            if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange)) {
+              const dmg = modifyOutgoingDamage(warriorStateRef.current, combatStats.damage, critChance);
+              const killed = damageEnemy(e, dmg);
+              registerHit(warriorStateRef.current);
+              if (killed) {
+                shared.killCount++;
+                audioManager.play("enemy_death");
+                spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" ? "#ff40ff" : "#ff3030");
+                spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
                 const gained = registerKill(warriorStateRef.current);
                 if (gained > 0) {
                   p.maxHp += gained;
                   p.hp = Math.min(p.maxHp, p.hp + gained);
                 }
-              }
-              if (e.kind === "warden") {
-                shared.victory = true;
-                clearWardenState(e.id);
-                audioManager.play("wave_clear");
+                if (e.kind === "warden") {
+                  shared.victory = true;
+                  clearWardenState(e.id);
+                  audioManager.play("wave_clear");
+                }
               }
             }
           }
+        }
+      } else if (isMage) {
+        if (tryFireMageOrb(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, p.angle)) {
+          audioManager.play("attack_orb");
+        }
+      } else if (isRogue) {
+        if (tryFireRogueFan(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, p.angle)) {
+          audioManager.play("attack_dagger");
         }
       }
     }
