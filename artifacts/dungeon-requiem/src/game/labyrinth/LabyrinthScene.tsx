@@ -75,6 +75,12 @@ import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
 import { LabyrinthCanvasErrorBoundary } from "./LabyrinthCanvasErrorBoundary";
 import { LabyrinthDebug } from "./LabyrinthDebug";
 import {
+  spawnLabDeathFx,
+  tickLabDeathFx,
+  type LabDeathFx,
+} from "./LabyrinthDeathFx";
+import { LabyrinthDeathFx3D } from "./LabyrinthDeathFx3D";
+import {
   makeLabDashState,
   tickLabDashState,
   tryStartLabDash,
@@ -183,6 +189,7 @@ export function LabyrinthScene() {
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
+  const deathFxRef = useRef<LabDeathFx[]>([]);
   // Enemies initialized once per scene mount (one maze = one enemy set).
   const enemiesRef = useRef<EnemyRuntime[]>([]);
   if (enemiesRef.current.length === 0) {
@@ -220,6 +227,7 @@ export function LabyrinthScene() {
           labDashRef={labDashRef}
           dashCooldownSec={classDef.dashCooldown}
           enemiesRef={enemiesRef}
+          deathFxRef={deathFxRef}
           runStartMs={runStartMs}
         />
       </Canvas>
@@ -253,6 +261,7 @@ function LabyrinthWorld({
   labDashRef,
   dashCooldownSec,
   enemiesRef,
+  deathFxRef,
   runStartMs,
 }: {
   maze: Maze;
@@ -269,6 +278,7 @@ function LabyrinthWorld({
    *  class is fixed for the lifetime of the scene. */
   dashCooldownSec: number;
   enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
+  deathFxRef: React.MutableRefObject<LabDeathFx[]>;
   runStartMs: React.MutableRefObject<number>;
 }) {
   // Initialize spawn position from the maze generator on first mount.
@@ -289,6 +299,9 @@ function LabyrinthWorld({
   // Enemy list mirror for the React renderer. Updated by CombatEnemyLoop
   // only when the array identity actually changes (spawn / eviction).
   const [enemyList, setEnemyList] = useState<EnemyRuntime[]>(() => enemiesRef.current.slice());
+  // Death-burst list mirror. CombatEnemyLoop pushes new bursts and
+  // evicts expired ones; this state drives the Canvas-tree re-render.
+  const [deathFxList, setDeathFxList] = useState<LabDeathFx[]>([]);
 
   return (
     <>
@@ -312,6 +325,10 @@ function LabyrinthWorld({
       <LabyrinthCanvasErrorBoundary label="Enemies3D" fallback={null}>
         <LabyrinthEnemies3D enemies={enemyList} />
       </LabyrinthCanvasErrorBoundary>
+      {/* Death-burst renderer — independent of Enemies3D so even if the
+          enemy visuals error out, the kill-feedback particles still play
+          (they read only from deathFxList, not from GameState). */}
+      <LabyrinthDeathFx3D bursts={deathFxList} />
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
       {/* Guaranteed-visible baseline: the procedural PlayerMarker (purple
           glowing cube + pulsing ring) is always mounted. If LabyrinthPlayer3D
@@ -347,7 +364,9 @@ function LabyrinthWorld({
         inputRef={inputRef}
         attackStateRef={attackStateRef}
         enemiesRef={enemiesRef}
+        deathFxRef={deathFxRef}
         onEnemiesChange={setEnemyList}
+        onDeathFxChange={setDeathFxList}
       />
       <ZoneTickLoop
         maze={maze}
@@ -590,7 +609,9 @@ function CombatEnemyLoop({
   inputRef,
   attackStateRef,
   enemiesRef,
+  deathFxRef,
   onEnemiesChange,
+  onDeathFxChange,
 }: {
   maze: Maze;
   combatStats: LabCombatStats;
@@ -599,9 +620,14 @@ function CombatEnemyLoop({
   inputRef: React.MutableRefObject<InputManager3D | null>;
   attackStateRef: React.MutableRefObject<PlayerAttackState>;
   enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
+  deathFxRef: React.MutableRefObject<LabDeathFx[]>;
   onEnemiesChange: (enemies: EnemyRuntime[]) => void;
+  onDeathFxChange: (fx: LabDeathFx[]) => void;
 }) {
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
+  // Tracks the last death-fx list length we pushed to React state so we
+  // don't re-render on every frame just because the tick ran.
+  const lastEmittedFxLen = useRef(0);
 
   useFrame((_, delta) => {
     const shared = sharedRef.current;
@@ -632,6 +658,10 @@ function CombatEnemyLoop({
             if (killed) {
               shared.killCount++;
               audioManager.play("enemy_death");
+              // Spawn a death burst at the guardian's position. The
+              // guardian's emissive red carries through to the puff
+              // color so kills feel chromatic rather than generic.
+              spawnLabDeathFx(deathFxRef.current, e.x, e.z, "#ff3030");
             }
           }
         }
@@ -669,6 +699,19 @@ function CombatEnemyLoop({
     } else {
       // Keep the live count accurate even without eviction.
       shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
+    }
+
+    // 6) Tick + evict death bursts. Re-emit to React state only when
+    //    the array length changed (a burst was spawned this frame OR
+    //    at least one expired). Mid-burst animation runs from the
+    //    already-mounted DeathBurst components' useFrame reads of
+    //    fx.age, so we don't need a re-render every frame.
+    const fxPrevLen = lastEmittedFxLen.current;
+    const tickedFx = tickLabDeathFx(deathFxRef.current, delta);
+    deathFxRef.current = tickedFx;
+    if (tickedFx.length !== fxPrevLen) {
+      lastEmittedFxLen.current = tickedFx.length;
+      onDeathFxChange(tickedFx.slice());
     }
   });
 
