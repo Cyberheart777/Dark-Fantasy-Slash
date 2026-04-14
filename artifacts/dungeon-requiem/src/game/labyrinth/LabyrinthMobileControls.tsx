@@ -1,12 +1,15 @@
 /**
  * LabyrinthMobileControls.tsx
- * Minimal touch-input joystick for The Labyrinth (step 1).
- * Just movement — no aim/attack yet (no combat in step 1).
+ * Touch-input for The Labyrinth.
  *
- * Pattern: left-half of screen is the joystick zone. First touch down
- * sets the anchor; drag from anchor sets the movement vector. The
- * InputManager3D.setMobileMovement() method is called each frame on
- * drag.
+ * Layout:
+ *   - Left half of screen: movement joystick. First touch-down sets
+ *     the anchor; drag from anchor sets the movement vector.
+ *   - Right half: attack tap button (added in step 3a — previously
+ *     this half was reserved for a future aim stick). A short tap
+ *     triggers the player swing via InputManager3D.setMobileAttack.
+ *     Multi-touch is supported: the player can hold the joystick with
+ *     one thumb and tap to attack with the other.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -28,6 +31,10 @@ export function LabyrinthMobileControls({ inputRef }: Props) {
   const [visible, setVisible] = useState(checkMobile);
   const [moveStick, setMoveStick] = useState<{ anchorX: number; anchorY: number; knobX: number; knobY: number } | null>(null);
   const moveTouchId = useRef<number | null>(null);
+  // Separate touch id for the attack button so it works concurrently
+  // with the movement joystick (common two-thumb play pattern).
+  const attackTouchId = useRef<number | null>(null);
+  const [attackPressed, setAttackPressed] = useState(false);
 
   useEffect(() => {
     const onResize = () => setVisible(checkMobile());
@@ -44,18 +51,27 @@ export function LabyrinthMobileControls({ inputRef }: Props) {
     };
   }, [visible, inputRef]);
 
-  // Movement joystick — left half of screen
+  // Dispatches each new touch to the joystick (left half) or the
+  // attack button (right half) based on where the touch began.
   const onTouchStart = (e: React.TouchEvent) => {
-    if (moveTouchId.current !== null) return;
-    const t = e.changedTouches[0];
-    if (t.clientX > window.innerWidth / 2) return; // right side reserved for future aim stick
-    moveTouchId.current = t.identifier;
-    setMoveStick({
-      anchorX: t.clientX,
-      anchorY: t.clientY,
-      knobX: t.clientX,
-      knobY: t.clientY,
-    });
+    const half = window.innerWidth / 2;
+    for (const t of Array.from(e.changedTouches)) {
+      if (t.clientX <= half) {
+        if (moveTouchId.current !== null) continue;
+        moveTouchId.current = t.identifier;
+        setMoveStick({
+          anchorX: t.clientX,
+          anchorY: t.clientY,
+          knobX: t.clientX,
+          knobY: t.clientY,
+        });
+      } else {
+        if (attackTouchId.current !== null) continue;
+        attackTouchId.current = t.identifier;
+        setAttackPressed(true);
+        inputRef.current?.setMobileAttack(true);
+      }
+    }
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
@@ -93,6 +109,11 @@ export function LabyrinthMobileControls({ inputRef }: Props) {
         setMoveStick(null);
         inputRef.current?.setMobileMovement(false, false, false, false);
       }
+      if (t.identifier === attackTouchId.current) {
+        attackTouchId.current = null;
+        setAttackPressed(false);
+        inputRef.current?.setMobileAttack(false);
+      }
     }
   };
 
@@ -126,19 +147,58 @@ export function LabyrinthMobileControls({ inputRef }: Props) {
           }} />
         </>
       )}
+      {/* Attack button hint — fixed position on the bottom-right, purely
+          a visual affordance. Taps anywhere on the right half register,
+          so the exact position of this circle isn't a hit-target. */}
+      <div
+        style={{
+          ...styles.attackHint,
+          background: attackPressed
+            ? "rgba(255,180,120,0.55)"
+            : "rgba(140,60,30,0.35)",
+          borderColor: attackPressed
+            ? "rgba(255,220,160,0.9)"
+            : "rgba(220,140,100,0.55)",
+          boxShadow: attackPressed
+            ? "0 0 22px rgba(255,180,100,0.7)"
+            : "0 0 10px rgba(220,110,60,0.4)",
+        }}
+      >
+        ⚔
+      </div>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   zone: {
+    // Covers the full screen so right-half taps register as attacks.
+    // The joystick/attack split is handled by touch coords, not by
+    // DOM hit-testing.
     position: "absolute",
     left: 0,
     top: 0,
-    width: "50vw",
+    width: "100vw",
     height: "100vh",
     touchAction: "none",
     zIndex: 50,
+  },
+  attackHint: {
+    position: "absolute",
+    right: 36,
+    bottom: 48,
+    width: 110,
+    height: 110,
+    borderRadius: "50%",
+    border: "3px solid rgba(220,140,100,0.55)",
+    background: "rgba(140,60,30,0.35)",
+    color: "rgba(255,220,160,0.95)",
+    fontSize: 52,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    pointerEvents: "none",
+    transition: "background 0.1s, box-shadow 0.1s, border-color 0.1s",
   },
   anchor: {
     position: "absolute",

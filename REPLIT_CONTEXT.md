@@ -84,3 +84,41 @@ when the zone overtakes their position (fade-out + console log
 Labyrinth folder. No edits to `GameScene.tsx`, `UpgradeData.ts`, or any
 other non-Labyrinth source. Normal dungeon mode and trial mode are
 untouched.
+
+### Labyrinth Mode — Combat + Corridor Guardians (Step 3a)
+
+First enemy type wired in with a minimal player-combat model.
+
+**Player combat** (`LabyrinthCombat.ts`):
+- Spacebar / mouse click / mobile attack button triggers a 120° forward
+  swing. Every live enemy in the arc within `atkRange` takes damage.
+- Baseline stats (`LAB_COMBAT_BASELINE`) mirror the main game's
+  warrior defaults (damage 30, range 3.2, cooldown 0.6s). When
+  Labyrinth progression lands in Step 5, these will be replaced by
+  the player's PlayerStats — the interface shape already matches.
+- Swing visual is a translucent additive pie-wedge at the player's
+  feet, fading over `SWING_VISUAL_DURATION_SEC`.
+
+**Corridor Guardians** (`LabyrinthEnemy.ts`, `LabyrinthEnemy3D.tsx`):
+- 10 spawned per run (`CORRIDOR_GUARDIAN_COUNT` in config), placed
+  in cells away from both the player spawn and the center chamber.
+- AI states: `patrol` → `chase` (within 3 cells) → `attack` (melee
+  range). Leashes back to patrol beyond 5 cells.
+- Stats: 60 HP (2 hits), 4.2 u/s speed, melee damage 10 per swing,
+  1.2s attack cooldown.
+- Walls block via the same `collidesWithAnyWall` math the player uses.
+  Enemies also softly repel each other to prevent stacking.
+- Dead enemies fade out over `ENEMY_DEATH_FADE_SEC` then get evicted
+  from the runtime list.
+
+**Mobile attack**: `LabyrinthMobileControls.tsx` now covers the full
+screen. Left-half touches drive the movement joystick; right-half
+taps fire the attack. Two-thumb play works — both touches track
+independently via `moveTouchId` / `attackTouchId`.
+
+**Remaining in Step 3** (not yet wired): Trap Spawners, Shadow
+Stalkers, Warden mini-boss, XP/loot drops from kills.
+
+**Invariant (continued):** same self-contained rule — combat/enemy
+files live in `src/game/labyrinth/`, no imports from `GameScene.tsx`
+or the main game's enemy/projectile code. The main game is untouched.

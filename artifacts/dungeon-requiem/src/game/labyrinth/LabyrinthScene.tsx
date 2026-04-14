@@ -53,6 +53,24 @@ import {
   type ExtractionPortal,
 } from "./LabyrinthPortal";
 import { LabyrinthPortals3D } from "./LabyrinthPortal3D";
+import {
+  LAB_COMBAT_BASELINE,
+  makePlayerAttackState,
+  tickAttackState,
+  tryStartSwing,
+  isInSwingArc,
+  SWING_VISUAL_DURATION_SEC,
+  SWING_HALF_ARC,
+  type PlayerAttackState,
+} from "./LabyrinthCombat";
+import {
+  spawnCorridorGuardians,
+  updateEnemy,
+  damageEnemy,
+  isEnemyEvictable,
+  type EnemyRuntime,
+} from "./LabyrinthEnemy";
+import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
 
@@ -91,6 +109,10 @@ interface LabSharedState {
   lastPortalPopupSec: number;
   /** Count of portals spawned in the most recent burst (for the popup). */
   lastPortalPopupCount: number;
+  /** Live enemy count (alive + fading). Mirrored for HUD. */
+  enemyCount: number;
+  /** Total enemies killed this run — shown on HUD / victory screens. */
+  killCount: number;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -122,8 +144,20 @@ export function LabyrinthScene() {
     spawnedMilestones: new Set<number>(),
     lastPortalPopupSec: -Infinity,
     lastPortalPopupCount: 0,
+    enemyCount: 0,
+    killCount: 0,
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
+  const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
+  // Enemies initialized once per scene mount (one maze = one enemy set).
+  const enemiesRef = useRef<EnemyRuntime[]>([]);
+  if (enemiesRef.current.length === 0) {
+    enemiesRef.current = spawnCorridorGuardians(
+      maze,
+      LABYRINTH_CONFIG.CORRIDOR_GUARDIAN_COUNT,
+    );
+    sharedRef.current.enemyCount = enemiesRef.current.length;
+  }
   const runStartMs = useRef(performance.now());
 
   useEffect(() => {
@@ -146,6 +180,8 @@ export function LabyrinthScene() {
           playerRef={playerRef}
           sharedRef={sharedRef}
           labPoisonRef={labPoisonRef}
+          attackStateRef={attackStateRef}
+          enemiesRef={enemiesRef}
           runStartMs={runStartMs}
         />
       </Canvas>
@@ -167,6 +203,8 @@ function LabyrinthWorld({
   playerRef,
   sharedRef,
   labPoisonRef,
+  attackStateRef,
+  enemiesRef,
   runStartMs,
 }: {
   maze: Maze;
@@ -174,6 +212,8 @@ function LabyrinthWorld({
   playerRef: React.MutableRefObject<LabPlayer>;
   sharedRef: React.MutableRefObject<LabSharedState>;
   labPoisonRef: React.MutableRefObject<LabPoisonState>;
+  attackStateRef: React.MutableRefObject<PlayerAttackState>;
+  enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
   runStartMs: React.MutableRefObject<number>;
 }) {
   // Initialize spawn position from the maze generator on first mount.
@@ -191,6 +231,9 @@ function LabyrinthWorld({
   // adding/removing portals re-renders the Canvas tree. Updated by
   // ZoneTickLoop at spawn / consumption events (not every frame).
   const [portalList, setPortalList] = useState<ExtractionPortal[]>([]);
+  // Enemy list mirror for the React renderer. Updated by CombatEnemyLoop
+  // only when the array identity actually changes (spawn / eviction).
+  const [enemyList, setEnemyList] = useState<EnemyRuntime[]>(() => enemiesRef.current.slice());
 
   return (
     <>
@@ -207,9 +250,20 @@ function LabyrinthWorld({
       <LabyrinthMap3D maze={maze} />
       <LabyrinthZone3D radius={currentRadius} isPaused={paused} />
       <LabyrinthPortals3D portals={portalList} />
+      <LabyrinthEnemies3D enemies={enemyList} />
+      <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
       <PlayerMarker playerRef={playerRef} />
       <CameraFollow playerRef={playerRef} />
       <MovementLoop playerRef={playerRef} maze={maze} inputRef={inputRef} sharedRef={sharedRef} />
+      <CombatEnemyLoop
+        maze={maze}
+        playerRef={playerRef}
+        sharedRef={sharedRef}
+        inputRef={inputRef}
+        attackStateRef={attackStateRef}
+        enemiesRef={enemiesRef}
+        onEnemiesChange={setEnemyList}
+      />
       <ZoneTickLoop
         maze={maze}
         playerRef={playerRef}
@@ -381,6 +435,151 @@ function MovementLoop({
 // React state update for the 3D visual to ~10Hz so we don't re-render
 // the Canvas tree every frame — the visual mesh scales smoothly inside
 // useFrame anyway.
+
+// ─── Combat + enemy tick loop ────────────────────────────────────────────────
+// Single useFrame handles both player-attack input and enemy AI so damage
+// and consumption stay in a predictable order. Order per frame:
+//   1. Tick attack cooldown / swing visual timer
+//   2. On attack press: start swing, hit-test against live enemies,
+//      apply damage, record kills
+//   3. Tick every live enemy (AI + movement + melee); accumulate the
+//      total damage enemies dealt the player this frame
+//   4. Apply accumulated enemy damage to the player (checks defeat)
+//   5. Evict fully-faded dead enemies — if the array changes, push the
+//      new list to React state so the renderer refreshes.
+
+function CombatEnemyLoop({
+  maze,
+  playerRef,
+  sharedRef,
+  inputRef,
+  attackStateRef,
+  enemiesRef,
+  onEnemiesChange,
+}: {
+  maze: Maze;
+  playerRef: React.MutableRefObject<LabPlayer>;
+  sharedRef: React.MutableRefObject<LabSharedState>;
+  inputRef: React.MutableRefObject<InputManager3D | null>;
+  attackStateRef: React.MutableRefObject<PlayerAttackState>;
+  enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
+  onEnemiesChange: (enemies: EnemyRuntime[]) => void;
+}) {
+  const segments = useMemo(() => extractWallSegments(maze), [maze]);
+
+  useFrame((_, delta) => {
+    const shared = sharedRef.current;
+    if (shared.defeated || shared.extracted) return;
+    const input = inputRef.current;
+    if (!input) return;
+
+    const p = playerRef.current;
+    const atk = attackStateRef.current;
+    const enemies = enemiesRef.current;
+
+    // 1) Attack timers
+    tickAttackState(atk, delta);
+
+    // 2) Attack input → swing → hit-test
+    const inputState = input.state;
+    if (inputState.attack) {
+      input.consumeAttack();
+      if (tryStartSwing(atk, p.angle, LAB_COMBAT_BASELINE)) {
+        for (const e of enemies) {
+          if (e.state === "dead") continue;
+          if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange)) {
+            const killed = damageEnemy(e, LAB_COMBAT_BASELINE.damage);
+            if (killed) shared.killCount++;
+          }
+        }
+      }
+    }
+
+    // 3) Enemy AI + melee; accumulate damage they deal the player.
+    const dmgAccum = { value: 0 };
+    for (const e of enemies) {
+      updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum);
+    }
+
+    // 4) Apply enemy damage to the player.
+    if (dmgAccum.value > 0) {
+      p.hp = Math.max(0, p.hp - dmgAccum.value);
+      if (p.hp <= 0) shared.defeated = true;
+    }
+
+    // 5) Evict fully-faded dead enemies. Only re-emit the array when
+    //    membership actually changes — avoids churn on every frame.
+    const beforeLen = enemies.length;
+    const filtered = enemies.filter((e) => !isEnemyEvictable(e));
+    if (filtered.length !== beforeLen) {
+      enemiesRef.current = filtered;
+      shared.enemyCount = filtered.filter((e) => e.state !== "dead").length;
+      onEnemiesChange(filtered.slice());
+    } else {
+      // Keep the live count accurate even without eviction.
+      shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
+    }
+  });
+
+  return null;
+}
+
+// ─── Attack arc visual ───────────────────────────────────────────────────────
+// Renders a translucent fan in front of the player when the swing visual
+// timer is active. Fades linearly over SWING_VISUAL_DURATION_SEC.
+
+function PlayerAttackArc({
+  playerRef,
+  attackStateRef,
+}: {
+  playerRef: React.MutableRefObject<LabPlayer>;
+  attackStateRef: React.MutableRefObject<PlayerAttackState>;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const matRef = useRef<THREE.MeshBasicMaterial>(null);
+
+  useFrame(() => {
+    const m = meshRef.current;
+    const mat = matRef.current;
+    const atk = attackStateRef.current;
+    const p = playerRef.current;
+    if (!m || !mat) return;
+    if (atk.swingVisualSec <= 0) {
+      mat.opacity = 0;
+      m.visible = false;
+      return;
+    }
+    m.visible = true;
+    // Place the arc at the player's feet, rotated to face the swing angle.
+    m.position.set(p.x, 0.12, p.z);
+    m.rotation.set(-Math.PI / 2, 0, -atk.swingAngle);
+    // Scale the base unit-circle geometry up to the swing's range.
+    const s = atk.swingRange;
+    m.scale.set(s, s, 1);
+    const t = atk.swingVisualSec / SWING_VISUAL_DURATION_SEC;
+    mat.opacity = 0.55 * t;
+  });
+
+  // CircleGeometry with thetaStart/thetaLength gives us a pie wedge. We
+  // offset thetaStart so the wedge is centered on +Y (the "front" after
+  // the mesh's Z rotation maps it to -Z in world space).
+  const thetaLength = SWING_HALF_ARC * 2;
+  const thetaStart = Math.PI / 2 - SWING_HALF_ARC;
+  return (
+    <mesh ref={meshRef} visible={false}>
+      <circleGeometry args={[1, 40, thetaStart, thetaLength]} />
+      <meshBasicMaterial
+        ref={matRef}
+        color="#ffe0a0"
+        transparent
+        opacity={0}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
 
 function ZoneTickLoop({
   maze,
@@ -561,6 +760,8 @@ function LabyrinthHUD({
     lastPortalPopupSec: -Infinity,
     lastPortalPopupCount: 0,
     livePortalCount: 0,
+    enemyCount: 0,
+    killCount: 0,
   });
 
   useEffect(() => {
@@ -603,6 +804,8 @@ function LabyrinthHUD({
         lastPortalPopupSec: s.lastPortalPopupSec,
         lastPortalPopupCount: s.lastPortalPopupCount,
         livePortalCount: liveCount,
+        enemyCount: s.enemyCount,
+        killCount: s.killCount,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -660,6 +863,18 @@ function LabyrinthHUD({
         </div>
         <div style={styles.timerPhase}>
           {display.isPaused ? "◦ PAUSED" : "▼ SHRINKING"}
+        </div>
+      </div>
+
+      {/* Below the timer: threat readout (live enemies + kills) */}
+      <div style={styles.threatBox}>
+        <div style={styles.threatRow}>
+          <span style={styles.threatLabel}>THREATS</span>
+          <span style={styles.threatValue}>{display.enemyCount}</span>
+        </div>
+        <div style={styles.threatRow}>
+          <span style={styles.threatLabel}>KILLS</span>
+          <span style={styles.threatValueAccent}>{display.killCount}</span>
         </div>
       </div>
 
@@ -945,6 +1160,38 @@ const styles: Record<string, React.CSSProperties> = {
   timerPhase: {
     fontSize: 9, letterSpacing: 2, color: "rgba(180,150,220,0.7)",
     marginTop: 2, fontFamily: "monospace",
+  },
+  threatBox: {
+    position: "absolute" as const,
+    top: 108,
+    right: 20,
+    minWidth: 180,
+    background: "rgba(20,5,10,0.7)",
+    border: "1px solid rgba(220,80,80,0.35)",
+    borderRadius: 8,
+    padding: "8px 14px",
+    backdropFilter: "blur(4px)",
+    fontFamily: "monospace",
+    pointerEvents: "none" as const,
+  },
+  threatRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+    gap: 14,
+    padding: "2px 0",
+  },
+  threatLabel: {
+    fontSize: 10, letterSpacing: 2,
+    color: "rgba(220,170,170,0.8)", fontWeight: 900,
+  },
+  threatValue: {
+    fontSize: 18, fontWeight: 900, color: "#ff6060",
+    textShadow: "0 0 6px rgba(255,80,80,0.55)",
+  },
+  threatValueAccent: {
+    fontSize: 18, fontWeight: 900, color: "#ffcc60",
+    textShadow: "0 0 6px rgba(255,200,90,0.55)",
   },
   zoneWarning: {
     position: "absolute",
