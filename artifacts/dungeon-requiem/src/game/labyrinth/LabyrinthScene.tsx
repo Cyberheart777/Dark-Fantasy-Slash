@@ -69,6 +69,8 @@ import {
   updateEnemy,
   damageEnemy,
   isEnemyEvictable,
+  makeShadowStalker,
+  findStalkerSpawnCell,
   type EnemyRuntime,
 } from "./LabyrinthEnemy";
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
@@ -488,7 +490,7 @@ function LabyrinthWorld({
           it fails, enemies are invisible (a known degradation) but
           walls, player, and HUD still render. */}
       <LabyrinthCanvasErrorBoundary label="Enemies3D" fallback={null}>
-        <LabyrinthEnemies3D enemies={enemyList} />
+        <LabyrinthEnemies3D enemies={enemyList} playerRef={playerRef} />
       </LabyrinthCanvasErrorBoundary>
       {/* Death-burst renderer — independent of Enemies3D so even if the
           enemy visuals error out, the kill-feedback particles still play
@@ -1057,6 +1059,9 @@ function CombatEnemyLoop({
   const lastEmittedOrbLen = useRef(0);
   // And for projectiles.
   const lastEmittedProjLen = useRef(0);
+  // Shadow-stalker spawn countdown. Starts at the interval so the first
+  // stalker appears after the first interval rather than at spawn.
+  const stalkerSpawnTimer = useRef(LABYRINTH_CONFIG.SHADOW_STALKER_INTERVAL_SEC);
 
   useFrame((_, delta) => {
     const shared = sharedRef.current;
@@ -1221,6 +1226,26 @@ function CombatEnemyLoop({
     shared.xp = progressionRef.current.xp;
     shared.xpToNext = progressionRef.current.xpToNext;
     shared.totalXp = progressionRef.current.totalXp;
+
+    // 7a) Shadow-stalker spawn. Every SHADOW_STALKER_INTERVAL_SEC, if no
+    //     stalker is currently alive, materialise one at the farthest
+    //     dead-end from the player. Only one alive at a time — keeps
+    //     them scary rather than overwhelming.
+    stalkerSpawnTimer.current -= delta;
+    if (stalkerSpawnTimer.current <= 0) {
+      const stalkerAlive = enemies.some(
+        (e) => e.kind === "shadow_stalker" && e.state !== "dead",
+      );
+      if (!stalkerAlive) {
+        const spawnPos = findStalkerSpawnCell(maze, p.x, p.z);
+        if (spawnPos) {
+          enemies.push(makeShadowStalker(spawnPos.x, spawnPos.z));
+          onEnemiesChange(enemies.slice());
+          shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
+        }
+      }
+      stalkerSpawnTimer.current = LABYRINTH_CONFIG.SHADOW_STALKER_INTERVAL_SEC;
+    }
 
     // 7b) Chest proximity + reveal tick. May spawn XP orbs (treasure),
     //     push to groundFxRef (trapped — poison pool), or push to

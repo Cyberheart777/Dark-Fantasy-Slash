@@ -31,7 +31,7 @@ import {
 } from "./LabyrinthMaze";
 import { spawnLabProjectile, type LabProjectile } from "./LabyrinthProjectile";
 
-export type EnemyKind = "corridor_guardian" | "trap_spawner" | "mimic";
+export type EnemyKind = "corridor_guardian" | "trap_spawner" | "mimic" | "shadow_stalker";
 
 export type EnemyAiState = "patrol" | "chase" | "attack" | "dead";
 
@@ -105,6 +105,24 @@ const MIMIC_ATTACK_RANGE = 1.9;
 const MIMIC_ATTACK_DAMAGE = 18;
 const MIMIC_ATTACK_COOLDOWN = 1.0;  // swings slightly faster than guardian (1.2)
 const MIMIC_COLLISION_RADIUS = 0.75;
+
+// ─── Shadow Stalker tuning ───────────────────────────────────────────────────
+// Low-HP, very fast ambusher that spawns from a far dead-end every
+// SHADOW_STALKER_INTERVAL_SEC. Only one alive at a time. Phases
+// (renders semi-transparent, signalled via hitFlashTimer abuse — see
+// the shim) until it closes to STALKER_REVEAL_DIST; then snaps to
+// fully opaque for the strike.
+
+export const STALKER_HP = 40;
+const STALKER_SPEED = 5.5;
+const STALKER_DETECTION = LABYRINTH_CONFIG.CELL_SIZE * 6;   // always aware of player
+const STALKER_LEASH = LABYRINTH_CONFIG.CELL_SIZE * 12;      // never loses interest
+const STALKER_ATTACK_RANGE = 1.7;
+const STALKER_ATTACK_DAMAGE = 20;
+const STALKER_ATTACK_COOLDOWN = 0.9;
+const STALKER_COLLISION_RADIUS = 0.6;
+/** Distance at which stalker snaps from phasing to opaque — the "spotted!" moment. */
+export const STALKER_REVEAL_DIST = LABYRINTH_CONFIG.CELL_SIZE * 1.5;
 
 /** After death, how long the husk lingers before being evicted. */
 export const ENEMY_DEATH_FADE_SEC = 0.6;
@@ -195,6 +213,53 @@ export function makeMimicEnemy(x: number, z: number): EnemyRuntime {
   };
 }
 
+let stalkerIdCounter = 0;
+/** Create a shadow stalker at the given world position. Starts in
+ *  `chase` so it immediately hunts the player from wherever it
+ *  materialises. */
+export function makeShadowStalker(x: number, z: number): EnemyRuntime {
+  return {
+    id: `stalker-${stalkerIdCounter++}`,
+    kind: "shadow_stalker",
+    x, z,
+    angle: 0,
+    hp: STALKER_HP,
+    maxHp: STALKER_HP,
+    state: "chase",
+    aiTimer: 0,
+    attackCooldown: 0,
+    deathFadeSec: 0,
+    hitFlashTimer: 0,
+    patrolTargetX: null,
+    patrolTargetZ: null,
+    lastMoveX: 0,
+    lastMoveZ: 0,
+    fireTimer: 0,
+  };
+}
+
+/** Pick a dead-end far from the player for a stalker to appear at. If
+ *  the maze has no suitable dead-end, returns null (caller skips the
+ *  spawn this interval). */
+export function findStalkerSpawnCell(
+  maze: Maze,
+  playerX: number,
+  playerZ: number,
+): { x: number; z: number } | null {
+  const cs = LABYRINTH_CONFIG.CELL_SIZE;
+  const minDistSq = (cs * 8) * (cs * 8);
+  let best: { x: number; z: number; d: number } | null = null;
+  for (const de of maze.deadEnds) {
+    const { x, z } = cellToWorld(de.col, de.row);
+    const dx = x - playerX;
+    const dz = z - playerZ;
+    const d = dx * dx + dz * dz;
+    if (d < minDistSq) continue;
+    if (!best || d > best.d) best = { x, z, d };
+  }
+  return best;
+}
+
 /**
  * Pick `count` spawn cells for Trap Spawner turrets. Prefers dead-end cells
  * (enemies are harder to out-flank when wedged at a dead-end) and otherwise
@@ -283,8 +348,11 @@ export function updateEnemy(
   }
 
   // Per-kind tuning for the shared chase-melee AI.
-  const tuning = enemy.kind === "mimic"
-    ? { speed: MIMIC_SPEED, detect: MIMIC_DETECTION, leash: MIMIC_LEASH, range: MIMIC_ATTACK_RANGE, damage: MIMIC_ATTACK_DAMAGE, cd: MIMIC_ATTACK_COOLDOWN, collR: MIMIC_COLLISION_RADIUS }
+  const tuning =
+    enemy.kind === "mimic"
+      ? { speed: MIMIC_SPEED, detect: MIMIC_DETECTION, leash: MIMIC_LEASH, range: MIMIC_ATTACK_RANGE, damage: MIMIC_ATTACK_DAMAGE, cd: MIMIC_ATTACK_COOLDOWN, collR: MIMIC_COLLISION_RADIUS }
+    : enemy.kind === "shadow_stalker"
+      ? { speed: STALKER_SPEED, detect: STALKER_DETECTION, leash: STALKER_LEASH, range: STALKER_ATTACK_RANGE, damage: STALKER_ATTACK_DAMAGE, cd: STALKER_ATTACK_COOLDOWN, collR: STALKER_COLLISION_RADIUS }
     : { speed: GUARDIAN_SPEED, detect: GUARDIAN_DETECTION, leash: GUARDIAN_LEASH, range: GUARDIAN_ATTACK_RANGE, damage: GUARDIAN_ATTACK_DAMAGE, cd: GUARDIAN_ATTACK_COOLDOWN, collR: GUARDIAN_COLLISION_RADIUS };
 
   const dx = playerX - enemy.x;
@@ -496,6 +564,7 @@ export function enemyCollisionRadius(kind: EnemyKind): number {
     case "trap_spawner": return TRAP_SPAWNER_COLLISION_RADIUS;
     case "corridor_guardian": return GUARDIAN_COLLISION_RADIUS;
     case "mimic": return MIMIC_COLLISION_RADIUS;
+    case "shadow_stalker": return STALKER_COLLISION_RADIUS;
   }
 }
 

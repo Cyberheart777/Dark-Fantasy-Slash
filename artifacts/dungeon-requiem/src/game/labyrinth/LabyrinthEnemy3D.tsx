@@ -22,9 +22,21 @@ import { useFrame } from "@react-three/fiber";
 import { Enemy3D } from "../../entities/Enemy3D";
 import type { EnemyRuntime as CoreEnemyRuntime } from "../GameScene";
 import type { EnemyRuntime as LabEnemy } from "./LabyrinthEnemy";
+import { STALKER_REVEAL_DIST } from "./LabyrinthEnemy";
 import { createEnemyShim, updateEnemyShim } from "./LabyrinthShims";
 
-export function LabyrinthEnemies3D({ enemies }: { enemies: readonly LabEnemy[] }) {
+/** Minimal duck-typed player shape the stalker phasing check needs. */
+interface PlayerPositionRef {
+  current: { x: number; z: number };
+}
+
+export function LabyrinthEnemies3D({
+  enemies,
+  playerRef,
+}: {
+  enemies: readonly LabEnemy[];
+  playerRef: PlayerPositionRef;
+}) {
   // Shim map keyed by enemy id — stable across frames so Enemy3D's
   // internal animation refs don't reset on every re-render.
   const shimsRef = useRef<Map<string, CoreEnemyRuntime>>(new Map());
@@ -54,9 +66,10 @@ export function LabyrinthEnemies3D({ enemies }: { enemies: readonly LabEnemy[] }
 
   // Per-frame sync of every shim from the authoritative LabEnemy.
   useFrame(() => {
+    const p = playerRef.current;
     for (const lab of enemies) {
       const shim = shimsRef.current.get(lab.id);
-      if (shim) updateEnemyShim(shim, lab);
+      if (shim) updateEnemyShim(shim, lab, p.x, p.z, STALKER_REVEAL_DIST);
     }
   });
 

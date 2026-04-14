@@ -173,9 +173,9 @@ export function enemyTypeForKind(kind: LabEnemy["kind"]): string {
     case "corridor_guardian": return "elite";
     case "trap_spawner": return "wraith";
     case "mimic": return "scuttler";
+    case "shadow_stalker": return "wraith";
     // Future mappings:
-    //   shadow_stalker → "scuttler"
-    //   warden         → "boss"
+    //   warden → "boss"
   }
 }
 
@@ -194,6 +194,8 @@ function visualsForKind(kind: LabEnemy["kind"]): {
       return { scale: 0.85, color: "#6020a0", emissive: "#40108c" };
     case "mimic":
       return { scale: 1.05, color: "#b07040", emissive: "#703018" };
+    case "shadow_stalker":
+      return { scale: 0.9, color: "#101018", emissive: "#3a2a5a" };
   }
 }
 
@@ -248,8 +250,17 @@ export function createEnemyShim(labEnemy: LabEnemy): EnemyRuntime {
 
 /** Per-frame sync. Also decays the shim's attack timer so Enemy3D can
  *  animate windup/strike — mapped from LabEnemy's attackCooldown which
- *  counts DOWN in the same direction the main game uses. */
-export function updateEnemyShim(shim: EnemyRuntime, labEnemy: LabEnemy): void {
+ *  counts DOWN in the same direction the main game uses.
+ *
+ *  playerX/Z are used only by shadow stalkers, which phase out at range
+ *  and reveal when close. Other kinds ignore them. */
+export function updateEnemyShim(
+  shim: EnemyRuntime,
+  labEnemy: LabEnemy,
+  playerX: number,
+  playerZ: number,
+  stalkerRevealDist: number,
+): void {
   shim.x = labEnemy.x;
   shim.z = labEnemy.z;
   // Derive velocity from the last movement direction at a reasonable
@@ -264,6 +275,18 @@ export function updateEnemyShim(shim: EnemyRuntime, labEnemy: LabEnemy): void {
   // attackTimer / attackInterval: Enemy3D uses the ratio to animate
   // wind-up. When the guardian is in `attack` state and close to
   // swinging, attackCooldown is near 0 → attackTimer low → "striking".
-  shim.attackInterval = 1.2; // matches LabyrinthEnemy.GUARDIAN_ATTACK_COOLDOWN
+  shim.attackInterval = 1.2;
   shim.attackTimer = labEnemy.attackCooldown;
+  // Shadow stalker: render semi-transparent until within reveal range.
+  // Enemy3D reads .phasing / .phaseTimer for its wraith shimmer path.
+  if (labEnemy.kind === "shadow_stalker") {
+    const dx = playerX - labEnemy.x;
+    const dz = playerZ - labEnemy.z;
+    const far = dx * dx + dz * dz > stalkerRevealDist * stalkerRevealDist;
+    shim.phasing = far;
+    shim.phaseTimer = far ? 1 : 0;
+  } else {
+    shim.phasing = false;
+    shim.phaseTimer = 0;
+  }
 }
