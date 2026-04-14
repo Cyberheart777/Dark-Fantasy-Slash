@@ -58,10 +58,24 @@ export function LabyrinthCharSelect() {
 
   const isRaceUnlocked = (r: RaceType) => unlockedRaces.includes(r);
 
-  const onConfirmRace = () => {
-    if (!isRaceUnlocked(race)) return;
+  const onPickRace = (r: RaceType) => {
+    if (!isRaceUnlocked(r)) return;
     clickSfx();
+    setRace(r);
+    // Auto-advance on tap. Previously this only highlighted the card
+    // and required the user to scroll to a "NEXT" button below the
+    // fold on mobile — which looked like the screen was stuck.
     setStep("class");
+  };
+
+  const onPickClass = (c: CharacterClass) => {
+    if (!LABYRINTH_CLASS_AVAILABLE[c]) return;
+    clickSfx();
+    setCls(c);
+    // Class tap stages the selection; the sticky footer's "DESCEND"
+    // button confirms. This is the one place where we keep two-tap
+    // semantics so the user can read the class stats card before
+    // committing to a run.
   };
 
   const onBeginRun = () => {
@@ -100,90 +114,89 @@ export function LabyrinthCharSelect() {
           </div>
         </div>
 
-        {step === "race" && (
-          <div style={styles.grid}>
-            {RACES.map((r) => {
-              const def = RACE_DATA[r];
-              const unlocked = isRaceUnlocked(r);
-              const active = race === r;
-              return (
-                <button
-                  key={r}
-                  disabled={!unlocked}
-                  onClick={() => { clickSfx(); setRace(r); }}
-                  style={{
-                    ...styles.card,
-                    ...(active ? styles.cardActive : {}),
-                    ...(unlocked ? {} : styles.cardLocked),
-                  }}
-                >
-                  <div style={styles.cardIcon}>{def.icon}</div>
-                  <div style={styles.cardName}>{def.name}</div>
-                  <div style={styles.cardTitle}>{def.title}</div>
-                  <div style={styles.cardDesc}>{def.description}</div>
-                  {!unlocked && def.unlockCondition && (
-                    <div style={styles.cardLock}>🔒 {def.unlockCondition}</div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <div style={styles.scrollBody}>
+          {step === "race" && (
+            <div style={styles.grid}>
+              {RACES.map((r) => {
+                const def = RACE_DATA[r];
+                const unlocked = isRaceUnlocked(r);
+                const active = race === r;
+                return (
+                  <button
+                    key={r}
+                    disabled={!unlocked}
+                    onClick={() => onPickRace(r)}
+                    style={{
+                      ...styles.card,
+                      ...(active ? styles.cardActive : {}),
+                      ...(unlocked ? {} : styles.cardLocked),
+                    }}
+                  >
+                    <div style={styles.cardIcon}>{def.icon}</div>
+                    <div style={styles.cardName}>{def.name}</div>
+                    <div style={styles.cardTitle}>{def.title}</div>
+                    <div style={styles.cardDesc}>{def.description}</div>
+                    {!unlocked && def.unlockCondition && (
+                      <div style={styles.cardLock}>🔒 {def.unlockCondition}</div>
+                    )}
+                    {unlocked && (
+                      <div style={styles.cardTapHint}>TAP TO CHOOSE ›</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-        {step === "class" && (
-          <div style={styles.grid}>
-            {CLASSES.map((c) => {
-              const def = CHARACTER_DATA[c];
-              const available = LABYRINTH_CLASS_AVAILABLE[c];
-              const active = cls === c;
-              return (
-                <button
-                  key={c}
-                  disabled={!available}
-                  onClick={() => { clickSfx(); setCls(c); }}
-                  style={{
-                    ...styles.card,
-                    ...(active ? styles.cardActive : {}),
-                    ...(available ? {} : styles.cardLocked),
-                  }}
-                >
-                  <div style={{ ...styles.cardIcon, color: def.color }}>
-                    {c === "warrior" ? "⚔" : c === "mage" ? "✧" : "⚰"}
-                  </div>
-                  <div style={styles.cardName}>{def.name}</div>
-                  <div style={styles.cardTitle}>{def.title}</div>
-                  <div style={styles.cardDesc}>{def.description}</div>
-                  <div style={styles.cardStats}>
-                    HP {def.hp} · DMG {def.damage} · SPD {def.moveSpeed}
-                  </div>
-                  {!available && (
-                    <div style={styles.cardLock}>🔒 {LABYRINTH_CLASS_COMING_SOON_HINT}</div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
+          {step === "class" && (
+            <div style={styles.grid}>
+              {CLASSES.map((c) => {
+                const def = CHARACTER_DATA[c];
+                const available = LABYRINTH_CLASS_AVAILABLE[c];
+                const active = cls === c;
+                return (
+                  <button
+                    key={c}
+                    disabled={!available}
+                    onClick={() => onPickClass(c)}
+                    style={{
+                      ...styles.card,
+                      ...(active ? styles.cardActive : {}),
+                      ...(available ? {} : styles.cardLocked),
+                    }}
+                  >
+                    <div style={{ ...styles.cardIcon, color: def.color }}>
+                      {c === "warrior" ? "⚔" : c === "mage" ? "✧" : "⚰"}
+                    </div>
+                    <div style={styles.cardName}>{def.name}</div>
+                    <div style={styles.cardTitle}>{def.title}</div>
+                    <div style={styles.cardDesc}>{def.description}</div>
+                    <div style={styles.cardStats}>
+                      HP {def.hp} · DMG {def.damage} · SPD {def.moveSpeed}
+                    </div>
+                    {!available && (
+                      <div style={styles.cardLock}>🔒 {LABYRINTH_CLASS_COMING_SOON_HINT}</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
+        {/* Sticky footer so the primary CTA and back button are always
+            visible on mobile, even when the card grid overflows. */}
         <div style={styles.footer}>
           <button style={styles.backBtn} onClick={onBack}>
             ← {step === "race" ? "MAIN MENU" : "BACK"}
           </button>
-          {step === "race" ? (
-            <button
-              style={isRaceUnlocked(race) ? styles.nextBtn : styles.nextBtnDim}
-              onClick={onConfirmRace}
-              disabled={!isRaceUnlocked(race)}
-            >
-              NEXT →
-            </button>
-          ) : (
+          {step === "class" && (
             <button
               style={LABYRINTH_CLASS_AVAILABLE[cls] ? styles.nextBtn : styles.nextBtnDim}
               onClick={onBeginRun}
               disabled={!LABYRINTH_CLASS_AVAILABLE[cls]}
             >
-              DESCEND INTO THE LABYRINTH →
+              DESCEND →
             </button>
           )}
         </div>
@@ -206,7 +219,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    overflowY: "auto",
+    padding: 12,
+    boxSizing: "border-box",
   },
   vignette: {
     position: "absolute", inset: 0,
@@ -217,17 +231,30 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative",
     zIndex: 1,
     maxWidth: 960,
-    width: "92%",
-    padding: "28px 28px 32px",
+    width: "100%",
+    maxHeight: "calc(100dvh - 24px)",
+    display: "flex",
+    flexDirection: "column",
+    padding: "20px 20px 0",
     borderRadius: 14,
-    background: "rgba(10,4,20,0.80)",
+    background: "rgba(10,4,20,0.82)",
     border: "1px solid rgba(160,80,255,0.35)",
     boxShadow: "0 0 40px rgba(80,40,140,0.25)",
     backdropFilter: "blur(6px)",
+    boxSizing: "border-box",
+  },
+  scrollBody: {
+    // Card list scrolls INSIDE the panel while header + footer stay
+    // pinned. Gives every mobile viewport a visible NEXT/BACK button.
+    flex: 1,
+    overflowY: "auto",
+    paddingBottom: 14,
+    minHeight: 0,
   },
   header: {
     textAlign: "center",
-    marginBottom: 22,
+    marginBottom: 18,
+    flexShrink: 0,
   },
   eyebrow: {
     fontSize: 11, letterSpacing: 6, color: "rgba(220,120,255,0.85)",
@@ -299,12 +326,19 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 10, fontSize: 10, letterSpacing: 1,
     color: "rgba(255,200,120,0.7)", fontFamily: "monospace",
   },
+  cardTapHint: {
+    marginTop: 10, fontSize: 10, letterSpacing: 3, fontWeight: 900,
+    color: "rgba(220,170,255,0.7)", fontFamily: "monospace",
+  },
   footer: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 24,
     gap: 12,
+    padding: "14px 0 16px",
+    borderTop: "1px solid rgba(160,80,255,0.25)",
+    flexShrink: 0,
+    background: "rgba(10,4,20,0.95)",
   },
   backBtn: {
     padding: "10px 18px", fontSize: 12, fontWeight: 800, letterSpacing: 3,
