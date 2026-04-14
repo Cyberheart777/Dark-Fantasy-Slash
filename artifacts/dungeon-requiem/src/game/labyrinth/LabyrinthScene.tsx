@@ -29,6 +29,15 @@ import {
 } from "./LabyrinthMaze";
 import { LabyrinthMap3D } from "./LabyrinthMap3D";
 import { LabyrinthMobileControls } from "./LabyrinthMobileControls";
+import { LabyrinthZone3D } from "./LabyrinthZone3D";
+import {
+  computeZoneState,
+  computeZoneDpsPct,
+  isInsideZone,
+  formatZoneTime,
+  ZONE_INITIAL_RADIUS,
+  type ZoneState,
+} from "./LabyrinthZone";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
 
@@ -38,6 +47,20 @@ interface LabPlayer {
   angle: number;
   vx: number;
   vz: number;
+  hp: number;
+  maxHp: number;
+}
+
+/** Shared state read by HUD (polling) and mutated by Canvas useFrame. */
+interface LabSharedState {
+  zone: ZoneState;
+  /** true once HP <= 0 or zone has fully closed on player. */
+  defeated: boolean;
+  /** true if the player is currently outside the safe zone. */
+  outsideZone: boolean;
+  /** World direction TO the safe-zone center from the player, normalized. */
+  safeDirX: number;
+  safeDirZ: number;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -50,6 +73,20 @@ export function LabyrinthScene() {
   // mobile-touch overlay (which is outside Canvas) can share it.
   const inputRef = useRef<InputManager3D | null>(null);
   if (!inputRef.current) inputRef.current = new InputManager3D();
+
+  // Shared player + zone state. The Canvas useFrame loop writes to this;
+  // the HUD polls it on an interval so we don't re-render React at 60fps.
+  const playerRef = useRef<LabPlayer>({
+    x: 0, z: 0, angle: 0, vx: 0, vz: 0,
+    hp: 100, maxHp: 100,
+  });
+  const sharedRef = useRef<LabSharedState>({
+    zone: computeZoneState(0),
+    defeated: false,
+    outsideZone: false,
+    safeDirX: 0, safeDirZ: 0,
+  });
+  const runStartMs = useRef(performance.now());
 
   useEffect(() => {
     return () => {
@@ -65,9 +102,19 @@ export function LabyrinthScene() {
         camera={{ position: [0, 28, 18], fov: 55, near: 0.5, far: 300 }}
         gl={{ antialias: true }}
       >
-        <LabyrinthWorld maze={maze} inputRef={inputRef} />
+        <LabyrinthWorld
+          maze={maze}
+          inputRef={inputRef}
+          playerRef={playerRef}
+          sharedRef={sharedRef}
+          runStartMs={runStartMs}
+        />
       </Canvas>
-      <LabyrinthHUD maze={maze} />
+      <LabyrinthHUD
+        maze={maze}
+        playerRef={playerRef}
+        sharedRef={sharedRef}
+      />
       <LabyrinthMobileControls inputRef={inputRef} />
     </div>
   );
@@ -78,26 +125,30 @@ export function LabyrinthScene() {
 function LabyrinthWorld({
   maze,
   inputRef,
+  playerRef,
+  sharedRef,
+  runStartMs,
 }: {
   maze: Maze;
   inputRef: React.MutableRefObject<InputManager3D | null>;
+  playerRef: React.MutableRefObject<LabPlayer>;
+  sharedRef: React.MutableRefObject<LabSharedState>;
+  runStartMs: React.MutableRefObject<number>;
 }) {
-  // Spawn position from the maze generator.
-  const spawnWorld = useMemo(() => cellToWorld(maze.spawn.col, maze.spawn.row), [maze]);
+  // Initialize spawn position from the maze generator on first mount.
+  useMemo(() => {
+    const spawn = cellToWorld(maze.spawn.col, maze.spawn.row);
+    playerRef.current.x = spawn.x;
+    playerRef.current.z = spawn.z;
+    runStartMs.current = performance.now();
+    return null;
+  }, [maze, playerRef, runStartMs]);
 
-  const playerRef = useRef<LabPlayer>({
-    x: spawnWorld.x,
-    z: spawnWorld.z,
-    angle: 0,
-    vx: 0,
-    vz: 0,
-  });
+  const [currentRadius, setCurrentRadius] = useState(ZONE_INITIAL_RADIUS);
+  const [paused, setPaused] = useState(false);
 
   return (
     <>
-      {/* Lighting — much brighter than the core dungeon so the whole
-          maze layout reads well. Step 2+ will add atmospheric fog on
-          top of this when the closing-zone visuals come in. */}
       <ambientLight intensity={0.85} color="#a090c8" />
       <directionalLight
         position={[30, 50, 20]}
@@ -105,14 +156,20 @@ function LabyrinthWorld({
         color="#d0b0e8"
         castShadow
       />
-      {/* Player-follow torch — keeps the area around the player bright */}
       <PlayerTorch playerRef={playerRef} />
       <fog attach="fog" args={["#100820", 50, 140]} />
 
       <LabyrinthMap3D maze={maze} />
+      <LabyrinthZone3D radius={currentRadius} isPaused={paused} />
       <PlayerMarker playerRef={playerRef} />
       <CameraFollow playerRef={playerRef} />
-      <MovementLoop playerRef={playerRef} maze={maze} inputRef={inputRef} />
+      <MovementLoop playerRef={playerRef} maze={maze} inputRef={inputRef} sharedRef={sharedRef} />
+      <ZoneTickLoop
+        playerRef={playerRef}
+        sharedRef={sharedRef}
+        runStartMs={runStartMs}
+        onRadiusChange={(r, p) => { setCurrentRadius(r); setPaused(p); }}
+      />
     </>
   );
 }
@@ -223,10 +280,12 @@ function MovementLoop({
   playerRef,
   maze,
   inputRef,
+  sharedRef,
 }: {
   playerRef: React.MutableRefObject<LabPlayer>;
   maze: Maze;
   inputRef: React.MutableRefObject<InputManager3D | null>;
+  sharedRef: React.MutableRefObject<LabSharedState>;
 }) {
   // Precompute wall segments for collision (same data as renderer).
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
@@ -234,6 +293,7 @@ function MovementLoop({
   useFrame((_, delta) => {
     const input = inputRef.current;
     if (!input) return;
+    if (sharedRef.current.defeated) return;
     const s = input.state;
     const p = playerRef.current;
 
@@ -258,6 +318,67 @@ function MovementLoop({
     // Facing angle follows movement direction
     if (dx !== 0 || dz !== 0) {
       p.angle = Math.atan2(dx, -dz);
+    }
+  });
+
+  return null;
+}
+
+// ─── Zone tick loop ──────────────────────────────────────────────────────────
+// Advances zone state each frame, applies damage when player is outside
+// the safe radius, and updates shared state for the HUD. Throttles the
+// React state update for the 3D visual to ~10Hz so we don't re-render
+// the Canvas tree every frame — the visual mesh scales smoothly inside
+// useFrame anyway.
+
+function ZoneTickLoop({
+  playerRef,
+  sharedRef,
+  runStartMs,
+  onRadiusChange,
+}: {
+  playerRef: React.MutableRefObject<LabPlayer>;
+  sharedRef: React.MutableRefObject<LabSharedState>;
+  runStartMs: React.MutableRefObject<number>;
+  onRadiusChange: (radius: number, paused: boolean) => void;
+}) {
+  const lastVisualUpdate = useRef(0);
+
+  useFrame((_, delta) => {
+    const shared = sharedRef.current;
+    if (shared.defeated) return;
+
+    const elapsedSec = (performance.now() - runStartMs.current) / 1000;
+    const zone = computeZoneState(elapsedSec);
+    shared.zone = zone;
+
+    // Player vs safe-zone
+    const p = playerRef.current;
+    const inside = isInsideZone(p.x, p.z, zone.radius);
+    shared.outsideZone = !inside;
+
+    // Direction to safe zone (for screen-edge warning)
+    const dist = Math.sqrt(p.x * p.x + p.z * p.z) || 1;
+    shared.safeDirX = -p.x / dist;
+    shared.safeDirZ = -p.z / dist;
+
+    // Damage tick
+    if (!inside) {
+      const dpsPct = computeZoneDpsPct(elapsedSec);
+      const dmg = p.maxHp * dpsPct * delta;
+      p.hp = Math.max(0, p.hp - dmg);
+      if (p.hp <= 0) shared.defeated = true;
+    }
+
+    // If zone has fully closed and player is outside, defeat is imminent.
+    // The damage loop will kill them; nothing extra needed here.
+
+    // Throttle visual updates (mesh scale is smooth via useFrame in Zone3D
+    // anyway; this state just drives the "isPaused" color tint).
+    lastVisualUpdate.current += delta;
+    if (lastVisualUpdate.current > 0.1) {
+      lastVisualUpdate.current = 0;
+      onRadiusChange(zone.radius, zone.isPaused);
     }
   });
 
@@ -292,13 +413,46 @@ function collidesWithAnyWall(
 
 // ─── HUD (dev / placeholder) ──────────────────────────────────────────────────
 
-function LabyrinthHUD({ maze }: { maze: Maze }) {
+function LabyrinthHUD({
+  maze,
+  playerRef,
+  sharedRef,
+}: {
+  maze: Maze;
+  playerRef: React.MutableRefObject<LabPlayer>;
+  sharedRef: React.MutableRefObject<LabSharedState>;
+}) {
   const setPhase = useGameStore((s) => s.setPhase);
   const [esc, setEsc] = useState(false);
+  // Poll shared state at 10Hz for display only (don't re-render at 60fps).
+  const [display, setDisplay] = useState({
+    hp: 100, maxHp: 100,
+    timeRemaining: LABYRINTH_CONFIG.ZONE_TOTAL_DURATION,
+    isPaused: false,
+    outsideZone: false,
+    safeDirX: 0, safeDirZ: 0,
+    defeated: false,
+  });
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setDisplay({
+        hp: playerRef.current.hp,
+        maxHp: playerRef.current.maxHp,
+        timeRemaining: sharedRef.current.zone.timeRemaining,
+        isPaused: sharedRef.current.zone.isPaused,
+        outsideZone: sharedRef.current.outsideZone,
+        safeDirX: sharedRef.current.safeDirX,
+        safeDirZ: sharedRef.current.safeDirZ,
+        defeated: sharedRef.current.defeated,
+      });
+    }, 100);
+    return () => clearInterval(iv);
+  }, [playerRef, sharedRef]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === "Escape") setEsc(true);
+      if (e.code === "Escape") setEsc((v) => !v);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -306,17 +460,83 @@ function LabyrinthHUD({ maze }: { maze: Maze }) {
 
   const exit = useCallback(() => setPhase("menu"), [setPhase]);
 
+  const hpPct = Math.max(0, (display.hp / display.maxHp) * 100);
+  const hpColor = hpPct > 60 ? "#22cc55" : hpPct > 30 ? "#ff8800" : "#cc2222";
+
   return (
     <>
+      {/* Top: mode title */}
       <div style={styles.hudBanner}>
         <div style={styles.hudTitle}>THE LABYRINTH</div>
-        <div style={styles.hudSub}>Step 1 — Navigate the maze · WASD to move · ESC to exit</div>
         <div style={styles.hudStats}>
-          {maze.size}×{maze.size} maze · {maze.deadEnds.length} dead ends · spawn ({maze.spawn.col},{maze.spawn.row}) · center ({maze.center.col},{maze.center.row})
+          {maze.size}×{maze.size} maze · {maze.deadEnds.length} dead ends
         </div>
       </div>
 
-      {esc && (
+      {/* Top-left: HP bar */}
+      <div style={styles.hpBox}>
+        <div style={styles.hpLabel}>
+          <span style={{ color: "#ff6666", fontWeight: "bold" }}>HP</span>
+          <span style={{ color: "#ccc", fontSize: 13 }}>
+            {Math.ceil(display.hp)}/{display.maxHp}
+          </span>
+        </div>
+        <div style={styles.hpTrack}>
+          <div style={{
+            ...styles.hpFill,
+            width: `${hpPct}%`,
+            background: hpColor,
+            boxShadow: `0 0 8px ${hpColor}`,
+          }} />
+        </div>
+      </div>
+
+      {/* Top-right: zone timer */}
+      <div style={styles.timerBox}>
+        <div style={styles.timerLabel}>ZONE CLOSES IN</div>
+        <div style={{
+          ...styles.timerValue,
+          color: display.timeRemaining < 120 ? "#ff4444" : "#c080ff",
+        }}>
+          {formatZoneTime(display.timeRemaining)}
+        </div>
+        <div style={styles.timerPhase}>
+          {display.isPaused ? "◦ PAUSED" : "▼ SHRINKING"}
+        </div>
+      </div>
+
+      {/* Zone warning banner when outside safe zone */}
+      {display.outsideZone && !display.defeated && (
+        <div style={styles.zoneWarning}>
+          <div style={styles.zoneWarningText}>⚠ OUTSIDE SAFE ZONE ⚠</div>
+          <div style={styles.zoneWarningSub}>
+            Move toward the center — HP draining
+          </div>
+        </div>
+      )}
+
+      {/* Screen-edge arrow pointing toward safe zone (when outside) */}
+      {display.outsideZone && !display.defeated && (
+        <SafeZoneArrow dx={display.safeDirX} dz={display.safeDirZ} />
+      )}
+
+      {/* Defeat screen */}
+      {display.defeated && (
+        <div style={styles.defeatOverlay}>
+          <div style={styles.defeatPanel}>
+            <div style={styles.defeatTitle}>CONSUMED BY THE DARK</div>
+            <div style={styles.defeatSub}>
+              The labyrinth has claimed you. The vault remembers.
+            </div>
+            <button style={styles.escBtn} onClick={exit}>
+              ⌂ RETURN TO MAIN MENU
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pause */}
+      {esc && !display.defeated && (
         <div style={styles.escOverlay}>
           <div style={styles.escPanel}>
             <div style={styles.escTitle}>PAUSED</div>
@@ -326,6 +546,30 @@ function LabyrinthHUD({ maze }: { maze: Maze }) {
         </div>
       )}
     </>
+  );
+}
+
+/** Arrow at the edge of the screen pointing toward the center of the safe zone.
+ *  Positioned in the direction the player needs to move to get back to safety. */
+function SafeZoneArrow({ dx, dz }: { dx: number; dz: number }) {
+  // Convert world direction (dx, dz) into screen-space angle.
+  // Screen +Y is up, world -Z is "forward" into screen, so rotate accordingly.
+  // Camera is top-down; dx→screen X, dz→screen Y (positive Y downward on screen).
+  const angleDeg = Math.atan2(dx, -dz) * (180 / Math.PI);
+  return (
+    <div style={{
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: `translate(-50%, -50%) rotate(${angleDeg}deg) translateY(-min(30vh, 220px))`,
+      pointerEvents: "none",
+      fontSize: 48,
+      color: "#c080ff",
+      textShadow: "0 0 16px #9040e0, 0 0 32px #7020c0",
+      opacity: 0.85,
+    }}>
+      ▲
+    </div>
   );
 }
 
@@ -361,6 +605,108 @@ const styles: Record<string, React.CSSProperties> = {
   hudStats: {
     fontSize: 10, letterSpacing: 1, color: "rgba(170,223,255,0.5)", marginTop: 3,
     fontFamily: "monospace",
+  },
+  hpBox: {
+    position: "absolute",
+    top: 20,
+    left: 20,
+    width: 220,
+    background: "rgba(0,0,0,0.65)",
+    border: "1px solid #333",
+    borderRadius: 8,
+    padding: "10px 14px",
+    backdropFilter: "blur(4px)",
+    pointerEvents: "none",
+  },
+  hpLabel: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: 4,
+    fontSize: 14,
+    fontFamily: "monospace",
+  },
+  hpTrack: {
+    width: "100%",
+    height: 10,
+    background: "#222",
+    borderRadius: 5,
+    overflow: "hidden",
+    border: "1px solid #444",
+  },
+  hpFill: {
+    height: "100%",
+    borderRadius: 5,
+    transition: "width 0.18s, background 0.2s",
+  },
+  timerBox: {
+    position: "absolute",
+    top: 20,
+    right: 20,
+    minWidth: 180,
+    background: "rgba(10,5,25,0.75)",
+    border: "1px solid rgba(140,80,220,0.4)",
+    borderRadius: 8,
+    padding: "10px 14px",
+    backdropFilter: "blur(4px)",
+    textAlign: "center",
+    pointerEvents: "none",
+  },
+  timerLabel: {
+    fontSize: 9, letterSpacing: 3, color: "rgba(170,140,220,0.8)",
+    fontFamily: "monospace", fontWeight: 900,
+  },
+  timerValue: {
+    fontSize: 26, fontWeight: 900, letterSpacing: 4, marginTop: 2,
+    fontFamily: "monospace", textShadow: "0 0 10px currentColor",
+  },
+  timerPhase: {
+    fontSize: 9, letterSpacing: 2, color: "rgba(180,150,220,0.7)",
+    marginTop: 2, fontFamily: "monospace",
+  },
+  zoneWarning: {
+    position: "absolute",
+    top: "28%",
+    left: "50%",
+    transform: "translateX(-50%)",
+    textAlign: "center",
+    pointerEvents: "none",
+    animation: "zoneWarnPulse 1.2s ease-in-out infinite",
+  },
+  zoneWarningText: {
+    fontSize: 22, fontWeight: 900, letterSpacing: 4, color: "#ff3355",
+    textShadow: "0 0 14px #ff0044, 0 0 28px #cc0033",
+    textTransform: "uppercase" as const,
+  },
+  zoneWarningSub: {
+    fontSize: 12, letterSpacing: 2, color: "#ffaabb",
+    marginTop: 6, fontFamily: "monospace",
+  },
+  defeatOverlay: {
+    position: "absolute",
+    inset: 0,
+    background: "rgba(20,0,20,0.88)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    backdropFilter: "blur(10px)",
+    zIndex: 100,
+  },
+  defeatPanel: {
+    padding: "44px 56px",
+    background: "rgba(10,0,18,0.96)",
+    border: "1px solid rgba(180,40,80,0.6)",
+    borderRadius: 16,
+    boxShadow: "0 0 40px rgba(200,30,70,0.35)",
+    textAlign: "center",
+    minWidth: 360,
+  },
+  defeatTitle: {
+    fontSize: 28, fontWeight: 900, letterSpacing: 6, color: "#ff6688",
+    textShadow: "0 0 14px rgba(255,40,80,0.6)", marginBottom: 10,
+  },
+  defeatSub: {
+    fontSize: 13, color: "rgba(255,180,200,0.75)", letterSpacing: 1,
+    fontFamily: "monospace", marginBottom: 22, fontStyle: "italic",
   },
   escOverlay: {
     position: "absolute",
