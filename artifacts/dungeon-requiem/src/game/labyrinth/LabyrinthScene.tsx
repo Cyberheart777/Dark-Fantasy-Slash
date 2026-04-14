@@ -74,6 +74,12 @@ import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
 import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
 import { LabyrinthCanvasErrorBoundary } from "./LabyrinthCanvasErrorBoundary";
 import { LabyrinthDebug } from "./LabyrinthDebug";
+import {
+  makeLabDashState,
+  tickLabDashState,
+  tryStartLabDash,
+  type LabDashState,
+} from "./LabyrinthDash";
 import { CHARACTER_DATA, type CharacterClass } from "../../data/CharacterData";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
@@ -86,6 +92,10 @@ interface LabPlayer {
   vz: number;
   hp: number;
   maxHp: number;
+  /** True while the dash timer is active — drives Player3D's dash-lean
+   *  animation and tells MovementLoop to apply dash velocity instead
+   *  of joystick-derived velocity. Mutated each frame by MovementLoop. */
+  isDashing: boolean;
 }
 
 /** Shared state read by HUD (polling) and mutated by Canvas useFrame. */
@@ -152,7 +162,9 @@ export function LabyrinthScene() {
   const playerRef = useRef<LabPlayer>({
     x: 0, z: 0, angle: 0, vx: 0, vz: 0,
     hp: classDef.hp, maxHp: classDef.hp,
+    isDashing: false,
   });
+  const labDashRef = useRef<LabDashState>(makeLabDashState());
   const sharedRef = useRef<LabSharedState>({
     zone: computeZoneState(0),
     defeated: false,
@@ -204,6 +216,8 @@ export function LabyrinthScene() {
           sharedRef={sharedRef}
           labPoisonRef={labPoisonRef}
           attackStateRef={attackStateRef}
+          labDashRef={labDashRef}
+          dashCooldownSec={classDef.dashCooldown}
           enemiesRef={enemiesRef}
           runStartMs={runStartMs}
         />
@@ -218,6 +232,7 @@ export function LabyrinthScene() {
         playerRef={playerRef}
         sharedRef={sharedRef}
         attackStateRef={attackStateRef}
+        labDashRef={labDashRef}
       />
     </div>
   );
@@ -234,6 +249,8 @@ function LabyrinthWorld({
   sharedRef,
   labPoisonRef,
   attackStateRef,
+  labDashRef,
+  dashCooldownSec,
   enemiesRef,
   runStartMs,
 }: {
@@ -245,6 +262,11 @@ function LabyrinthWorld({
   sharedRef: React.MutableRefObject<LabSharedState>;
   labPoisonRef: React.MutableRefObject<LabPoisonState>;
   attackStateRef: React.MutableRefObject<PlayerAttackState>;
+  labDashRef: React.MutableRefObject<LabDashState>;
+  /** Per-class dash cooldown in seconds (from CHARACTER_DATA). Passed as
+   *  a primitive rather than re-deriving inside the loop because the
+   *  class is fixed for the lifetime of the scene. */
+  dashCooldownSec: number;
   enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
   runStartMs: React.MutableRefObject<number>;
 }) {
@@ -308,7 +330,14 @@ function LabyrinthWorld({
         />
       </LabyrinthCanvasErrorBoundary>
       <CameraFollow playerRef={playerRef} />
-      <MovementLoop playerRef={playerRef} maze={maze} inputRef={inputRef} sharedRef={sharedRef} />
+      <MovementLoop
+        playerRef={playerRef}
+        maze={maze}
+        inputRef={inputRef}
+        sharedRef={sharedRef}
+        labDashRef={labDashRef}
+        dashCooldownSec={dashCooldownSec}
+      />
       <CombatEnemyLoop
         maze={maze}
         combatStats={combatStats}
@@ -441,11 +470,15 @@ function MovementLoop({
   maze,
   inputRef,
   sharedRef,
+  labDashRef,
+  dashCooldownSec,
 }: {
   playerRef: React.MutableRefObject<LabPlayer>;
   maze: Maze;
   inputRef: React.MutableRefObject<InputManager3D | null>;
   sharedRef: React.MutableRefObject<LabSharedState>;
+  labDashRef: React.MutableRefObject<LabDashState>;
+  dashCooldownSec: number;
 }) {
   // Precompute wall segments for collision (same data as renderer).
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
@@ -456,8 +489,13 @@ function MovementLoop({
     if (sharedRef.current.defeated || sharedRef.current.extracted) return;
     const s = input.state;
     const p = playerRef.current;
+    const dashState = labDashRef.current;
 
-    // Movement input → velocity (simple 8-way)
+    // Advance dash timers first so a dash that just ended releases
+    // control to the joystick on the same frame (no stuck-in-dash window).
+    tickLabDashState(dashState, delta);
+
+    // Joystick / keyboard input direction (normalized, 8-way).
     let dx = 0, dz = 0;
     if (s.up)    dz -= 1;
     if (s.down)  dz += 1;
@@ -466,18 +504,56 @@ function MovementLoop({
     const len = Math.sqrt(dx * dx + dz * dz);
     if (len > 0) { dx /= len; dz /= len; }
 
-    const SPEED = 9;
-    const nextX = p.x + dx * SPEED * delta;
-    const nextZ = p.z + dz * SPEED * delta;
+    // Dash input: consume the latched bit and start a dash toward either
+    // the current input direction or, if none, the current facing. Dash
+    // facing fallback matches the main game's behavior — you can dash
+    // forward while standing still. Warrior dashCooldown = 2.2 (matches
+    // GameConfig.PLAYER.DASH_COOLDOWN).
+    if (s.dash) {
+      input.consumeDash();
+      let dirX = dx;
+      let dirZ = dz;
+      if (dirX === 0 && dirZ === 0) {
+        // Reconstruct a unit vector from the stored facing angle. The
+        // atan2 used to set p.angle was atan2(dx, -dz), so the inverse is
+        // (sin, -cos).
+        dirX = Math.sin(p.angle);
+        dirZ = -Math.cos(p.angle);
+      }
+      tryStartLabDash(dashState, dirX, dirZ, dashCooldownSec);
+    }
 
-    // Axis-separated collision: try X first, then Z. Allows wall-sliding.
+    // Select active velocity. During a dash, the player glides at
+    // LAB_DASH_SPEED in the locked dash direction (joystick is ignored
+    // until the dash ends — same as the main game). Otherwise normal
+    // 9 u/s movement.
+    const WALK_SPEED = 9;
+    let moveVX: number;
+    let moveVZ: number;
+    if (dashState.timer > 0) {
+      moveVX = dashState.vx;
+      moveVZ = dashState.vz;
+      p.isDashing = true;
+    } else {
+      moveVX = dx * WALK_SPEED;
+      moveVZ = dz * WALK_SPEED;
+      p.isDashing = false;
+    }
+
+    const nextX = p.x + moveVX * delta;
+    const nextZ = p.z + moveVZ * delta;
+
+    // Axis-separated collision: try X first, then Z. Allows wall-sliding
+    // during both normal movement and dashes (dash still respects walls,
+    // which prevents phasing but can cut a dash short when you dash into
+    // a corner — acceptable matching the main game's behavior).
     const PLAYER_R = 0.7;
     if (!collidesWithAnyWall(nextX, p.z, PLAYER_R, segments)) p.x = nextX;
     if (!collidesWithAnyWall(p.x, nextZ, PLAYER_R, segments)) p.z = nextZ;
 
-    // Facing angle follows movement direction
-    if (dx !== 0 || dz !== 0) {
-      p.angle = Math.atan2(dx, -dz);
+    // Facing angle follows active movement direction (dash OR joystick).
+    if (moveVX !== 0 || moveVZ !== 0) {
+      p.angle = Math.atan2(moveVX, -moveVZ);
     }
   });
 

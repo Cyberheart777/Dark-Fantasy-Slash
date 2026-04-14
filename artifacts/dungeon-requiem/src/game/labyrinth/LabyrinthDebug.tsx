@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import type { PlayerAttackState } from "./LabyrinthCombat";
 import type { ZoneState } from "./LabyrinthZone";
+import type { LabDashState } from "./LabyrinthDash";
 
 /** Minimal duck-typed player shape the debug panel reads. Defined here
  *  (rather than importing LabPlayer from LabyrinthScene) to avoid a
@@ -51,13 +52,15 @@ interface Props {
   playerRef: React.MutableRefObject<DebugPlayer>;
   sharedRef: React.MutableRefObject<DebugShared>;
   attackStateRef: React.MutableRefObject<PlayerAttackState>;
+  labDashRef: React.MutableRefObject<LabDashState>;
 }
 
-export function LabyrinthDebug({ playerRef, sharedRef, attackStateRef }: Props) {
+export function LabyrinthDebug({ playerRef, sharedRef, attackStateRef, labDashRef }: Props) {
   const [visible] = useState(isDebugEnabled);
   const [snapshot, setSnapshot] = useState({
     px: 0, pz: 0, angle: 0, hp: 0, maxHp: 0,
     swingVisualSec: 0, swingCooldownSec: 0,
+    dashTimer: 0, dashCooldown: 0,
     enemyCount: 0, killCount: 0,
     poisonStacks: 0, poisonDps: 0,
     outsideZone: false, defeated: false, extracted: false,
@@ -70,9 +73,11 @@ export function LabyrinthDebug({ playerRef, sharedRef, attackStateRef }: Props) 
       const p = playerRef.current;
       const s = sharedRef.current;
       const a = attackStateRef.current;
+      const d = labDashRef.current;
       setSnapshot({
         px: p.x, pz: p.z, angle: p.angle, hp: p.hp, maxHp: p.maxHp,
         swingVisualSec: a.swingVisualSec, swingCooldownSec: a.cooldownSec,
+        dashTimer: d.timer, dashCooldown: d.cooldown,
         enemyCount: s.enemyCount, killCount: s.killCount,
         poisonStacks: s.poisonStacks, poisonDps: s.poisonDps,
         outsideZone: s.outsideZone, defeated: s.defeated, extracted: s.extracted,
@@ -80,7 +85,7 @@ export function LabyrinthDebug({ playerRef, sharedRef, attackStateRef }: Props) 
       });
     }, 100);
     return () => clearInterval(iv);
-  }, [visible, playerRef, sharedRef, attackStateRef]);
+  }, [visible, playerRef, sharedRef, attackStateRef, labDashRef]);
 
   if (!visible) return null;
 
@@ -93,6 +98,7 @@ export function LabyrinthDebug({ playerRef, sharedRef, attackStateRef }: Props) 
       <Row label="hp" value={`${Math.ceil(snapshot.hp)}/${snapshot.maxHp}`} />
       <Row label="swing vis" value={`${n(snapshot.swingVisualSec)}s`} />
       <Row label="swing cd" value={`${n(snapshot.swingCooldownSec)}s`} />
+      <Row label="dash" value={`${n(snapshot.dashTimer)}s · cd ${n(snapshot.dashCooldown)}s`} />
       <Row label="enemies" value={`${snapshot.enemyCount} live · ${snapshot.killCount} kills`} />
       <Row label="poison" value={`${snapshot.poisonStacks} stacks · ${n(snapshot.poisonDps)} dps`} />
       <Row label="zone" value={`r=${n(snapshot.zoneRadius)} t=${n(snapshot.elapsedSec)}s ${snapshot.outsideZone ? "(OUTSIDE)" : ""}`} />

@@ -28,6 +28,7 @@ interface LabPlayerForVisual {
   angle: number;
   hp: number;
   maxHp: number;
+  isDashing: boolean;
 }
 
 interface Props {
@@ -67,6 +68,7 @@ export function LabyrinthPlayer3D({ charClass, playerRef, attackStateRef }: Prop
       playerRef.current,
       attackStateRef.current,
       prevSwingRef.current,
+      playerRef.current.isDashing,
     );
   });
 
