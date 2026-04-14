@@ -25,8 +25,14 @@ const TOTAL_PHASES = Math.ceil(
   LABYRINTH_CONFIG.ZONE_TOTAL_DURATION / PHASE_DURATION_SEC,
 );
 
-/** Safe-zone radius when the run starts — covers the full maze. */
-export const ZONE_INITIAL_RADIUS = LABYRINTH_HALF * 1.1;
+/** Safe-zone radius when the run starts — must cover the full maze,
+ *  including the corner cells. The maze is a square of half-extent
+ *  LABYRINTH_HALF, so the furthest cell center is at distance
+ *  √2 · LABYRINTH_HALF from origin. We add one cell of buffer so the
+ *  corner cells are comfortably inside at t=0 rather than right on
+ *  the boundary. */
+export const ZONE_INITIAL_RADIUS =
+  LABYRINTH_HALF * Math.SQRT2 + LABYRINTH_CONFIG.CELL_SIZE;
 
 /** Final safe radius at t = 8min. Stays slightly >0 so the center room
  *  is always safe until death — prevents the zone from closing inside
