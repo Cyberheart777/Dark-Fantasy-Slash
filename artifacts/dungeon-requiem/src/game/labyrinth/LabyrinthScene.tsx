@@ -72,6 +72,7 @@ import {
 } from "./LabyrinthEnemy";
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
 import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
+import { LabyrinthCanvasErrorBoundary } from "./LabyrinthCanvasErrorBoundary";
 import { CHARACTER_DATA, type CharacterClass } from "../../data/CharacterData";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
@@ -275,13 +276,29 @@ function LabyrinthWorld({
       <LabyrinthMap3D maze={maze} />
       <LabyrinthZone3D radius={currentRadius} isPaused={paused} />
       <LabyrinthPortals3D portals={portalList} />
-      <LabyrinthEnemies3D enemies={enemyList} />
+      {/* Enemy renderer is wrapped in an error boundary so a shim-side
+          crash can't cascade and blank out the rest of the Canvas. If
+          it fails, enemies are invisible (a known degradation) but
+          walls, player, and HUD still render. */}
+      <LabyrinthCanvasErrorBoundary label="Enemies3D" fallback={null}>
+        <LabyrinthEnemies3D enemies={enemyList} />
+      </LabyrinthCanvasErrorBoundary>
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
-      <LabyrinthPlayer3D
-        charClass={charClass}
-        playerRef={playerRef}
-        attackStateRef={attackStateRef}
-      />
+      {/* Player model via shim → Player3D. If the shim or Player3D throws
+          for any reason (missing GameState field, GLB fetch failure the
+          Suspense/ErrorBoundary inside Player3D didn't catch, etc.), we
+          fall back to the procedural PlayerMarker so the player is
+          always visible. */}
+      <LabyrinthCanvasErrorBoundary
+        label="Player3D"
+        fallback={<PlayerMarker playerRef={playerRef} />}
+      >
+        <LabyrinthPlayer3D
+          charClass={charClass}
+          playerRef={playerRef}
+          attackStateRef={attackStateRef}
+        />
+      </LabyrinthCanvasErrorBoundary>
       <CameraFollow playerRef={playerRef} />
       <MovementLoop playerRef={playerRef} maze={maze} inputRef={inputRef} sharedRef={sharedRef} />
       <CombatEnemyLoop
