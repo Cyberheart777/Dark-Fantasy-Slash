@@ -19,8 +19,12 @@ import {
 import { extractWallSegments, type Maze } from "./LabyrinthMaze";
 
 const FLOOR_COLOR = "#3a2c50";
-const WALL_COLOR = "#2a2038";
-const WALL_ACCENT = "#5a4078";
+// Walls were "#2a2038" with a "#5a4078" emissive accent — too dark to
+// read against the floor under fog, and the instanced-mesh combination
+// of castShadow + receiveShadow + emissive caused visible edge flicker
+// at the corners where wall segments met. Lifted to a brighter
+// dusk-purple stone, matte material, no shadow casting (see Walls()).
+const WALL_COLOR = "#7a6a96";
 
 interface LabyrinthMap3DProps {
   maze: Maze;
@@ -106,20 +110,21 @@ function Walls({ segments }: { segments: ReturnType<typeof extractWallSegments> 
     mesh.count = segments.length;
   }, [segments, wallH, wallT]);
 
+  // No castShadow / receiveShadow: instanced-mesh self-shadowing causes
+  // visible flicker along wall edges as the camera moves. The directional
+  // light still illuminates the walls; we just don't try to project shadows
+  // between them. No emissive either — even at low intensity it added a
+  // shimmer at corners where adjacent wall instances meet.
   return (
     <instancedMesh
       ref={meshRef}
       args={[undefined, undefined, segments.length]}
-      castShadow
-      receiveShadow
     >
       <boxGeometry args={[1, 1, 1]} />
       <meshStandardMaterial
         color={WALL_COLOR}
-        roughness={0.85}
-        metalness={0.08}
-        emissive={WALL_ACCENT}
-        emissiveIntensity={0.05}
+        roughness={0.92}
+        metalness={0}
       />
     </instancedMesh>
   );

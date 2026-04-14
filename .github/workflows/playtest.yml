@@ -15,6 +15,7 @@ on:
       - main
       - claude/upload-hero-glb-files-HzrBb
       - feature/labyrinth-mode
+      - claude/labyrinth-portals-shroud-HzrBb
   workflow_dispatch:
 
 # Minimum permissions needed for GitHub Pages deployment via Actions.
