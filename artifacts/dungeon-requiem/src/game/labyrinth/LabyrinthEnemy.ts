@@ -29,8 +29,9 @@ import {
   extractWallSegments,
   type Maze,
 } from "./LabyrinthMaze";
+import { spawnLabProjectile, type LabProjectile } from "./LabyrinthProjectile";
 
-export type EnemyKind = "corridor_guardian";
+export type EnemyKind = "corridor_guardian" | "trap_spawner";
 
 export type EnemyAiState = "patrol" | "chase" | "attack" | "dead";
 
@@ -60,6 +61,9 @@ export interface EnemyRuntime {
   /** Cached last-known player direction, for a tiny bit of smoothing. */
   lastMoveX: number;
   lastMoveZ: number;
+  /** Trap-spawner turret fire timer (seconds until next shot). Unused
+   *  by corridor guardians — they leave this at 0 indefinitely. */
+  fireTimer: number;
 }
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
@@ -73,6 +77,18 @@ const GUARDIAN_ATTACK_DAMAGE = 10;
 const GUARDIAN_ATTACK_COOLDOWN = 1.2;
 const GUARDIAN_COLLISION_RADIUS = 0.75;
 const GUARDIAN_REPEL_RADIUS = 1.1;          // separation between enemies
+
+// ─── Trap Spawner tuning ─────────────────────────────────────────────────────
+// Stationary turret that fires a projectile every TRAP_SPAWNER_FIRE_SEC while
+// the player is within TRAP_SPAWNER_RANGE AND line-of-sight is clear.
+
+const TRAP_SPAWNER_HP = 80;
+const TRAP_SPAWNER_RANGE = LABYRINTH_CONFIG.CELL_SIZE * 2.5;
+const TRAP_SPAWNER_FIRE_SEC = 1.8;
+const TRAP_SPAWNER_PROJECTILE_DAMAGE = 15;
+const TRAP_SPAWNER_PROJECTILE_SPEED = 14;
+const TRAP_SPAWNER_PROJECTILE_LIFETIME = TRAP_SPAWNER_RANGE / 14 + 0.2;
+const TRAP_SPAWNER_COLLISION_RADIUS = 0.8;
 
 /** After death, how long the husk lingers before being evicted. */
 export const ENEMY_DEATH_FADE_SEC = 0.6;
@@ -132,6 +148,62 @@ export function spawnCorridorGuardians(
       patrolTargetZ: null,
       lastMoveX: 0,
       lastMoveZ: 0,
+      fireTimer: 0,
+    };
+  });
+}
+
+/**
+ * Pick `count` spawn cells for Trap Spawner turrets. Prefers dead-end cells
+ * (enemies are harder to out-flank when wedged at a dead-end) and otherwise
+ * falls back to any corner cell. Avoids the player spawn and the centre
+ * boss chamber. Stationary for the life of the run — no patrol.
+ */
+export function spawnTrapSpawners(
+  maze: Maze,
+  count: number,
+  rng: () => number = Math.random,
+): EnemyRuntime[] {
+  const cCol = maze.center.col;
+  const cRow = maze.center.row;
+  const pCol = maze.spawn.col;
+  const pRow = maze.spawn.row;
+
+  const deadEndCells = maze.deadEnds
+    .map((de) => maze.cells[de.row * maze.size + de.col])
+    .filter((cell) => {
+      if (Math.abs(cell.col - cCol) <= CENTER_EXCLUSION && Math.abs(cell.row - cRow) <= CENTER_EXCLUSION) return false;
+      const dc = cell.col - pCol;
+      const dr = cell.row - pRow;
+      if (dc * dc + dr * dr < SPAWN_MIN_CELL_DIST_FROM_PLAYER * SPAWN_MIN_CELL_DIST_FROM_PLAYER) return false;
+      return true;
+    });
+
+  for (let i = deadEndCells.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [deadEndCells[i], deadEndCells[j]] = [deadEndCells[j], deadEndCells[i]];
+  }
+
+  const chosen = deadEndCells.slice(0, count);
+  return chosen.map((cell, i) => {
+    const { x, z } = cellToWorld(cell.col, cell.row);
+    return {
+      id: `spawner-${i}-${cell.col}-${cell.row}`,
+      kind: "trap_spawner" as const,
+      x, z,
+      angle: 0,
+      hp: TRAP_SPAWNER_HP,
+      maxHp: TRAP_SPAWNER_HP,
+      state: "patrol" as EnemyAiState,   // inert state; no chase logic applies
+      aiTimer: 0,
+      attackCooldown: 0,
+      deathFadeSec: 0,
+      hitFlashTimer: 0,
+      patrolTargetX: null,
+      patrolTargetZ: null,
+      lastMoveX: 0,
+      lastMoveZ: 0,
+      fireTimer: rng() * TRAP_SPAWNER_FIRE_SEC, // stagger initial shots
     };
   });
 }
@@ -152,9 +224,18 @@ export function updateEnemy(
   delta: number,
   allEnemies: readonly EnemyRuntime[],
   playerDamage: { value: number },
+  projectiles: LabProjectile[],
 ): void {
   if (enemy.state === "dead") {
     enemy.deathFadeSec += delta;
+    return;
+  }
+
+  // Dispatch on enemy kind. Corridor Guardian runs the full patrol/chase/
+  // attack state machine below; Trap Spawner is stationary-turret only.
+  if (enemy.kind === "trap_spawner") {
+    updateTrapSpawner(enemy, playerX, playerZ, segments, delta, projectiles);
+    if (enemy.hitFlashTimer > 0) enemy.hitFlashTimer = Math.max(0, enemy.hitFlashTimer - delta);
     return;
   }
 
@@ -286,6 +367,87 @@ function pickNewPatrolWaypoint(enemy: EnemyRuntime): void {
   enemy.patrolTargetX = enemy.x + Math.cos(angle) * dist;
   enemy.patrolTargetZ = enemy.z + Math.sin(angle) * dist;
   enemy.aiTimer = 2 + Math.random() * 2;  // refresh in 2–4s regardless
+}
+
+/** Stationary turret AI. Counts down a fire timer; when the player is
+ *  within range AND line-of-sight is clear, fires a projectile straight
+ *  at the player's current position and resets the timer. Otherwise
+ *  just decays the timer toward 0 so the first in-range frame fires
+ *  immediately rather than waiting for a full cycle. */
+function updateTrapSpawner(
+  enemy: EnemyRuntime,
+  playerX: number,
+  playerZ: number,
+  segments: ReturnType<typeof extractWallSegments>,
+  delta: number,
+  projectiles: LabProjectile[],
+): void {
+  const dx = playerX - enemy.x;
+  const dz = playerZ - enemy.z;
+  const distSq = dx * dx + dz * dz;
+  enemy.fireTimer = Math.max(0, enemy.fireTimer - delta);
+  if (distSq > TRAP_SPAWNER_RANGE * TRAP_SPAWNER_RANGE) return;
+  if (enemy.fireTimer > 0) return;
+  if (!hasLineOfSight(enemy.x, enemy.z, playerX, playerZ, segments)) return;
+  const dist = Math.sqrt(distSq) || 1;
+  const vx = (dx / dist) * TRAP_SPAWNER_PROJECTILE_SPEED;
+  const vz = (dz / dist) * TRAP_SPAWNER_PROJECTILE_SPEED;
+  // Rotate turret to face shot direction so the visual reads right.
+  enemy.angle = Math.atan2(dx / dist, -dz / dist);
+  spawnLabProjectile(projectiles, {
+    owner: "enemy",
+    x: enemy.x,
+    z: enemy.z,
+    vx, vz,
+    damage: TRAP_SPAWNER_PROJECTILE_DAMAGE,
+    radius: 0.4,
+    lifetime: TRAP_SPAWNER_PROJECTILE_LIFETIME,
+    piercing: false,
+    color: "#a020e0",
+    glowColor: "#e080ff",
+    style: "orb",
+  });
+  enemy.fireTimer = TRAP_SPAWNER_FIRE_SEC;
+}
+
+/** Bresenham-ish LOS: sample the segment from (ax,az) to (bx,bz) at
+ *  0.4u intervals and check if any sample is inside a wall box. Good
+ *  enough for turret-to-player sight; not pixel-perfect but very cheap. */
+function hasLineOfSight(
+  ax: number, az: number,
+  bx: number, bz: number,
+  segments: ReturnType<typeof extractWallSegments>,
+): boolean {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  const steps = Math.max(1, Math.ceil(dist / 0.4));
+  const wallT = LABYRINTH_CONFIG.WALL_THICKNESS;
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const x = ax + dx * t;
+    const z = az + dz * t;
+    for (const seg of segments) {
+      const halfW = seg.orient === "h" ? seg.length / 2 : wallT / 2;
+      const halfH = seg.orient === "v" ? seg.length / 2 : wallT / 2;
+      if (
+        x >= seg.cx - halfW && x <= seg.cx + halfW &&
+        z >= seg.cz - halfH && z <= seg.cz + halfH
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** Test helper: read-only per-kind collision radius (for trap-spawner
+ *  hit detection against player swings, since it's stationary). */
+export function enemyCollisionRadius(kind: EnemyKind): number {
+  switch (kind) {
+    case "trap_spawner": return TRAP_SPAWNER_COLLISION_RADIUS;
+    case "corridor_guardian": return GUARDIAN_COLLISION_RADIUS;
+  }
 }
 
 /** Local duplicate of the Scene's wall collision helper. Kept here so

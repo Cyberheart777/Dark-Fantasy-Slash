@@ -171,23 +171,31 @@ export function updatePlayerShim(
 export function enemyTypeForKind(kind: LabEnemy["kind"]): string {
   switch (kind) {
     case "corridor_guardian": return "elite";
+    case "trap_spawner": return "wraith";
     // Future mappings:
-    //   trap_spawner   → "wraith"
     //   shadow_stalker → "scuttler"
     //   warden         → "boss"
   }
 }
 
-/** Elite's visual scale in the core game is 1.6 — too large for
- *  corridor width. Use 1.0 so Corridor Guardians read as "champions
- *  shrunk to fit the tight halls" rather than squeezing through gaps. */
-const GUARDIAN_VISUAL_SCALE = 1.0;
-
-/** Color palette matches `EnemyData.ts:elite`. */
-const GUARDIAN_COLOR = "#8b0000";
-const GUARDIAN_EMISSIVE = "#300000";
+/** Per-kind palette + scale. Elite's native visual scale is 1.6 — too
+ *  large for corridor width. Use 1.0 for guardians so they read as
+ *  "champions shrunk to fit the tight halls" rather than squeezing
+ *  through gaps. Trap spawners are slightly smaller (0.85) so they
+ *  feel like a stationary turret rather than a regular mob. */
+function visualsForKind(kind: LabEnemy["kind"]): {
+  scale: number; color: string; emissive: string;
+} {
+  switch (kind) {
+    case "corridor_guardian":
+      return { scale: 1.0, color: "#8b0000", emissive: "#300000" };
+    case "trap_spawner":
+      return { scale: 0.85, color: "#6020a0", emissive: "#40108c" };
+  }
+}
 
 export function createEnemyShim(labEnemy: LabEnemy): EnemyRuntime {
+  const visuals = visualsForKind(labEnemy.kind);
   return {
     id: labEnemy.id,
     type: enemyTypeForKind(labEnemy.kind),
@@ -205,9 +213,9 @@ export function createEnemyShim(labEnemy: LabEnemy): EnemyRuntime {
     scoreValue: 0,
     dead: false,
     hitFlashTimer: 0,
-    scale: GUARDIAN_VISUAL_SCALE,
-    color: GUARDIAN_COLOR,
-    emissive: GUARDIAN_EMISSIVE,
+    scale: visuals.scale,
+    color: visuals.color,
+    emissive: visuals.emissive,
     vx: 0,
     vz: 0,
     phasing: false,

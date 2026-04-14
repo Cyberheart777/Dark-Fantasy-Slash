@@ -32,11 +32,16 @@ export const LABYRINTH_CONFIG = {
   /** Escalated damage in the final 2 minutes. */
   ZONE_LATE_DAMAGE_PCT_PER_SEC: 0.10,
 
-  // ─── Enemy counts (step 3 — not wired yet) ──────────────────────────────
+  // ─── Enemy counts ───────────────────────────────────────────────────────
   CORRIDOR_GUARDIAN_COUNT: 10,
-  TRAP_SPAWNER_COUNT: 8,
+  /** Stationary turret enemies that fire projectiles with line-of-sight. */
+  TRAP_SPAWNER_COUNT: 4,
   SHADOW_STALKER_INTERVAL_SEC: 45,
   WARDEN_MIDPOINT_RADIUS: 3,  // cells from center where warden spawns
+
+  // ─── Environmental traps ────────────────────────────────────────────────
+  /** Wall-to-wall projectile beam traps (periodic warn → fire cycle). */
+  WALL_TRAP_COUNT: 6,
 
   // ─── Loot (step 4 — not wired yet) ──────────────────────────────────────
   LOOT_CHEST_COUNT: 10,

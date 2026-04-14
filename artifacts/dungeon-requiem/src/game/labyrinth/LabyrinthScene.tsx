@@ -65,6 +65,7 @@ import {
 } from "./LabyrinthCombat";
 import {
   spawnCorridorGuardians,
+  spawnTrapSpawners,
   updateEnemy,
   damageEnemy,
   isEnemyEvictable,
@@ -269,7 +270,7 @@ export function LabyrinthScene() {
   // poll phase directly each frame via useFrame).
   const trapsRef = useRef<LabTrap[]>([]);
   if (trapsRef.current.length === 0) {
-    trapsRef.current = spawnLabTraps(maze, LABYRINTH_CONFIG.TRAP_SPAWNER_COUNT);
+    trapsRef.current = spawnLabTraps(maze, LABYRINTH_CONFIG.WALL_TRAP_COUNT);
   }
   // Seed sharedRef with the progression's starting values so HUD reads
   // sensible defaults before the first tick runs.
@@ -278,10 +279,15 @@ export function LabyrinthScene() {
   // Enemies initialized once per scene mount (one maze = one enemy set).
   const enemiesRef = useRef<EnemyRuntime[]>([]);
   if (enemiesRef.current.length === 0) {
-    enemiesRef.current = spawnCorridorGuardians(
+    const guardians = spawnCorridorGuardians(
       maze,
       LABYRINTH_CONFIG.CORRIDOR_GUARDIAN_COUNT,
     );
+    const turrets = spawnTrapSpawners(
+      maze,
+      LABYRINTH_CONFIG.TRAP_SPAWNER_COUNT,
+    );
+    enemiesRef.current = [...guardians, ...turrets];
     sharedRef.current.enemyCount = enemiesRef.current.length;
   }
   const runStartMs = useRef(performance.now());
@@ -1069,9 +1075,11 @@ function CombatEnemyLoop({
     }
 
     // 3) Enemy AI + melee; accumulate damage they deal the player.
+    //    Trap Spawner turrets also spawn projectiles into the shared
+    //    pool via this same dispatch (handled inside updateEnemy).
     const dmgAccum = { value: 0 };
     for (const e of enemies) {
-      updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum);
+      updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum, projectilesRef.current);
     }
 
     // 3a) Tick wall-traps (warn → fire → cooldown state machines).
