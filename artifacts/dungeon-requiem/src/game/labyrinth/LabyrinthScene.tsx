@@ -131,6 +131,20 @@ import {
   type RangedAttackState,
 } from "./LabyrinthRangedAttack";
 import {
+  makeLabGearState,
+  rollLabGearDrop,
+  spawnLabGearDrop,
+  tickLabGearDrops,
+  equipLabGear,
+  salvageLabGear,
+  type LabGearState,
+  type LabGearDropRuntime,
+} from "./LabyrinthGear";
+import { LabyrinthGearDrops3D } from "./LabyrinthGear3D";
+import { LabyrinthLootDoor3D } from "./LabyrinthLootDoor3D";
+import { useMetaStore } from "../../store/metaStore";
+import type { GearDef } from "../../data/GearData";
+import {
   spawnLabTraps,
   tickLabTraps,
   type LabTrap,
@@ -217,6 +231,14 @@ interface LabSharedState {
     bloodforgeGain: number;
     bloodforgeCap: number;
   } | null;
+  /** Currently-equipped gear by slot. Mirrored here so the HUD polling
+   *  loop can render equipped-slot icons without piercing the canvas
+   *  boundary. */
+  equipped: {
+    weapon: GearDef | null;
+    armor: GearDef | null;
+    trinket: GearDef | null;
+  };
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -281,6 +303,7 @@ export function LabyrinthScene() {
     xpToNext: 0,
     totalXp: 0,
     warrior: null,
+    equipped: { weapon: null, armor: null, trinket: null },
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
@@ -304,6 +327,35 @@ export function LabyrinthScene() {
   // nearest enemy. Kept as a labyrinth-local ref so we don't need
   // to extend InputManager3D (core-game file).
   const aimOverrideRef = useRef<LabAimOverride>({ active: false, angle: 0 });
+  // Run-only gear system — equipped pieces + ground drops. Everything
+  // auto-salvages into Soul Forge crystals at run end (see
+  // ranSalvageRef). Labyrinth gear NEVER enters the main-game stash
+  // or inventory.
+  const gearStateRef = useRef<LabGearState>(makeLabGearState());
+  const gearDropsRef = useRef<LabGearDropRuntime[]>([]);
+  /** Ensure the run-end salvage deposits into useMetaStore.addShards()
+   *  exactly once per run — guards against the defeated/extracted/
+   *  victory flags staying true across multiple frames. */
+  const ranSalvageRef = useRef(false);
+  // Loot-room placement picked once at scene mount. Chooses an outer-
+  // ring dead-end (Chebyshev distance ≥ 7 from maze center). This is
+  // a visual placeholder this commit — the key + unlock mechanic
+  // lands with items #4 and #7.
+  const lootRoomCell = useMemo(() => {
+    const center = maze.center;
+    const OUTER_RING_MIN = 7;
+    const outerDeadEnds = maze.deadEnds.filter((c) => {
+      const dc = Math.abs(c.col - center.col);
+      const dr = Math.abs(c.row - center.row);
+      return Math.max(dc, dr) >= OUTER_RING_MIN;
+    });
+    // Degenerate fallback: any dead-end, then any cell. A 21x21 maze
+    // with LOOP_FACTOR=0.15 will always have plenty of outer dead-ends
+    // but this is free insurance.
+    const pool = outerDeadEnds.length > 0 ? outerDeadEnds : maze.deadEnds;
+    if (pool.length === 0) return maze.spawn;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }, [maze]);
   // Wall-to-wall traps. Spawned once per run at scene mount (same as
   // enemies), kept in a ref (stationary state machines — no React
   // re-render needed for their phase changes; their emitter visuals
@@ -379,6 +431,10 @@ export function LabyrinthScene() {
           trapsRef={trapsRef}
           chestsRef={chestsRef}
           aimOverrideRef={aimOverrideRef}
+          gearStateRef={gearStateRef}
+          gearDropsRef={gearDropsRef}
+          ranSalvageRef={ranSalvageRef}
+          lootRoomCell={lootRoomCell}
           critChance={classDef.critChance}
           runStartMs={runStartMs}
         />
@@ -424,6 +480,10 @@ function LabyrinthWorld({
   trapsRef,
   chestsRef,
   aimOverrideRef,
+  gearStateRef,
+  gearDropsRef,
+  ranSalvageRef,
+  lootRoomCell,
   critChance,
   runStartMs,
 }: {
@@ -452,6 +512,10 @@ function LabyrinthWorld({
   trapsRef: React.MutableRefObject<LabTrap[]>;
   chestsRef: React.MutableRefObject<LabChest[]>;
   aimOverrideRef: React.MutableRefObject<LabAimOverride>;
+  gearStateRef: React.MutableRefObject<LabGearState>;
+  gearDropsRef: React.MutableRefObject<LabGearDropRuntime[]>;
+  ranSalvageRef: React.MutableRefObject<boolean>;
+  lootRoomCell: { col: number; row: number };
   critChance: number;
   runStartMs: React.MutableRefObject<number>;
 }) {
@@ -490,6 +554,9 @@ function LabyrinthWorld({
   // list filters out consumed chests so they visually disappear after
   // their reveal animation finishes.
   const [chestList, setChestList] = useState<LabChest[]>(() => chestsRef.current.slice());
+  // Ground gear-drop list mirror — CombatEnemyLoop pushes on enemy kill
+  // and evicts on pickup / lifetime expiry.
+  const [gearDropList, setGearDropList] = useState<LabGearDropRuntime[]>([]);
 
   return (
     <>
@@ -548,6 +615,13 @@ function LabyrinthWorld({
       {xpOrbList.map((orb) => (
         <XPOrb3D key={orb.id} orb={orb} />
       ))}
+      {/* Gear drops — floating rarity-colored gems. Ports the
+          main-game GearDrop3D visual (not exported). */}
+      <LabyrinthGearDrops3D drops={gearDropList} />
+      {/* Locked loot-room door placeholder. Visual only this commit;
+          interaction lands with items #4 (champion drops key) + #7
+          (loot-room unlock). */}
+      <LabyrinthLootDoor3D x={cellToWorld(lootRoomCell.col, lootRoomCell.row).x} z={cellToWorld(lootRoomCell.col, lootRoomCell.row).z} />
       {/* Active projectiles — wall-trap beams, enemy turret shots,
           warden starburst, mage orbs, rogue daggers. Uses the main
           game's Projectile3D via a shim-cast in LabyrinthProjectiles3D. */}
@@ -584,6 +658,7 @@ function LabyrinthWorld({
         sharedRef={sharedRef}
         labDashRef={labDashRef}
         dashCooldownSec={dashCooldownSec}
+        gearStateRef={gearStateRef}
       />
       <CombatEnemyLoop
         maze={maze}
@@ -604,6 +679,9 @@ function LabyrinthWorld({
         labPoisonRef={labPoisonRef}
         groundFxRef={groundFxRef}
         aimOverrideRef={aimOverrideRef}
+        gearStateRef={gearStateRef}
+        gearDropsRef={gearDropsRef}
+        ranSalvageRef={ranSalvageRef}
         critChance={critChance}
         charClass={charClass}
         onEnemiesChange={setEnemyList}
@@ -611,6 +689,7 @@ function LabyrinthWorld({
         onXpOrbsChange={setXpOrbList}
         onProjectilesChange={setProjectileList}
         onChestsChange={setChestList}
+        onGearDropsChange={setGearDropList}
       />
       {/* Trap emitter visuals — small pulsing cubes on each anchor.
           The actual projectile is drawn by LabyrinthProjectiles3D. */}
@@ -944,6 +1023,7 @@ function MovementLoop({
   sharedRef,
   labDashRef,
   dashCooldownSec,
+  gearStateRef,
 }: {
   playerRef: React.MutableRefObject<LabPlayer>;
   maze: Maze;
@@ -951,6 +1031,7 @@ function MovementLoop({
   sharedRef: React.MutableRefObject<LabSharedState>;
   labDashRef: React.MutableRefObject<LabDashState>;
   dashCooldownSec: number;
+  gearStateRef: React.MutableRefObject<LabGearState>;
 }) {
   // Precompute wall segments for collision (same data as renderer).
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
@@ -1004,7 +1085,11 @@ function MovementLoop({
     // (itself 15% below main-game's 9 u/s) to give corridor combat
     // a deliberate tactical-roguelite pace. Player leans on dash for
     // quick repositioning. Total 45% below the main game baseline.
-    const WALK_SPEED = 5.0;
+    // Gear moveSpeed bonus is added on top — cap at +6 so a triple-
+    // stacked moveSpeed build can't teleport across the map.
+    const BASE_WALK_SPEED = 5.0;
+    const moveBonus = Math.min(6, gearStateRef.current.bonuses.moveSpeed ?? 0);
+    const WALK_SPEED = BASE_WALK_SPEED + moveBonus;
     let moveVX: number;
     let moveVZ: number;
     if (dashState.timer > 0) {
@@ -1105,6 +1190,9 @@ function CombatEnemyLoop({
   labPoisonRef,
   groundFxRef,
   aimOverrideRef,
+  gearStateRef,
+  gearDropsRef,
+  ranSalvageRef,
   critChance,
   charClass,
   onEnemiesChange,
@@ -1112,6 +1200,7 @@ function CombatEnemyLoop({
   onXpOrbsChange,
   onProjectilesChange,
   onChestsChange,
+  onGearDropsChange,
 }: {
   maze: Maze;
   combatStats: LabCombatStats;
@@ -1131,6 +1220,9 @@ function CombatEnemyLoop({
   labPoisonRef: React.MutableRefObject<LabPoisonState>;
   groundFxRef: React.MutableRefObject<LabGroundFx[]>;
   aimOverrideRef: React.MutableRefObject<LabAimOverride>;
+  gearStateRef: React.MutableRefObject<LabGearState>;
+  gearDropsRef: React.MutableRefObject<LabGearDropRuntime[]>;
+  ranSalvageRef: React.MutableRefObject<boolean>;
   critChance: number;
   charClass: CharacterClass;
   onEnemiesChange: (enemies: EnemyRuntime[]) => void;
@@ -1138,6 +1230,7 @@ function CombatEnemyLoop({
   onXpOrbsChange: (orbs: XPOrb[]) => void;
   onProjectilesChange: (projs: LabProjectile[]) => void;
   onChestsChange: (chests: LabChest[]) => void;
+  onGearDropsChange: (drops: LabGearDropRuntime[]) => void;
 }) {
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
   // Tracks the last death-fx list length we pushed to React state so we
@@ -1150,9 +1243,24 @@ function CombatEnemyLoop({
   // Shadow-stalker spawn countdown. Starts at the interval so the first
   // stalker appears after the first interval rather than at spawn.
   const stalkerSpawnTimer = useRef(LABYRINTH_CONFIG.SHADOW_STALKER_INTERVAL_SEC);
+  // Gear drop render-sync tracking (spawns grow the list mid-frame;
+  // need explicit length compare to emit correctly).
+  const lastEmittedGearLen = useRef(0);
 
   useFrame((_, delta) => {
     const shared = sharedRef.current;
+    // Run-end salvage — fires once the first frame defeated/extracted/
+    // victory flips true. Deposits total Soul Forge crystals into the
+    // main-game meta store via addShards(), then falls through to the
+    // normal early-return. Guarded by ranSalvageRef so it never
+    // double-fires across frames.
+    if ((shared.defeated || shared.extracted || shared.victory) && !ranSalvageRef.current) {
+      ranSalvageRef.current = true;
+      const total = salvageLabGear(gearStateRef.current, gearDropsRef.current);
+      if (total > 0) {
+        useMetaStore.getState().addShards(total);
+      }
+    }
     if (shared.defeated || shared.extracted || shared.victory) return;
     const input = inputRef.current;
     if (!input) return;
@@ -1165,6 +1273,19 @@ function CombatEnemyLoop({
     tickAttackState(atk, delta);
     const isWarrior = charClass === "warrior";
     const isMage = charClass === "mage";
+
+    // Effective combat stats = base (from class) + gear bonuses.
+    // Recomputed every tick so equip/swap effects flow in immediately
+    // — no need for the combatStats useMemo to invalidate.
+    const gearBonuses = gearStateRef.current.bonuses;
+    const baseAtkSpeed = 1 / Math.max(0.01, combatStats.atkCooldown);
+    const effectiveAtkSpeed = Math.max(0.1, baseAtkSpeed + (gearBonuses.attackSpeed ?? 0));
+    const effectiveStats: LabCombatStats = {
+      damage: combatStats.damage + (gearBonuses.damage ?? 0),
+      atkRange: combatStats.atkRange,
+      atkCooldown: 1 / effectiveAtkSpeed,
+    };
+    const effectiveCrit = critChance + (gearBonuses.critChance ?? 0);
     const isRogue = charClass === "rogue";
     if (isWarrior) tickLabWarrior(warriorStateRef.current, delta);
     if (!isWarrior) tickRangedAttack(rangedAttackStateRef.current, delta);
@@ -1183,7 +1304,7 @@ function CombatEnemyLoop({
     //    play snappy even though the button is no longer required.
     const inputState = input.state;
     const autoAimRange = isWarrior
-      ? combatStats.atkRange * 1.15
+      ? effectiveStats.atkRange * 1.15
       : RANGED_AUTO_RANGE;
     const aimTarget = findNearestEnemyInRange(enemies, p.x, p.z, autoAimRange);
     let aimAngle = p.angle;
@@ -1204,12 +1325,12 @@ function CombatEnemyLoop({
     if (inputState.attack) input.consumeAttack();
     if (canAttack) {
       if (isWarrior) {
-        if (tryStartSwing(atk, aimAngle, combatStats)) {
+        if (tryStartSwing(atk, aimAngle, effectiveStats)) {
           audioManager.play("attack_melee");
           for (const e of enemies) {
             if (e.state === "dead") continue;
             if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange)) {
-              const dmg = modifyOutgoingDamage(warriorStateRef.current, combatStats.damage, critChance);
+              const dmg = modifyOutgoingDamage(warriorStateRef.current, effectiveStats.damage, effectiveCrit);
               const killed = damageEnemy(e, dmg);
               registerHit(warriorStateRef.current);
               if (killed) {
@@ -1224,6 +1345,12 @@ function CombatEnemyLoop({
                   if (loot.healOnPickup > 0) {
                     p.hp = Math.min(p.maxHp, p.hp + loot.healOnPickup);
                   }
+                }
+                // Gear drop roll — uses main-game tryRollGear() via the
+                // labyrinth wrapper. Separate from the XP-orb loot above.
+                const gearRoll = rollLabGearDrop(e.kind);
+                if (gearRoll) {
+                  spawnLabGearDrop(gearDropsRef.current, gearRoll, e.x, e.z);
                 }
                 const gained = registerKill(warriorStateRef.current);
                 if (gained > 0) {
@@ -1301,6 +1428,11 @@ function CombatEnemyLoop({
           if (loot.healOnPickup > 0) {
             p.hp = Math.min(p.maxHp, p.hp + loot.healOnPickup);
           }
+        }
+        // Gear drop roll — also fires on ranged kills.
+        const gearRoll = rollLabGearDrop(e.kind);
+        if (gearRoll) {
+          spawnLabGearDrop(gearDropsRef.current, gearRoll, e.x, e.z);
         }
         if (isWarrior) {
           const gained = registerKill(warriorStateRef.current);
@@ -1441,6 +1573,38 @@ function CombatEnemyLoop({
       // A mimic appeared — refresh the enemy render list.
       onEnemiesChange(enemiesRef.current.slice());
       shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
+    }
+
+    // 7c) Gear ground-drop tick — lifetime decay + proximity pickup.
+    //     On pickup: auto-equip (or swap, dropping the old piece back
+    //     to the ground for another 12 s lifetime). equipLabGear()
+    //     recomputes bonuses IMMEDIATELY so the next frame's combat
+    //     tick reads the fresh values.
+    const gearTick = tickLabGearDrops(gearDropsRef.current, delta, p.x, p.z);
+    if (gearTick.pickedUp) {
+      audioManager.play("gear_drop");
+      const { oldGear, maxHealthDelta } = equipLabGear(gearStateRef.current, gearTick.pickedUp);
+      if (maxHealthDelta !== 0) {
+        p.maxHp += maxHealthDelta;
+        p.hp = Math.min(p.maxHp, p.hp + maxHealthDelta);
+      }
+      if (oldGear) {
+        // Drop the old piece slightly offset so its ground drop doesn't
+        // clip on top of the player and immediately re-pick up.
+        spawnLabGearDrop(gearDropsRef.current, oldGear, p.x + 1.2, p.z + 1.2);
+      }
+      shared.equipped = {
+        weapon: gearStateRef.current.weapon,
+        armor: gearStateRef.current.armor,
+        trinket: gearStateRef.current.trinket,
+      };
+    }
+    // Emit when the list length has changed from the last frame we
+    // emitted — covers spawns (from kills earlier this tick), pickups,
+    // and lifetime evictions.
+    if (gearDropsRef.current.length !== lastEmittedGearLen.current) {
+      lastEmittedGearLen.current = gearDropsRef.current.length;
+      onGearDropsChange(gearDropsRef.current.slice());
     }
 
     // 8) Projectile render-list sync. Same pattern as death FX / XP orbs:
@@ -1752,6 +1916,7 @@ function LabyrinthHUD({
     xpToNext: 1,
     totalXp: 0,
     warrior: null as LabSharedState["warrior"],
+    equipped: { weapon: null, armor: null, trinket: null } as LabSharedState["equipped"],
   });
 
   useEffect(() => {
@@ -1802,6 +1967,7 @@ function LabyrinthHUD({
         xpToNext: s.xpToNext,
         totalXp: s.totalXp,
         warrior: s.warrior,
+        equipped: s.equipped,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -1924,6 +2090,10 @@ function LabyrinthHUD({
         </div>
       </div>
 
+      {/* Equipped-gear slots — three icons (weapon / armor / trinket)
+          with rarity-color borders. Rendered under the threat box. */}
+      <GearSlotStrip equipped={display.equipped} />
+
       {/* Poison stack pip bar (only visible when stacks > 0) */}
       {display.poisonStacks > 0 && !display.defeated && !display.extracted && (
         <PoisonPips
@@ -2030,6 +2200,49 @@ function LabyrinthHUD({
 }
 
 /** Poison-stack pip bar shown under the HP bar while the shroud is active. */
+/** Three-slot equipped gear strip shown under the threat box. Reads
+ *  the sharedRef.equipped snapshot via the HUD's display poll. Empty
+ *  slots render as dim placeholders so the UI stays at a fixed size. */
+function GearSlotStrip({ equipped }: {
+  equipped: { weapon: GearDef | null; armor: GearDef | null; trinket: GearDef | null };
+}) {
+  const RARITY_BORDER: Record<string, string> = {
+    common: "rgba(170,170,187,0.65)",
+    rare:   "rgba(68,136,221,0.85)",
+    epic:   "rgba(170,68,255,0.9)",
+  };
+  const slotIcon = (g: GearDef | null, fallback: string) => g?.icon ?? fallback;
+  const border = (g: GearDef | null) =>
+    g ? RARITY_BORDER[g.rarity] ?? RARITY_BORDER.common : "rgba(60,60,80,0.5)";
+  const glow = (g: GearDef | null) => {
+    if (!g) return "none";
+    if (g.rarity === "epic") return "0 0 14px rgba(140,40,255,0.45)";
+    if (g.rarity === "rare") return "0 0 10px rgba(60,120,255,0.4)";
+    return "none";
+  };
+  const renderSlot = (g: GearDef | null, fallback: string, key: string) => (
+    <div
+      key={key}
+      style={{
+        ...styles.gearSlotBox,
+        borderColor: border(g),
+        boxShadow: glow(g),
+        color: g ? "#f0e0ff" : "rgba(120,120,140,0.6)",
+      }}
+      title={g ? `${g.name}${(g.enhanceLevel ?? 0) > 0 ? ` +${g.enhanceLevel}` : ""}` : "empty"}
+    >
+      {slotIcon(g, fallback)}
+    </div>
+  );
+  return (
+    <div style={styles.gearStrip}>
+      {renderSlot(equipped.weapon, "⚔", "weapon")}
+      {renderSlot(equipped.armor, "🛡", "armor")}
+      {renderSlot(equipped.trinket, "◈", "trinket")}
+    </div>
+  );
+}
+
 function PoisonPips({ stacks, dps }: { stacks: number; dps: number }) {
   // Integer pip count (ceil so a partial stack still shows as 1 pip).
   const pipCount = Math.max(0, Math.min(LAB_POISON_MAX_STACKS, Math.ceil(stacks)));
@@ -2261,6 +2474,33 @@ const styles: Record<string, React.CSSProperties> = {
     backdropFilter: "blur(4px)",
     fontFamily: "monospace",
     pointerEvents: "none" as const,
+  },
+  gearStrip: {
+    position: "absolute" as const,
+    top: 195,
+    right: 20,
+    display: "flex",
+    gap: 6,
+    padding: "6px",
+    background: "rgba(10,5,20,0.7)",
+    border: "1px solid rgba(140,100,200,0.35)",
+    borderRadius: 8,
+    backdropFilter: "blur(4px)",
+    pointerEvents: "none" as const,
+  },
+  gearSlotBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 6,
+    border: "2px solid rgba(60,60,80,0.5)",
+    background: "rgba(10,8,22,0.8)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 22,
+    color: "rgba(120,120,140,0.6)",
+    fontFamily: "monospace",
+    transition: "border-color 0.15s, box-shadow 0.2s, color 0.15s",
   },
   threatRow: {
     display: "flex",
