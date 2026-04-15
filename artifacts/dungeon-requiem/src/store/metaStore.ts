@@ -121,6 +121,12 @@ export interface MetaState {
   // First-run onboarding flag — set once the player has seen the HUD tutorial
   hasSeenTutorial: boolean;
 
+  /** Bestiary unlock tracking. Once an affix has been encountered
+   *  in ANY run (across reloads), its bestiary entry unlocks. The
+   *  Bestiary screen reads this map to gate locked entries.
+   *  Map key = AffixData EnemyAffix id. */
+  discoveredAffixes: Record<string, boolean>;
+
   // User settings — persisted across runs
   settings: {
     screenShake: boolean;   // camera shake on hits / kills / boss slams
@@ -131,6 +137,8 @@ export interface MetaState {
   addShards: (amount: number) => void;
   spendShards: (amount: number) => boolean;
   setUpgradeRank: (id: string, rank: number) => void;
+  /** Persistently mark an affix as discovered (unlocks bestiary entry). */
+  discoverAffix: (affix: string) => void;
   purchaseRank: (id: string, cost: number, maxRanks: number) => boolean;
   hardReset: () => void;
 
@@ -170,6 +178,7 @@ const DEFAULT_STATE = {
   gearStash: [] as StashItem[],
   equippedLoadout: { weapon: null, armor: null, trinket: null } as Record<string, StashItem | null>,
   hasSeenTutorial: false,
+  discoveredAffixes: {} as Record<string, boolean>,
   settings: {
     screenShake: true,
     damageNumbers: true,
@@ -199,6 +208,13 @@ export const useMetaStore = create<MetaState>()(
 
       setUpgradeRank: (id, rank) =>
         set((s) => ({ purchased: { ...s.purchased, [id]: rank } })),
+
+      discoverAffix: (affix) =>
+        set((s) =>
+          s.discoveredAffixes[affix]
+            ? s   // already discovered — no-op (no fresh state, no rerender)
+            : { discoveredAffixes: { ...s.discoveredAffixes, [affix]: true } },
+        ),
 
       purchaseRank: (id, cost, maxRanks) => {
         const s = get();
