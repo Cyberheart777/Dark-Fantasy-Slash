@@ -64,8 +64,14 @@ function Floor() {
 }
 
 // ─── Ceiling ─────────────────────────────────────────────────────────────────
-// A dark ceiling plane above the walls to give the maze an enclosed feeling.
-// Low-intensity emissive glow so the corridor tops aren't pitch black.
+// A dark ceiling plane above the walls to give the maze an enclosed feeling
+// from inside. The plane's normal faces DOWN (after the X-rotation), so with
+// single-side rendering the top-down camera (which sits ABOVE y=6 looking
+// through) sees its back face and back-face culling makes it invisible —
+// which is what we want. DoubleSide was previously enabled, which made the
+// ceiling render as a near-black overlay obscuring the entire maze when
+// viewed from above. If we ever add a first-person view, the ceiling
+// remains correctly visible from below.
 
 function Ceiling() {
   return (
@@ -76,7 +82,6 @@ function Ceiling() {
       <planeGeometry args={[LABYRINTH_WORLD_EXTENT, LABYRINTH_WORLD_EXTENT]} />
       <meshStandardMaterial
         color="#0a0610"
-        side={THREE.DoubleSide}
         roughness={1.0}
         metalness={0}
       />
