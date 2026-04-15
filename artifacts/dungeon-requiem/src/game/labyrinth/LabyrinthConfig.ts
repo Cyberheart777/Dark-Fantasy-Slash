@@ -6,8 +6,21 @@
 
 export const LABYRINTH_CONFIG = {
   // ─── Maze dimensions ────────────────────────────────────────────────────
-  /** Grid size — number of cells per side. Each cell is CELL_SIZE wide. */
-  GRID_SIZE: 21,
+  /** Grid size — number of cells per side. Each cell is CELL_SIZE wide.
+   *  Bumped 21 → 25 in item 7/8 to give the outer ring enough real
+   *  estate for the loot room + high-density combat while keeping the
+   *  mid ring for portal spawns + center chamber for the boss. */
+  GRID_SIZE: 25,
+  /** Item 7: portion of standard enemies (guardians + turrets) placed
+   *  in the outer ring (Chebyshev distance >= OUTER_RING_MIN from
+   *  center). Rest spread across mid + inner. The zone consumes the
+   *  outer ring first, so this density bias turns outer exploration
+   *  into a "raid early for the loot room" decision point. */
+  OUTER_RING_ENEMY_BIAS: 0.65,
+  /** Chebyshev distance (in cells) from maze center that qualifies as
+   *  the outer ring. Loot-room cell picker + enemy-bias logic share
+   *  this so the definition of "outer ring" is consistent. */
+  OUTER_RING_MIN: 8,
   /** World units per maze cell (wall-to-wall corridor width). */
   CELL_SIZE: 8,
   /** Thickness of interior maze walls. */

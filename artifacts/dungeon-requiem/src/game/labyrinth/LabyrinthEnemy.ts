@@ -167,6 +167,11 @@ export function spawnCorridorGuardians(
   maze: Maze,
   count: number,
   rng: () => number = Math.random,
+  /** Item 7: fraction of guardians placed in the outer ring
+   *  (Chebyshev >= outerRingMin from center). Zero = original uniform
+   *  behaviour. Typical: 0.65 → 65% outer, 35% elsewhere. */
+  outerBiasPct = 0,
+  outerRingMin = 0,
 ): EnemyRuntime[] {
   const cCol = maze.center.col;
   const cRow = maze.center.row;
@@ -187,7 +192,21 @@ export function spawnCorridorGuardians(
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
 
-  const chosen = candidates.slice(0, count);
+  // Ring-biased selection — partition candidates into outer / inner
+  // (Chebyshev distance from center) and draw the requested split.
+  // When outerBiasPct = 0 (default) we keep the old uniform path.
+  let chosen;
+  if (outerBiasPct > 0 && outerRingMin > 0) {
+    const isOuter = (cell: { col: number; row: number }) =>
+      Math.max(Math.abs(cell.col - cCol), Math.abs(cell.row - cRow)) >= outerRingMin;
+    const outer = candidates.filter(isOuter);
+    const inner = candidates.filter((c) => !isOuter(c));
+    const outerTarget = Math.min(outer.length, Math.round(count * outerBiasPct));
+    const innerTarget = Math.min(inner.length, count - outerTarget);
+    chosen = outer.slice(0, outerTarget).concat(inner.slice(0, innerTarget));
+  } else {
+    chosen = candidates.slice(0, count);
+  }
   return chosen.map((cell, i) => {
     const { x, z } = cellToWorld(cell.col, cell.row);
     return {
@@ -374,6 +393,10 @@ export function spawnTrapSpawners(
   maze: Maze,
   count: number,
   rng: () => number = Math.random,
+  /** Item 7: same ring-bias as guardians — push a fraction of turrets
+   *  to the outer ring so it actually feels hostile. */
+  outerBiasPct = 0,
+  outerRingMin = 0,
 ): EnemyRuntime[] {
   const cCol = maze.center.col;
   const cRow = maze.center.row;
@@ -395,7 +418,18 @@ export function spawnTrapSpawners(
     [deadEndCells[i], deadEndCells[j]] = [deadEndCells[j], deadEndCells[i]];
   }
 
-  const chosen = deadEndCells.slice(0, count);
+  let chosen;
+  if (outerBiasPct > 0 && outerRingMin > 0) {
+    const isOuter = (cell: { col: number; row: number }) =>
+      Math.max(Math.abs(cell.col - cCol), Math.abs(cell.row - cRow)) >= outerRingMin;
+    const outer = deadEndCells.filter(isOuter);
+    const inner = deadEndCells.filter((c) => !isOuter(c));
+    const outerTarget = Math.min(outer.length, Math.round(count * outerBiasPct));
+    const innerTarget = Math.min(inner.length, count - outerTarget);
+    chosen = outer.slice(0, outerTarget).concat(inner.slice(0, innerTarget));
+  } else {
+    chosen = deadEndCells.slice(0, count);
+  }
   return chosen.map((cell, i) => {
     const { x, z } = cellToWorld(cell.col, cell.row);
     return {

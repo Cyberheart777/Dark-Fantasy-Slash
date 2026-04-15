@@ -146,7 +146,7 @@ import {
 import { LabyrinthGearDrops3D } from "./LabyrinthGear3D";
 import { LabyrinthLootDoor3D } from "./LabyrinthLootDoor3D";
 import { useMetaStore } from "../../store/metaStore";
-import type { GearDef } from "../../data/GearData";
+import { rollGearDrop, type GearDef } from "../../data/GearData";
 import {
   spawnLabTraps,
   tickLabTraps,
@@ -200,10 +200,19 @@ interface LabSharedState {
    *  Only one per run. See item 4. */
   championSpawned: boolean;
   /** true once the champion has been killed AND dropped the key.
-   *  Item 7 wires the visible key pickup + loot-room unlock; for
-   *  now this boolean flags the "you have the key" run-state that
-   *  the HUD reads to show the key icon. */
+   *  Flipped false when the key is consumed at the loot-door (item 7). */
   hasKey: boolean;
+  /** true once the player has opened the loot-room door by walking
+   *  into it with hasKey=true. Consumes the key (sets hasKey=false)
+   *  and signals CombatEnemyLoop to spawn the guaranteed epic gear
+   *  payload inside the room. Persistent for the rest of the run so
+   *  the door stays open. */
+  lootRoomUnlocked: boolean;
+  /** One-shot trigger from MovementLoop → CombatEnemyLoop to spawn
+   *  the loot-room's gear payload. Set true the frame the door
+   *  unlocks; the combat loop consumes it by rolling 3 epic gear
+   *  drops inside the room and setting it back to false. */
+  pendingLootSpawn: boolean;
   /** Elapsed-seconds timestamp of the most recent champion spawn.
    *  Drives the "A CHAMPION HUNTS YOU" HUD banner (fades over 3.5s). */
   championAnnouncedAt: number;
@@ -315,6 +324,8 @@ export function LabyrinthScene() {
     wardenHud: null,
     championSpawned: false,
     hasKey: false,
+    lootRoomUnlocked: false,
+    pendingLootSpawn: false,
     championAnnouncedAt: -Infinity,
     outsideZone: false,
     safeDirX: 0, safeDirZ: 0,
@@ -371,11 +382,10 @@ export function LabyrinthScene() {
   // lands with items #4 and #7.
   const lootRoomCell = useMemo(() => {
     const center = maze.center;
-    const OUTER_RING_MIN = 7;
     const outerDeadEnds = maze.deadEnds.filter((c) => {
       const dc = Math.abs(c.col - center.col);
       const dr = Math.abs(c.row - center.row);
-      return Math.max(dc, dr) >= OUTER_RING_MIN;
+      return Math.max(dc, dr) >= LABYRINTH_CONFIG.OUTER_RING_MIN;
     });
     // Degenerate fallback: any dead-end, then any cell. A 21x21 maze
     // with LOOP_FACTOR=0.15 will always have plenty of outer dead-ends
@@ -408,10 +418,16 @@ export function LabyrinthScene() {
     const guardians = spawnCorridorGuardians(
       maze,
       LABYRINTH_CONFIG.CORRIDOR_GUARDIAN_COUNT,
+      undefined,
+      LABYRINTH_CONFIG.OUTER_RING_ENEMY_BIAS,
+      LABYRINTH_CONFIG.OUTER_RING_MIN,
     );
     const turrets = spawnTrapSpawners(
       maze,
       LABYRINTH_CONFIG.TRAP_SPAWNER_COUNT,
+      undefined,
+      LABYRINTH_CONFIG.OUTER_RING_ENEMY_BIAS * 0.8,  // slightly less biased for turrets — they're stationary
+      LABYRINTH_CONFIG.OUTER_RING_MIN,
     );
     enemiesRef.current = [...guardians, ...turrets];
     sharedRef.current.enemyCount = enemiesRef.current.length;
@@ -585,6 +601,9 @@ function LabyrinthWorld({
   // Ground gear-drop list mirror — CombatEnemyLoop pushes on enemy kill
   // and evicts on pickup / lifetime expiry.
   const [gearDropList, setGearDropList] = useState<LabGearDropRuntime[]>([]);
+  // Mirror of shared.lootRoomUnlocked, flipped by CombatEnemyLoop when
+  // it consumes pendingLootSpawn. Drives the 3D door's open animation.
+  const [lootRoomUnlockedFlag, setLootRoomUnlockedFlag] = useState(false);
 
   return (
     <>
@@ -649,7 +668,11 @@ function LabyrinthWorld({
       {/* Locked loot-room door placeholder. Visual only this commit;
           interaction lands with items #4 (champion drops key) + #7
           (loot-room unlock). */}
-      <LabyrinthLootDoor3D x={cellToWorld(lootRoomCell.col, lootRoomCell.row).x} z={cellToWorld(lootRoomCell.col, lootRoomCell.row).z} />
+      <LabyrinthLootDoor3D
+        x={cellToWorld(lootRoomCell.col, lootRoomCell.row).x}
+        z={cellToWorld(lootRoomCell.col, lootRoomCell.row).z}
+        unlocked={lootRoomUnlockedFlag}
+      />
       {/* Active projectiles — wall-trap beams, enemy turret shots,
           warden starburst, mage orbs, rogue daggers. Uses the main
           game's Projectile3D via a shim-cast in LabyrinthProjectiles3D. */}
@@ -687,6 +710,7 @@ function LabyrinthWorld({
         labDashRef={labDashRef}
         dashCooldownSec={dashCooldownSec}
         gearStateRef={gearStateRef}
+        lootRoomCell={lootRoomCell}
       />
       <CombatEnemyLoop
         maze={maze}
@@ -710,6 +734,7 @@ function LabyrinthWorld({
         gearStateRef={gearStateRef}
         gearDropsRef={gearDropsRef}
         ranSalvageRef={ranSalvageRef}
+        lootRoomCell={lootRoomCell}
         critChance={critChance}
         charClass={charClass}
         onEnemiesChange={setEnemyList}
@@ -718,6 +743,7 @@ function LabyrinthWorld({
         onProjectilesChange={setProjectileList}
         onChestsChange={setChestList}
         onGearDropsChange={setGearDropList}
+        onLootRoomUnlocked={setLootRoomUnlockedFlag}
       />
       {/* Trap emitter visuals — small pulsing cubes on each anchor.
           The actual projectile is drawn by LabyrinthProjectiles3D. */}
@@ -1052,6 +1078,7 @@ function MovementLoop({
   labDashRef,
   dashCooldownSec,
   gearStateRef,
+  lootRoomCell,
 }: {
   playerRef: React.MutableRefObject<LabPlayer>;
   maze: Maze;
@@ -1060,7 +1087,14 @@ function MovementLoop({
   labDashRef: React.MutableRefObject<LabDashState>;
   dashCooldownSec: number;
   gearStateRef: React.MutableRefObject<LabGearState>;
+  lootRoomCell: { col: number; row: number };
 }) {
+  // World-space centre of the loot-room cell; used by the loot-door
+  // collision check below. Recomputed only when lootRoomCell changes.
+  const lootCellWorld = useMemo(
+    () => cellToWorld(lootRoomCell.col, lootRoomCell.row),
+    [lootRoomCell],
+  );
   // Precompute wall segments for collision (same data as renderer).
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
 
@@ -1140,6 +1174,42 @@ function MovementLoop({
     const PLAYER_R = 0.7;
     if (!collidesWithAnyWall(nextX, p.z, PLAYER_R, segments)) p.x = nextX;
     if (!collidesWithAnyWall(p.x, nextZ, PLAYER_R, segments)) p.z = nextZ;
+
+    // Loot-door gate (item 7). While the door is locked, treat the
+    // loot-room cell as a solid disc of radius LOCK_R centred on the
+    // cell — any frame the player ends up inside it, push them back
+    // out onto the boundary. When they arrive carrying the key, we
+    // flip lootRoomUnlocked / hasKey and signal CombatEnemyLoop to
+    // spawn the gear payload on its next tick.
+    if (!sharedRef.current.lootRoomUnlocked) {
+      const LOCK_R = LABYRINTH_CONFIG.CELL_SIZE * 0.55;
+      const dx = p.x - lootCellWorld.x;
+      const dz = p.z - lootCellWorld.z;
+      const dsq = dx * dx + dz * dz;
+      if (dsq < LOCK_R * LOCK_R) {
+        if (sharedRef.current.hasKey) {
+          // Unlock — key is consumed, gear spawn pending, door visual
+          // flips via the sharedRef flag polled by the HUD + 3D scene.
+          sharedRef.current.lootRoomUnlocked = true;
+          sharedRef.current.hasKey = false;
+          sharedRef.current.pendingLootSpawn = true;
+          audioManager.play("wave_clear");
+        } else {
+          // Blocked. Push back onto the lock boundary.
+          const d = Math.sqrt(dsq);
+          if (d > 0.001) {
+            const nx = dx / d;
+            const nz = dz / d;
+            p.x = lootCellWorld.x + nx * LOCK_R;
+            p.z = lootCellWorld.z + nz * LOCK_R;
+          } else {
+            // Edge case: somehow standing exactly at cell centre.
+            // Eject along +x so the next frame is outside.
+            p.x = lootCellWorld.x + LOCK_R;
+          }
+        }
+      }
+    }
 
     // Facing angle follows active movement direction (dash OR joystick).
     if (moveVX !== 0 || moveVZ !== 0) {
@@ -1221,6 +1291,7 @@ function CombatEnemyLoop({
   gearStateRef,
   gearDropsRef,
   ranSalvageRef,
+  lootRoomCell,
   critChance,
   charClass,
   onEnemiesChange,
@@ -1229,6 +1300,7 @@ function CombatEnemyLoop({
   onProjectilesChange,
   onChestsChange,
   onGearDropsChange,
+  onLootRoomUnlocked,
 }: {
   maze: Maze;
   combatStats: LabCombatStats;
@@ -1251,6 +1323,7 @@ function CombatEnemyLoop({
   gearStateRef: React.MutableRefObject<LabGearState>;
   gearDropsRef: React.MutableRefObject<LabGearDropRuntime[]>;
   ranSalvageRef: React.MutableRefObject<boolean>;
+  lootRoomCell: { col: number; row: number };
   critChance: number;
   charClass: CharacterClass;
   onEnemiesChange: (enemies: EnemyRuntime[]) => void;
@@ -1259,6 +1332,7 @@ function CombatEnemyLoop({
   onProjectilesChange: (projs: LabProjectile[]) => void;
   onChestsChange: (chests: LabChest[]) => void;
   onGearDropsChange: (drops: LabGearDropRuntime[]) => void;
+  onLootRoomUnlocked: (unlocked: boolean) => void;
 }) {
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
   // Tracks the last death-fx list length we pushed to React state so we
@@ -1661,6 +1735,39 @@ function CombatEnemyLoop({
       // A mimic appeared — refresh the enemy render list.
       onEnemiesChange(enemiesRef.current.slice());
       shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
+    }
+
+    // 7b-b) Loot-room unlock payload. MovementLoop sets pendingLootSpawn
+    //       true the frame the player walks through the door with a
+    //       key. We roll 3 guaranteed-epic gear pieces + drop them in
+    //       a triangle around the room centre so the player can see
+    //       all three at a glance. Also drops a ground-FX beacon for
+    //       visual juice.
+    if (shared.pendingLootSpawn) {
+      shared.pendingLootSpawn = false;
+      const { x: lx, z: lz } = cellToWorld(lootRoomCell.col, lootRoomCell.row);
+      const OFFSET = 1.1;
+      const positions: Array<[number, number]> = [
+        [lx, lz - OFFSET],
+        [lx - OFFSET, lz + OFFSET * 0.6],
+        [lx + OFFSET, lz + OFFSET * 0.6],
+      ];
+      for (const [dx, dz] of positions) {
+        const epic = rollGearDrop("epic");
+        spawnLabGearDrop(gearDropsRef.current, epic, dx, dz);
+      }
+      // Gold-purple beacon so the unlock reads even from down the hall.
+      groundFxRef.current.push({
+        id: `loot-unlock-${shared.zone.elapsedSec.toFixed(2)}`,
+        x: lx,
+        z: lz,
+        radius: 4.0,
+        lifetime: 2.5,
+        color: "#ffc040",
+      });
+      // Flip the React state mirror — triggers the door's open
+      // animation on the next render pass.
+      onLootRoomUnlocked(true);
     }
 
     // 7c) Gear ground-drop tick — lifetime decay + proximity pickup.
