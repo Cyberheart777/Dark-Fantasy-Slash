@@ -14,8 +14,10 @@ import { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useGameStore } from "../../store/gameStore";
+import { useAchievementStore } from "../../store/achievementStore";
 import { AffixTooltip } from "../../ui/AffixTooltip";
 import { AffixBanner } from "../../ui/AffixBanner";
+import { AchievementToast } from "../../ui/AchievementToast";
 import { InputManager3D } from "../InputManager3D";
 import {
   LABYRINTH_CONFIG,
@@ -242,6 +244,16 @@ interface LabSharedState {
    *  vault door AND doesn't hold a champion key. Drives the
    *  "REQUIRES CHAMPION KEY" HUD prompt. */
   nearLockedVault: boolean;
+  // ─── Achievement tracking (run-local) ────────────────────────────
+  /** Total shroud DoT damage taken this run. Drives Ghost Protocol
+   *  (extract with == 0). Incremented in the poison-damage tick. */
+  shroudDamageTaken: number;
+  /** Count of gear pickups this run. Drives Iron Will (extract with
+   *  == 0 AND no equipped slots). Incremented in pickupLabGear path. */
+  gearPickupsThisRun: number;
+  /** Guard so end-of-run single-run achievements evaluate once per
+   *  run (similar to ranSalvageRef but for the achievement pass). */
+  achievementsEvaluated: boolean;
   /** Per-rival announcement data. Populated on each rival spawn;
    *  drives the "A RIVAL <CLASS> ENTERS THE LABYRINTH" HUD banner
    *  which fades over 3.5 s. Null between announcements. */
@@ -374,6 +386,9 @@ export function LabyrinthScene() {
     pendingLootSpawn: false,
     pendingMinorRoomGear: [],
     nearLockedVault: false,
+    shroudDamageTaken: 0,
+    gearPickupsThisRun: 0,
+    achievementsEvaluated: false,
     rivalAnnounce: null,
     outsideZone: false,
     safeDirX: 0, safeDirZ: 0,
@@ -633,6 +648,12 @@ export function LabyrinthScene() {
           if affix-rolling is added to the labyrinth shim later. */}
       <AffixTooltip />
       <AffixBanner />
+      {/* Achievement unlock toasts — main-game HUD mounts its own
+          copy, but the labyrinth uses a separate HUD so we mount
+          here. Same store + queue, so unlocks from either mode
+          drain through whichever toast component is currently
+          mounted. */}
+      <AchievementToast />
       <LabyrinthDebug
         playerRef={playerRef}
         sharedRef={sharedRef}
@@ -1536,6 +1557,16 @@ function CombatEnemyLoop({
         useMetaStore.getState().addShards(total);
       }
     }
+    // Evaluate single-run achievements exactly once per run — same
+    // guard pattern as ranSalvageRef above. Runs after the salvage
+    // block so shard-deposit side effects settle first. Reads
+    // playerRef.current directly (p isn't declared yet above the
+    // early-return; this block needs to fire regardless of the
+    // input-ready guard).
+    if ((shared.defeated || shared.extracted || shared.victory) && !shared.achievementsEvaluated) {
+      shared.achievementsEvaluated = true;
+      evaluateLabRunAchievements(shared, playerRef.current, gearStateRef.current, charClass);
+    }
     if (shared.defeated || shared.extracted || shared.victory) return;
     const input = inputRef.current;
     if (!input) return;
@@ -1979,6 +2010,11 @@ function CombatEnemyLoop({
     const gearTick = tickLabGearDrops(gearDropsRef.current, delta, p.x, p.z);
     if (gearTick.pickedUp) {
       audioManager.play("gear_drop");
+      // Iron Will tracking: every pickup counts (whether it went to
+      // an equipped slot, inventory, or swap-displaced). The
+      // achievement fires only if this counter is still 0 at
+      // extraction AND no slot is equipped.
+      shared.gearPickupsThisRun += 1;
       const result = pickupLabGear(gearStateRef.current, gearTick.pickedUp);
       if (result.maxHealthDelta !== 0) {
         p.maxHp += result.maxHealthDelta;
@@ -2147,6 +2183,13 @@ function ZoneTickLoop({
     const hpBeforePoison = p.hp;
     tickLabPoison(labPoisonRef.current, inside, delta, undefined);
     applyLabPoisonDamage(p, labPoisonRef.current, delta);
+    // Track shroud DoT taken this run for the Ghost Protocol
+    // achievement (extract with == 0). The poison tick is the only
+    // source of "shroud damage" per the spec, so hpBeforePoison -
+    // p.hp is the exact increment.
+    if (p.hp < hpBeforePoison) {
+      shared.shroudDamageTaken += hpBeforePoison - p.hp;
+    }
     shared.poisonStacks = labPoisonRef.current.stacks;
     shared.poisonDps = labPoisonRef.current.dps;
     if (p.hp <= 0 && hpBeforePoison > 0) {
@@ -2767,6 +2810,113 @@ function LabyrinthHUD({
  *  the player's selected class. First rival is the more ranged /
  *  complex counter; second is the opposite style. Deterministic so
  *  runs feel consistent. */
+/** Single-run labyrinth achievement evaluation. Called exactly once
+ *  per run (guarded by shared.achievementsEvaluated) the frame the
+ *  run ends — whether by extraction, defeat, or warden slain.
+ *
+ *  Each achievement's unlock rule is encoded inline; conditions read
+ *  from the run-local shared/player/gear state that was accumulated
+ *  during play. tryUnlock is idempotent (second call is a no-op) so
+ *  re-triggering is safe.
+ *
+ *  Cross-run counter updates also happen here (Nemesis kills, All
+ *  Roads Lead Out class-extraction record) — both written through
+ *  the metaStore actions which persist across sessions. */
+function evaluateLabRunAchievements(
+  shared: LabSharedState,
+  p: LabPlayer,
+  gear: LabGearState,
+  charClass: CharacterClass,
+): void {
+  const ach = useAchievementStore.getState();
+  const meta = useMetaStore.getState();
+
+  // ─── Cross-run counters fed from single-run data ─────────────────
+  // "Nemesis" (100 labyrinth kills across runs) — feed the per-run
+  // killCount into the persistent counter; metaStore fires the
+  // achievement when the total crosses 100.
+  if (shared.killCount > 0) {
+    meta.addLabyrinthKills(shared.killCount);
+  }
+
+  // ─── Extraction-gated achievements ───────────────────────────────
+  if (shared.extracted) {
+    // All Roads Lead Out — record this class's extraction; metaStore
+    // fires the achievement when all 3 classes have been recorded.
+    meta.recordLabyrinthExtraction(charClass);
+
+    // Speed Runner — extracted in under 4 minutes.
+    if (shared.zone.elapsedSec < 240) {
+      ach.tryUnlock("lab_speed_runner");
+    }
+
+    // Last Train Out — extracted in the final 10 seconds of the run.
+    // Interpreted as "10 seconds before total zone closure"; matches
+    // the "final portal window" spirit since the last portal is the
+    // only one alive that late into the run.
+    if (shared.zone.elapsedSec > ZONE_TOTAL_DURATION_SEC - 10) {
+      ach.tryUnlock("lab_last_train_out");
+    }
+
+    // Ghost Protocol — extracted with zero shroud DoT taken.
+    // Accumulated in the poison-damage tick above.
+    if (shared.shroudDamageTaken === 0) {
+      ach.tryUnlock("lab_ghost_protocol");
+    }
+
+    // Iron Will — extracted without picking up OR equipping any
+    // gear. Pickups counter covers both cases (an equipped piece
+    // always flowed through a pickup).
+    const anyEquipped = !!(gear.weapon || gear.armor || gear.trinket);
+    if (shared.gearPickupsThisRun === 0 && !anyEquipped) {
+      ach.tryUnlock("lab_iron_will");
+    }
+  }
+
+  // ─── Victory-gated achievements (warden slain) ───────────────────
+  if (shared.victory) {
+    // Full Clearance — defeated the Warden AND opened the vault in
+    // the same run. rivalKillCount + lootRoomUnlocked are both
+    // authoritative (first rival kill drops the key, player has to
+    // walk through the vault to consume it).
+    if (shared.lootRoomUnlocked) {
+      ach.tryUnlock("lab_full_clearance");
+    }
+  }
+
+  // ─── Rival Slayer — killed BOTH rival champions this run ─────────
+  // Fires on ANY run-end path (extract, defeat, or victory) because
+  // the player can still die after both rivals fall but the kill
+  // count remains at 2. No extraction requirement.
+  if (shared.rivalKillCount >= 2) {
+    ach.tryUnlock("lab_rival_slayer");
+  }
+
+  // ─── Defeat-gated achievements ───────────────────────────────────
+  if (shared.defeated) {
+    // Wrong Turn — died within the first 60 seconds AND player was
+    // outside the safe zone (i.e., shroud killed them, not a
+    // corridor guardian). Spec only requires "die in poison shroud
+    // within first minute" — we gate on shroudDamageTaken > 0 so
+    // random-kill wipes in the opening 60s don't trigger it.
+    if (shared.zone.elapsedSec < 60 && shared.shroudDamageTaken > 0) {
+      ach.tryUnlock("lab_wrong_turn");
+    }
+
+    // So Close — died within 10 world units of any LIVE (not
+    // consumed) extraction portal.
+    for (const portal of shared.portals) {
+      if (portal.consumed) continue;
+      const dx = p.x - portal.x;
+      const dz = p.z - portal.z;
+      if (dx * dx + dz * dz <= 100) {   // 10 * 10
+        ach.tryUnlock("lab_so_close");
+        break;
+      }
+    }
+  }
+}
+
 function rivalOrderForClass(cls: CharacterClass): ["rival_warrior" | "rival_mage" | "rival_rogue", "rival_warrior" | "rival_mage" | "rival_rogue"] {
   if (cls === "warrior") return ["rival_mage",    "rival_rogue"];
   if (cls === "mage")    return ["rival_warrior", "rival_rogue"];

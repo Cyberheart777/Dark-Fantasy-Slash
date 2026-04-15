@@ -4,7 +4,7 @@
  * ~45 achievements across 5 categories.
  */
 
-export type AchievementCategory = "progression" | "combat" | "mastery" | "gear" | "secret";
+export type AchievementCategory = "progression" | "combat" | "mastery" | "gear" | "secret" | "labyrinth";
 
 export interface AchievementDef {
   id: string;
@@ -69,6 +69,21 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "soul_hoarder",        name: "Soul Hoarder",          description: "Accumulate 5,000 total soul shards earned",  icon: "💰", category: "secret", hidden: true },
   { id: "level_20_run",        name: "Overleveled",           description: "Reach Level 20 in a single run",             icon: "📈", category: "secret", hidden: true },
   { id: "full_loadout",        name: "Fully Loaded",          description: "Start a run with gear in all 3 loadout slots", icon: "🎽", category: "secret", hidden: true },
+
+  // ── The Labyrinth ────────────────────────────────────────────────────────────
+  // Single-run (unlock on a condition inside one labyrinth run). "All Roads
+  // Lead Out" + "Nemesis" track across runs via metaStore but are grouped
+  // here per the user's single-run spec list.
+  { id: "lab_ghost_protocol",  name: "Ghost Protocol",        description: "Extract from the labyrinth without taking any shroud damage",   icon: "👻", category: "labyrinth" },
+  { id: "lab_last_train_out",  name: "Last Train Out",        description: "Extract within the final 10 seconds of the run",                icon: "🚂", category: "labyrinth" },
+  { id: "lab_speed_runner",    name: "Speed Runner",          description: "Extract from the labyrinth in under 4 minutes",                 icon: "⚡", category: "labyrinth" },
+  { id: "lab_all_roads",       name: "All Roads Lead Out",    description: "Extract from the labyrinth with all three classes",             icon: "🗺️", category: "labyrinth" },
+  { id: "lab_rival_slayer",    name: "Rival Slayer",          description: "Kill both rival champions in a single labyrinth run",           icon: "⚔️", category: "labyrinth" },
+  { id: "lab_full_clearance",  name: "Full Clearance",        description: "Open the vault room AND defeat the Warden in a single run",     icon: "🗝️", category: "labyrinth" },
+  { id: "lab_nemesis",         name: "Nemesis",               description: "Kill 100 enemies across all Labyrinth runs",                    icon: "🎯", category: "labyrinth" },
+  { id: "lab_iron_will",       name: "Iron Will",             description: "Extract from the labyrinth without picking up any gear",        icon: "💪", category: "labyrinth" },
+  { id: "lab_wrong_turn",      name: "Wrong Turn",            description: "Die in the poison shroud within the first minute of a run",     icon: "☠️", category: "labyrinth" },
+  { id: "lab_so_close",        name: "So Close",              description: "Die within 10 units of an extraction portal",                   icon: "😩", category: "labyrinth" },
 ];
 
 /** Lookup map for O(1) access by id. */
@@ -77,7 +92,7 @@ export const ACHIEVEMENT_MAP: Record<string, AchievementDef> = Object.fromEntrie
 );
 
 export const ACHIEVEMENT_CATEGORIES: AchievementCategory[] = [
-  "progression", "combat", "mastery", "gear", "secret",
+  "progression", "combat", "mastery", "gear", "labyrinth", "secret",
 ];
 
 export const CATEGORY_LABELS: Record<AchievementCategory, string> = {
@@ -85,5 +100,6 @@ export const CATEGORY_LABELS: Record<AchievementCategory, string> = {
   combat: "Combat",
   mastery: "Mastery",
   gear: "Gear",
+  labyrinth: "The Labyrinth",
   secret: "Secrets",
 };

@@ -127,6 +127,18 @@ export interface MetaState {
    *  Map key = AffixData EnemyAffix id. */
   discoveredAffixes: Record<string, boolean>;
 
+  // ─── Labyrinth cross-run counters ─────────────────────────────────
+  // Persisted across sessions. Labyrinth achievements use these for
+  // "X across all runs" goals. Incremented by actions below; read
+  // by achievement-unlock checks inside LabyrinthScene run-end.
+  /** Total enemies killed across all labyrinth runs (Nemesis). */
+  labyrinthKillCount: number;
+  /** Which classes have extracted at least once (All Roads Lead Out).
+   *  Map keyed by CharacterClass id → true when that class has
+   *  extracted. Boolean-true entries are never removed; the "All
+   *  Roads" achievement fires when all three classes are present. */
+  labyrinthExtractedClasses: Record<string, boolean>;
+
   // User settings — persisted across runs
   settings: {
     screenShake: boolean;   // camera shake on hits / kills / boss slams
@@ -139,6 +151,14 @@ export interface MetaState {
   setUpgradeRank: (id: string, rank: number) => void;
   /** Persistently mark an affix as discovered (unlocks bestiary entry). */
   discoverAffix: (affix: string) => void;
+
+  // ─── Labyrinth cross-run actions ──────────────────────────────────
+  /** Increment the labyrinth kill counter by `n`. Fires the Nemesis
+   *  achievement when it crosses 100. */
+  addLabyrinthKills: (n: number) => void;
+  /** Mark `cls` as having extracted at least once. Fires the All
+   *  Roads Lead Out achievement when all 3 classes are present. */
+  recordLabyrinthExtraction: (cls: string) => void;
   purchaseRank: (id: string, cost: number, maxRanks: number) => boolean;
   hardReset: () => void;
 
@@ -179,6 +199,8 @@ const DEFAULT_STATE = {
   equippedLoadout: { weapon: null, armor: null, trinket: null } as Record<string, StashItem | null>,
   hasSeenTutorial: false,
   discoveredAffixes: {} as Record<string, boolean>,
+  labyrinthKillCount: 0,
+  labyrinthExtractedClasses: {} as Record<string, boolean>,
   settings: {
     screenShake: true,
     damageNumbers: true,
@@ -215,6 +237,28 @@ export const useMetaStore = create<MetaState>()(
             ? s   // already discovered — no-op (no fresh state, no rerender)
             : { discoveredAffixes: { ...s.discoveredAffixes, [affix]: true } },
         ),
+
+      // ─── Labyrinth cross-run counters ─────────────────────────────
+      // Each mutator writes through to the persistence layer AND
+      // fires the matching achievement the moment its threshold is
+      // crossed. Same pattern as addTotalKills (see below) so Steam
+      // SDK integration later can hook at the tryUnlock site only.
+      addLabyrinthKills: (n) => {
+        const s = get();
+        const newTotal = s.labyrinthKillCount + n;
+        set({ labyrinthKillCount: newTotal });
+        if (newTotal >= 100) useAchievementStore.getState().tryUnlock("lab_nemesis");
+      },
+      recordLabyrinthExtraction: (cls) => {
+        const s = get();
+        if (s.labyrinthExtractedClasses[cls]) return;   // already recorded
+        const next = { ...s.labyrinthExtractedClasses, [cls]: true };
+        set({ labyrinthExtractedClasses: next });
+        // All three classes extracted → All Roads Lead Out.
+        if (next["warrior"] && next["mage"] && next["rogue"]) {
+          useAchievementStore.getState().tryUnlock("lab_all_roads");
+        }
+      },
 
       purchaseRank: (id, cost, maxRanks) => {
         const s = get();
