@@ -35,6 +35,7 @@ import {
   isInsideZone,
   formatZoneTime,
   ZONE_INITIAL_RADIUS,
+  ZONE_TOTAL_DURATION_SEC,
   type ZoneState,
 } from "./LabyrinthZone";
 import {
@@ -2118,7 +2119,7 @@ function LabyrinthHUD({
   // Poll shared state at 10Hz for display only (don't re-render at 60fps).
   const [display, setDisplay] = useState({
     hp: 100, maxHp: 100,
-    timeRemaining: LABYRINTH_CONFIG.ZONE_TOTAL_DURATION,
+    timeRemaining: ZONE_TOTAL_DURATION_SEC,
     elapsedSec: 0,
     isPaused: false,
     outsideZone: false,

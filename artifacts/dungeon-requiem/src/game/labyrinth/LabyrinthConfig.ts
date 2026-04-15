@@ -33,13 +33,23 @@ export const LABYRINTH_CONFIG = {
   /** Probability a dead-end cell becomes a small open room (2x2). */
   OPEN_ROOM_CHANCE: 0.08,
 
-  // ─── Closing zone (step 2 — not wired yet) ──────────────────────────────
-  /** Seconds from zone start to fully closed at center. */
-  ZONE_TOTAL_DURATION: 8 * 60,
-  /** Active shrink window inside each phase (seconds). */
-  ZONE_PHASE_SHRINK_SEC: 30,
-  /** Pause between shrink phases (seconds). */
-  ZONE_PHASE_PAUSE_SEC: 15,
+  // ─── Closing zone ────────────────────────────────────────────────────────
+  // Phase-cycle schedule (item 8). The zone closes in discrete
+  // shrink-then-pause cycles. Each shrink is FASTER than the last
+  // so the early game gives space to plan, the late game forces
+  // commitment. Pauses are identical and tunable via
+  // ZONE_PHASE_PAUSE_SEC below.
+  //
+  //  Shrink seconds per phase (index 0 = first phase):
+  //    75s -> 60s -> 45s -> 35s -> 25s -> 18s -> 12s  (sum = 270s / 4.5 min)
+  //  + 6 interior pauses @ 35s each                     (sum = 210s / 3.5 min)
+  //  Total shrinking time = 480s (8 min), same as before.
+  ZONE_PHASE_SHRINKS: [75, 60, 45, 35, 25, 18, 12],
+  /** Pause held at the current boundary between shrinks. Tunable
+   *  per user spec (30-45s range). The final phase has NO trailing
+   *  pause — after the last shrink, the zone stays fully closed
+   *  until the run ends. */
+  ZONE_PHASE_PAUSE_SEC: 35,
   /** Damage per second (fraction of max HP) when outside safe zone. */
   ZONE_DAMAGE_PCT_PER_SEC: 0.05,
   /** Escalated damage in the final 2 minutes. */

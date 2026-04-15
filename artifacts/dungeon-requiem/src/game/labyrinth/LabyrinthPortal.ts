@@ -23,8 +23,8 @@
 import { LABYRINTH_CONFIG } from "./LabyrinthConfig";
 import { cellToWorld, type Maze } from "./LabyrinthMaze";
 import {
-  ZONE_FINAL_RADIUS,
-  ZONE_INITIAL_RADIUS,
+  zoneTotalPhases,
+  zonePhaseBoundaryRadius,
   type ZoneState,
 } from "./LabyrinthZone";
 
@@ -69,24 +69,13 @@ export interface ExtractionPortal {
   fadeElapsedSec: number;
 }
 
-/** Mirror of the private TOTAL_PHASES / PHASE_DURATION_SEC in
- *  LabyrinthZone.ts. Kept local to this file so we don't have to export
- *  Zone internals that don't need to be public. */
-function totalZonePhases(): number {
-  const phaseDur =
-    LABYRINTH_CONFIG.ZONE_PHASE_SHRINK_SEC +
-    LABYRINTH_CONFIG.ZONE_PHASE_PAUSE_SEC;
-  return Math.ceil(LABYRINTH_CONFIG.ZONE_TOTAL_DURATION / phaseDur);
-}
-
 /** Radius the zone will reach at the end of its *next* shrink window.
- *  Used for "about to close" ring placement. Mirrors the lerp at
- *  LabyrinthZone.ts:84-87. */
+ *  Used for "about to close" ring placement. Delegates to the
+ *  zone-module helper so the schedule math stays in one place. */
 export function nextZoneBoundaryRadius(zone: ZoneState): number {
-  const tp = totalZonePhases();
+  const tp = zoneTotalPhases();
   const nextPhase = Math.min(zone.phase + 1, tp);
-  const t = Math.max(0, Math.min(1, nextPhase / tp));
-  return ZONE_INITIAL_RADIUS + (ZONE_FINAL_RADIUS - ZONE_INITIAL_RADIUS) * t;
+  return zonePhaseBoundaryRadius(nextPhase);
 }
 
 /**

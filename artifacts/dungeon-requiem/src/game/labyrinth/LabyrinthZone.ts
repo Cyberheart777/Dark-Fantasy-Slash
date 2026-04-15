@@ -2,49 +2,65 @@
  * LabyrinthZone.ts
  * Pure-math state + helpers for the closing danger zone.
  *
- * Zone model:
- *   - Circular, centered at (0, 0) — the maze's center chamber.
- *   - Starts at max radius (entire maze inside safe zone) and shrinks
- *     in phases: 30 seconds of shrink, 15 seconds of pause, repeat.
- *   - Total duration: 8 minutes to fully close at the center.
+ * Zone model (item 8 rewrite — accelerating phase cycle):
+ *   - Circular, centered at (0, 0).
+ *   - Closes in discrete SHRINK → PAUSE cycles. Each shrink is faster
+ *     than the last (see LABYRINTH_CONFIG.ZONE_PHASE_SHRINKS) so early
+ *     phases give the player breathing room and late phases force
+ *     commitment. All interior pauses are the same tunable length
+ *     (ZONE_PHASE_PAUSE_SEC). The final phase has no trailing pause
+ *     — after its shrink ends, the zone stays fully closed.
+ *   - Total duration is derived from the schedule, not configured.
+ *     With the default 7-phase schedule + 35s pause: exactly 480s.
  *   - Player outside safe radius takes damage per second, escalating
  *     in the final 2 minutes.
- *   - Cells "consumed" by the zone are marked impassable (spec: "Maze
- *     geometry consumed by the zone should become impassable — the
- *     player cannot re-enter cleared areas").
  */
 
 import { LABYRINTH_CONFIG, LABYRINTH_HALF } from "./LabyrinthConfig";
 
-const PHASE_DURATION_SEC =
-  LABYRINTH_CONFIG.ZONE_PHASE_SHRINK_SEC +
-  LABYRINTH_CONFIG.ZONE_PHASE_PAUSE_SEC;
+// ─── Schedule ────────────────────────────────────────────────────────────────
 
-/** Number of shrink phases to fully close the zone. */
-const TOTAL_PHASES = Math.ceil(
-  LABYRINTH_CONFIG.ZONE_TOTAL_DURATION / PHASE_DURATION_SEC,
-);
+const SHRINKS: readonly number[] = LABYRINTH_CONFIG.ZONE_PHASE_SHRINKS;
+const PAUSE = LABYRINTH_CONFIG.ZONE_PHASE_PAUSE_SEC;
+
+/** Number of shrink phases in the schedule. */
+const TOTAL_PHASES = SHRINKS.length;
+
+/** Cumulative start-of-phase elapsed time. offsets[i] = elapsed time
+ *  when phase i begins shrinking. offsets[TOTAL_PHASES] = total zone
+ *  duration. */
+const PHASE_OFFSETS: readonly number[] = (() => {
+  const out: number[] = [0];
+  for (let i = 0; i < SHRINKS.length; i++) {
+    const prev = out[out.length - 1];
+    const pauseAfter = i < SHRINKS.length - 1 ? PAUSE : 0; // no pause after final shrink
+    out.push(prev + SHRINKS[i] + pauseAfter);
+  }
+  return out;
+})();
+
+/** Total time from run start until the zone is fully closed. Derived
+ *  from the phase schedule — not a configurable scalar. */
+export const ZONE_TOTAL_DURATION_SEC = PHASE_OFFSETS[TOTAL_PHASES];
 
 /** Safe-zone radius when the run starts — must cover the full maze,
- *  including the corner cells. The maze is a square of half-extent
- *  LABYRINTH_HALF, so the furthest cell center is at distance
- *  √2 · LABYRINTH_HALF from origin. We add one cell of buffer so the
- *  corner cells are comfortably inside at t=0 rather than right on
- *  the boundary. */
+ *  including the corner cells. Maze is a square of half-extent
+ *  LABYRINTH_HALF, so the furthest cell centre is at distance
+ *  √2·LABYRINTH_HALF from origin. +1 cell buffer. */
 export const ZONE_INITIAL_RADIUS =
   LABYRINTH_HALF * Math.SQRT2 + LABYRINTH_CONFIG.CELL_SIZE;
 
-/** Final safe radius at t = 8min. Stays slightly >0 so the center room
- *  is always safe until death — prevents the zone from closing inside
- *  the 3x3 boss chamber the generator reserves. */
+/** Final safe radius. Stays slightly >0 so the boss chamber stays
+ *  safe until the final stand. */
 export const ZONE_FINAL_RADIUS = LABYRINTH_CONFIG.CELL_SIZE * 1.5;
 
+// ─── State ───────────────────────────────────────────────────────────────────
+
 export interface ZoneState {
-  /** Seconds since the run started (monotonic). */
   elapsedSec: number;
   /** Current safe-zone radius in world units. */
   radius: number;
-  /** True during the 15s pause between shrinks. */
+  /** True during the pause window of the current phase. */
   isPaused: boolean;
   /** 0-indexed phase number. */
   phase: number;
@@ -54,27 +70,47 @@ export interface ZoneState {
   timeRemaining: number;
 }
 
-/**
- * Compute the zone state at a given elapsed time.
- * Pure function — no mutation, no side effects.
- */
-export function computeZoneState(elapsedSec: number): ZoneState {
-  const t = Math.max(0, Math.min(elapsedSec, LABYRINTH_CONFIG.ZONE_TOTAL_DURATION));
-  const phase = Math.min(TOTAL_PHASES - 1, Math.floor(t / PHASE_DURATION_SEC));
-  const timeInPhase = t - phase * PHASE_DURATION_SEC;
-  const isPaused = timeInPhase >= LABYRINTH_CONFIG.ZONE_PHASE_SHRINK_SEC;
+/** Phase index containing `t`. Clamps to the last phase. */
+function phaseAt(t: number): number {
+  for (let i = TOTAL_PHASES - 1; i >= 0; i--) {
+    if (t >= PHASE_OFFSETS[i]) return i;
+  }
+  return 0;
+}
 
-  // Radius at start of this phase (= end-of-previous-phase radius)
-  const startRadius = lerpRadius(phase / TOTAL_PHASES);
-  // Radius at end of this phase's shrink window
-  const endRadius = lerpRadius((phase + 1) / TOTAL_PHASES);
+function lerpPhaseRadius(frac: number): number {
+  const clamped = Math.max(0, Math.min(1, frac));
+  return ZONE_INITIAL_RADIUS + (ZONE_FINAL_RADIUS - ZONE_INITIAL_RADIUS) * clamped;
+}
+
+/** Radius at the BEGINNING of phase `i` (== end of phase i-1 shrink). */
+function phaseStartRadius(i: number): number {
+  return lerpPhaseRadius(i / TOTAL_PHASES);
+}
+
+/** Radius at the END of phase `i`'s shrink window (== start of its pause). */
+function phaseEndRadius(i: number): number {
+  return lerpPhaseRadius((i + 1) / TOTAL_PHASES);
+}
+
+/** Compute the zone state at a given elapsed time. Pure function. */
+export function computeZoneState(elapsedSec: number): ZoneState {
+  const t = Math.max(0, Math.min(elapsedSec, ZONE_TOTAL_DURATION_SEC));
+  const phase = phaseAt(t);
+  const timeInPhase = t - PHASE_OFFSETS[phase];
+  const shrinkSec = SHRINKS[phase];
+  const phaseDuration = PHASE_OFFSETS[phase + 1] - PHASE_OFFSETS[phase];
+  const isPaused = timeInPhase >= shrinkSec;
+
+  const startR = phaseStartRadius(phase);
+  const endR = phaseEndRadius(phase);
 
   let radius: number;
   if (!isPaused) {
-    const shrinkT = timeInPhase / LABYRINTH_CONFIG.ZONE_PHASE_SHRINK_SEC;
-    radius = startRadius + (endRadius - startRadius) * shrinkT;
+    const shrinkT = shrinkSec > 0 ? timeInPhase / shrinkSec : 1;
+    radius = startR + (endR - startR) * shrinkT;
   } else {
-    radius = endRadius;
+    radius = endR;
   }
 
   return {
@@ -82,22 +118,16 @@ export function computeZoneState(elapsedSec: number): ZoneState {
     radius,
     isPaused,
     phase,
-    phaseProgress: timeInPhase / PHASE_DURATION_SEC,
-    timeRemaining: Math.max(0, LABYRINTH_CONFIG.ZONE_TOTAL_DURATION - t),
+    phaseProgress: phaseDuration > 0 ? timeInPhase / phaseDuration : 1,
+    timeRemaining: Math.max(0, ZONE_TOTAL_DURATION_SEC - t),
   };
 }
 
-function lerpRadius(t: number): number {
-  const clamped = Math.max(0, Math.min(1, t));
-  return ZONE_INITIAL_RADIUS + (ZONE_FINAL_RADIUS - ZONE_INITIAL_RADIUS) * clamped;
-}
-
-/**
- * Compute damage-per-second (as a fraction of maxHP) at a given elapsed time.
- * Scales from 5%/s to 10%/s in the final 2 minutes per spec.
- */
+/** Compute damage-per-second (as a fraction of maxHP) at a given
+ *  elapsed time. Scales from base to escalated DPS in the final 2
+ *  minutes. */
 export function computeZoneDpsPct(elapsedSec: number): number {
-  const lateThreshold = LABYRINTH_CONFIG.ZONE_TOTAL_DURATION - 120;
+  const lateThreshold = ZONE_TOTAL_DURATION_SEC - 120;
   if (elapsedSec >= lateThreshold) return LABYRINTH_CONFIG.ZONE_LATE_DAMAGE_PCT_PER_SEC;
   return LABYRINTH_CONFIG.ZONE_DAMAGE_PCT_PER_SEC;
 }
@@ -107,14 +137,27 @@ export function isInsideZone(x: number, z: number, radius: number): boolean {
   return x * x + z * z <= radius * radius;
 }
 
-/** Distance from the zone boundary (negative if outside, positive if inside). */
 export function distanceInsideZone(x: number, z: number, radius: number): number {
   return radius - Math.sqrt(x * x + z * z);
 }
 
-/** Format elapsed/remaining seconds as M:SS for the HUD. */
 export function formatZoneTime(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec - m * 60);
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// ─── Public helpers for other labyrinth modules ──────────────────────────────
+
+/** Number of shrink phases. Exposed so LabyrinthPortal.ts can compute
+ *  phase-aligned spawn radii without duplicating schedule math. */
+export function zoneTotalPhases(): number {
+  return TOTAL_PHASES;
+}
+
+/** Radius the zone will reach at the end of the given phase's shrink
+ *  window. `phase` may exceed TOTAL_PHASES-1; clamps to final radius. */
+export function zonePhaseBoundaryRadius(phase: number): number {
+  const p = Math.max(0, Math.min(TOTAL_PHASES, phase));
+  return lerpPhaseRadius(p / TOTAL_PHASES);
 }
