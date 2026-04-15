@@ -45,17 +45,17 @@ export function LabyrinthMap3D({ maze }: LabyrinthMap3DProps) {
 // ─── Floor ───────────────────────────────────────────────────────────────────
 
 function Floor() {
-  // Self-emissive at low intensity so the floor is always visible
-  // regardless of the scene's lighting state. On iOS Safari the
-  // PBR pipeline sometimes leaves non-emissive surfaces nearly black;
-  // a tiny emissive contribution gives us a readable baseline.
+  // Strongly self-emissive so the floor is visible without depending
+  // on direct lighting. Now that scene lights have been dialled back
+  // to keep characters from washing out walls, the floor needs to
+  // carry its own brightness baseline. Same trick for walls below.
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
       <planeGeometry args={[LABYRINTH_WORLD_EXTENT, LABYRINTH_WORLD_EXTENT]} />
       <meshStandardMaterial
         color={FLOOR_COLOR}
-        emissive="#2a1a40"
-        emissiveIntensity={0.6}
+        emissive="#5a3870"
+        emissiveIntensity={1.4}
         roughness={0.88}
         metalness={0.06}
       />
@@ -128,9 +128,10 @@ function Walls({ segments }: { segments: ReturnType<typeof extractWallSegments> 
   }, [segments, wallH, wallT]);
 
   // No shadow casting (Canvas-level shadows are disabled for iOS
-  // readability). Modest emissive on the walls so they're readable
-  // even when the PBR direct-lighting contribution is weak — the
-  // value is kept low so corridors still feel stone-like, not glowy.
+  // readability). Walls carry strong self-emissive so they're
+  // distinct from the floor regardless of how aggressive the scene
+  // lighting is. Without this they'd blend into the floor's purple
+  // tone whenever ambient gets cranked up to make characters visible.
   return (
     <instancedMesh
       ref={meshRef}
@@ -139,8 +140,8 @@ function Walls({ segments }: { segments: ReturnType<typeof extractWallSegments> 
       <boxGeometry args={[1, 1, 1]} />
       <meshStandardMaterial
         color={WALL_COLOR}
-        emissive="#3a2a5a"
-        emissiveIntensity={0.5}
+        emissive="#7050a0"
+        emissiveIntensity={1.2}
         roughness={0.92}
         metalness={0}
       />

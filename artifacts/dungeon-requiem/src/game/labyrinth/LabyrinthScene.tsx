@@ -479,23 +479,21 @@ function LabyrinthWorld({
 
   return (
     <>
-      {/* Lighting cranked further so the main-game Enemy3D + Player3D
-          PBR (meshStandardMaterial) meshes read brightly. Scaling up
-          ambient + hemisphere + directional in tandem keeps the colour
-          balance even while the absolute brightness rises — important
-          because Enemy3D bodies tend to be dark stone palettes that
-          sink into the floor at low light. */}
-      <ambientLight intensity={2.4} color="#c0b0e8" />
-      <hemisphereLight args={["#d0c0ff", "#30205a", 1.4]} />
+      {/* Lighting balance: enough ambient + key for enemy/player PBR
+          meshes to read, but NOT so much that walls and floor wash
+          into a uniform glow. The previous over-boost (ambient 2.4
+          + hemisphere 1.4 + 2nd directional 1.5) made walls
+          indistinguishable from the floor — both are similar-tone
+          purple, so over-saturated lighting collapsed the contrast
+          between them. Walls + floor self-emissive (boosted in
+          LabyrinthMap3D) covers the case where direct lighting is
+          weak; lights here just lift the player + enemy meshes. */}
+      <ambientLight intensity={1.4} color="#a090c8" />
+      <hemisphereLight args={["#b0a0e0", "#20103a", 0.7]} />
       <directionalLight
         position={[30, 50, 20]}
-        intensity={3.0}
-        color="#e8d8ff"
-      />
-      <directionalLight
-        position={[-30, 50, -20]}
-        intensity={1.5}
-        color="#a890ff"
+        intensity={1.8}
+        color="#d0b0e8"
       />
       <PlayerTorch playerRef={playerRef} />
       <fog attach="fog" args={["#100820", 50, 140]} />
@@ -631,10 +629,10 @@ function PlayerTorch({ playerRef }: { playerRef: React.MutableRefObject<LabPlaye
   return (
     <pointLight
       ref={lightRef}
-      intensity={7.0}
-      color="#ffe8ff"
-      distance={50}
-      decay={0.9}
+      intensity={5.5}
+      color="#ffe0ff"
+      distance={28}
+      decay={1.4}
     />
   );
 }
