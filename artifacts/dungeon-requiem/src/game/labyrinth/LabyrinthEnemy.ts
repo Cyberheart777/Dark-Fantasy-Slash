@@ -68,7 +68,9 @@ export interface EnemyRuntime {
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
-const GUARDIAN_HP = 60;
+// HP doubled from the original 60 for the systems-pass item 2 rebalance.
+// Warden (boss) HP is untouched — see WARDEN_HP in LabyrinthWarden.ts.
+const GUARDIAN_HP = 120;
 const GUARDIAN_SPEED = 4.2;                 // world units/sec (player is 9)
 const GUARDIAN_DETECTION = LABYRINTH_CONFIG.CELL_SIZE * 3;   // ~3 cells
 const GUARDIAN_LEASH = LABYRINTH_CONFIG.CELL_SIZE * 5;       // disengage
@@ -82,7 +84,7 @@ const GUARDIAN_REPEL_RADIUS = 1.1;          // separation between enemies
 // Stationary turret that fires a projectile every TRAP_SPAWNER_FIRE_SEC while
 // the player is within TRAP_SPAWNER_RANGE AND line-of-sight is clear.
 
-const TRAP_SPAWNER_HP = 80;
+const TRAP_SPAWNER_HP = 160;   // doubled from 80 (item 2 rebalance)
 const TRAP_SPAWNER_RANGE = LABYRINTH_CONFIG.CELL_SIZE * 2.5;
 const TRAP_SPAWNER_FIRE_SEC = 1.8;
 const TRAP_SPAWNER_PROJECTILE_DAMAGE = 15;
@@ -97,7 +99,7 @@ const TRAP_SPAWNER_COLLISION_RADIUS = 0.8;
 // tanky). Share the guardian patrol/chase/attack AI exactly — they're just
 // a guardian re-skinned with hotter numbers.
 
-export const MIMIC_HP = 60;
+export const MIMIC_HP = 120;   // doubled from 60 (item 2 rebalance)
 const MIMIC_SPEED = 4.5;
 const MIMIC_DETECTION = LABYRINTH_CONFIG.CELL_SIZE * 3;
 const MIMIC_LEASH = LABYRINTH_CONFIG.CELL_SIZE * 6;  // more tenacious than guardians
@@ -113,7 +115,7 @@ const MIMIC_COLLISION_RADIUS = 0.75;
 // the shim) until it closes to STALKER_REVEAL_DIST; then snaps to
 // fully opaque for the strike.
 
-export const STALKER_HP = 40;
+export const STALKER_HP = 80;  // doubled from 40 (item 2 rebalance)
 const STALKER_SPEED = 5.5;
 const STALKER_DETECTION = LABYRINTH_CONFIG.CELL_SIZE * 6;   // always aware of player
 const STALKER_LEASH = LABYRINTH_CONFIG.CELL_SIZE * 12;      // never loses interest
