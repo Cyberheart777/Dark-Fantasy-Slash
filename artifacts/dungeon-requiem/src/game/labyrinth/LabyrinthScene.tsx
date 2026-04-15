@@ -540,18 +540,22 @@ function LabyrinthWorld({
       <LabyrinthProjectiles3D projectiles={projectileList} />
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
       {/* Player rendering: the main-game Player3D (warrior GLB / mage /
-          rogue procedural meshes) layers on top of the procedural
-          robot-man GeoCharacter. GeoCharacter is the always-visible
-          safety net using meshBasicMaterial — if Player3D throws or
-          the GLB fails to load, the error boundary swallows it and
-          robot-man stays visible. The misdiagnosed-as-Player3D-killing
-          black-scene bug turned out to be the ceiling plane (DoubleSide
-          render), now fixed in LabyrinthMap3D.tsx. */}
-      <GeoCharacter
-        playerRef={playerRef}
-        attackStateRef={attackStateRef}
-      />
-      <LabyrinthCanvasErrorBoundary label="Player3D" fallback={null}>
+          rogue procedural meshes) is the primary visual. If anything
+          in that pipeline throws (GLB fetch failure, shim mismatch,
+          etc.), the error boundary swallows it and falls back to the
+          procedural robot-man GeoCharacter — which is built from
+          meshBasicMaterial primitives so it'll render on any GPU.
+          Only ONE renders at a time now (was double-rendering when
+          GeoCharacter was always-on alongside the GLB). */}
+      <LabyrinthCanvasErrorBoundary
+        label="Player3D"
+        fallback={
+          <GeoCharacter
+            playerRef={playerRef}
+            attackStateRef={attackStateRef}
+          />
+        }
+      >
         <LabyrinthPlayer3D
           charClass={charClass}
           playerRef={playerRef}
