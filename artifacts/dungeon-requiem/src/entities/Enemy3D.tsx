@@ -20,6 +20,7 @@ import * as THREE from "three";
 import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EnemyRuntime } from "../game/GameScene";
 import { AFFIX_DEFS, AFFIX_TYPES, isAffixed, type EnemyAffix } from "../data/AffixData";
+import { useGameStore } from "../store/gameStore";
 
 interface EnemyProps {
   enemy: EnemyRuntime;
@@ -1301,7 +1302,22 @@ export function Enemy3D({ enemy }: EnemyProps) {
   const hpBarHeight = enemy.scale * 2.5 + 0.5;
 
   return (
-    <group ref={groupRef}>
+    <group
+      ref={groupRef}
+      // Tap-to-inspect (item 3 spec). Only fires for AFFIXED enemies
+      // — clicking a non-affixed enemy is a no-op so non-affixed
+      // pickups don't accidentally open the tooltip. stopPropagation
+      // prevents the click from passing through to other enemies in
+      // the same raycast hit list.
+      onClick={(e) => {
+        if (!isAffixed(enemy.affix as EnemyAffix)) return;
+        e.stopPropagation();
+        useGameStore.getState().setInspectedAffix({
+          enemyType: enemy.type,
+          affixes: [enemy.affix],
+        });
+      }}
+    >
       <group scale={enemy.scale}>
         {enemy.type === "scuttler" && <ScuttlerMesh {...meshProps} {...attackProps} />}
         {enemy.type === "brute" && <BruteMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}

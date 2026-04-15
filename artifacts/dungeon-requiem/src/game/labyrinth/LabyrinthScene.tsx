@@ -14,6 +14,7 @@ import { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useGameStore } from "../../store/gameStore";
+import { AffixTooltip } from "../../ui/AffixTooltip";
 import { InputManager3D } from "../InputManager3D";
 import {
   LABYRINTH_CONFIG,
@@ -625,6 +626,11 @@ export function LabyrinthScene() {
         progressionRef={progressionRef}
       />
       <LabyrinthMobileControls inputRef={inputRef} aimOverrideRef={aimOverrideRef} />
+      {/* Affix tap-to-inspect tooltip — wired so the labyrinth's
+          shimmed Enemy3D path also opens the popup. Today labyrinth
+          shims keep affix="none" so this is dormant; will activate
+          if affix-rolling is added to the labyrinth shim later. */}
+      <AffixTooltip />
       <LabyrinthDebug
         playerRef={playerRef}
         sharedRef={sharedRef}

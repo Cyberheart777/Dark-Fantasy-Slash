@@ -35,6 +35,7 @@ import { XPOrb3D } from "../entities/XPOrb3D";
 import { AttackEffect } from "../effects/AttackEffect";
 import { Projectile3D } from "../entities/Projectile3D";
 import { HUD } from "../ui/HUD";
+import { AffixTooltip } from "../ui/AffixTooltip";
 import { LevelUp } from "../ui/LevelUp";
 import { PauseMenu } from "../ui/PauseMenu";
 import { MobileControls } from "../ui/MobileControls";
@@ -3505,6 +3506,9 @@ export function GameScene({ onRestart }: GameSceneProps) {
       {(phase === "playing" || phase === "paused" || phase === "levelup") && <HUD onExtract={handleExtract} />}
       {(phase === "playing" || phase === "paused" || phase === "levelup") && <DevHUD gsRef={gsRef} />}
       {phase === "playing" && <MobileControls gsRef={gsRef} />}
+      {/* Affix tap-to-inspect tooltip — populated by Enemy3D.onClick.
+          Mounted at scene root so it overlays the canvas + HUD. */}
+      <AffixTooltip />
       {phase === "paused" && (
         <PauseMenu
           onExtract={handleExtract}

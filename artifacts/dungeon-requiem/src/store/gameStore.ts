@@ -153,6 +153,12 @@ export interface GameUIState {
   // Active buffs/debuffs (synced each frame from the game loop)
   activeBuffs: ActiveBuff[];
 
+  /** Currently-inspected affixed enemy. Set by Enemy3D.onClick when
+   *  the player taps an affixed enemy; cleared when the player taps
+   *  outside the tooltip OR when the inspected enemy dies. Drives
+   *  the AffixTooltip overlay (HUD-level DOM popup). */
+  inspectedAffix: { enemyType: string; affixes: string[] } | null;
+
   // Gear
   equippedWeapon: GearDef | null;
   equippedArmor: GearDef | null;
@@ -167,6 +173,7 @@ export interface GameUIState {
   addGuaranteedShards: (n: number) => void;
   setBossState: (hp: number, maxHp: number, name: string, alive: boolean) => void;
   setBossSpecialWarn: (active: boolean) => void;
+  setInspectedAffix: (info: { enemyType: string; affixes: string[] } | null) => void;
   setSelectedClass: (cls: CharacterClass) => void;
   setSelectedRace: (race: RaceType) => void;
   setDifficultyTier: (tier: DifficultyTier) => void;
@@ -239,6 +246,7 @@ const initialState = {
   runExtracted: false,
   extractedBonusShards: 0,
   activeBuffs: [] as ActiveBuff[],
+  inspectedAffix: null as { enemyType: string; affixes: string[] } | null,
   equippedWeapon: null as GearDef | null,
   equippedArmor: null as GearDef | null,
   equippedTrinket: null as GearDef | null,
@@ -260,6 +268,7 @@ export const useGameStore = create<GameUIState>((set) => ({
   })),
   setBossState: (hp, maxHp, name, alive) => set({ bossHP: hp, bossMaxHP: maxHp, bossName: name, bossAlive: alive }),
   setBossSpecialWarn: (active) => set({ bossSpecialWarn: active }),
+  setInspectedAffix: (info) => set({ inspectedAffix: info }),
   setNemesisState: (alive, announce) => set({ nemesisAlive: alive, nemesisAnnounce: announce }),
   setHighestBossWaveCleared: (wave) => set({ highestBossWaveCleared: wave }),
   setRunExtracted: (extracted) => set({ runExtracted: extracted }),
