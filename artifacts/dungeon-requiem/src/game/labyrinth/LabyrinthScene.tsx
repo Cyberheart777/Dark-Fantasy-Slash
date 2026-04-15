@@ -79,6 +79,7 @@ import {
   updateWarden,
   shouldSpawnWarden,
   clearWardenState,
+  getWardenState,
 } from "./LabyrinthWarden";
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
 import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
@@ -193,6 +194,16 @@ interface LabSharedState {
   victory: boolean;
   /** true once a warden has been spawned this run (prevents re-spawn). */
   wardenSpawned: boolean;
+  /** HUD boss-bar snapshot. null while no warden exists; populated
+   *  on spawn and mutated each frame by CombatEnemyLoop. alive flips
+   *  false on warden kill — the HUD reads this to hide the bar. */
+  wardenHud: {
+    alive: boolean;
+    hp: number;
+    maxHp: number;
+    name: string;
+    specialWarn: boolean;
+  } | null;
   /** true if the player is currently outside the safe zone. */
   outsideZone: boolean;
   /** World direction TO the safe-zone center from the player, normalized. */
@@ -288,6 +299,7 @@ export function LabyrinthScene() {
     extracted: false,
     victory: false,
     wardenSpawned: false,
+    wardenHud: null,
     outsideZone: false,
     safeDirX: 0, safeDirZ: 0,
     poisonStacks: 0,
@@ -1397,6 +1409,24 @@ function CombatEnemyLoop({
       }
     }
 
+    // Sync the HUD boss-bar snapshot from the live warden each frame.
+    // Also flips alive=false the frame the warden dies so the HUD
+    // hides the bar automatically. Only touches shared.wardenHud if
+    // a warden has been spawned — null before then.
+    if (shared.wardenHud && shared.wardenHud.alive) {
+      const liveWarden = enemies.find((e) => e.kind === "warden" && e.state !== "dead");
+      if (liveWarden) {
+        shared.wardenHud.hp = liveWarden.hp;
+        shared.wardenHud.specialWarn = getWardenState(liveWarden.id).starburstWarning > 0;
+      } else {
+        // Warden died this frame (state flipped to "dead" in the kill
+        // path). Freeze HP at 0 and hide the bar.
+        shared.wardenHud.alive = false;
+        shared.wardenHud.hp = 0;
+        shared.wardenHud.specialWarn = false;
+      }
+    }
+
     // 3a) Tick wall-traps (warn → fire → cooldown state machines).
     //     On the warn→fire transition a projectile is spawned into the
     //     shared pool, which is then moved/collided by the projectile
@@ -1774,10 +1804,20 @@ function ZoneTickLoop({
     // initial). Spawns once at the centre chamber; shared.wardenSpawned
     // prevents re-spawn after he's killed.
     if (shouldSpawnWarden(elapsedSec, zone.radius, ZONE_INITIAL_RADIUS, shared.wardenSpawned)) {
-      enemiesRef.current.push(makeWarden(maze));
+      const warden = makeWarden(maze);
+      enemiesRef.current.push(warden);
       onEnemiesChange(enemiesRef.current.slice());
       shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
       shared.wardenSpawned = true;
+      // Seed the HUD boss-bar snapshot. CombatEnemyLoop updates hp/
+      // specialWarn each frame from the enemy + warden-state table.
+      shared.wardenHud = {
+        alive: true,
+        hp: warden.hp,
+        maxHp: warden.maxHp,
+        name: "THE WARDEN",
+        specialWarn: false,
+      };
       audioManager.play("boss_spawn");
     }
 
@@ -1917,6 +1957,7 @@ function LabyrinthHUD({
     totalXp: 0,
     warrior: null as LabSharedState["warrior"],
     equipped: { weapon: null, armor: null, trinket: null } as LabSharedState["equipped"],
+    wardenHud: null as LabSharedState["wardenHud"],
   });
 
   useEffect(() => {
@@ -1968,6 +2009,7 @@ function LabyrinthHUD({
         totalXp: s.totalXp,
         warrior: s.warrior,
         equipped: s.equipped,
+        wardenHud: s.wardenHud,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -2131,6 +2173,33 @@ function LabyrinthHUD({
         popupAtSec={display.lastPortalPopupSec}
         count={display.lastPortalPopupCount}
       />
+
+      {/* Boss HP bar — center-bottom, shown only while the Warden is
+          alive. Styling mirrors the main game's bar at HUD.tsx:263-284
+          but is entirely labyrinth-local (no store reads). */}
+      {display.wardenHud && display.wardenHud.alive && display.wardenHud.maxHp > 0 && (
+        <div style={styles.bossBar}>
+          <div style={styles.bossBarHeader}>
+            <span style={styles.bossBarName}>{display.wardenHud.name}</span>
+            {display.wardenHud.specialWarn && (
+              <span style={styles.bossWarn}>⚠ STARBURST INCOMING</span>
+            )}
+          </div>
+          <div style={styles.bossBarTrack}>
+            <div
+              style={{
+                ...styles.bossBarFill,
+                width: `${Math.max(0, (display.wardenHud.hp / display.wardenHud.maxHp)) * 100}%`,
+              }}
+            />
+          </div>
+          <div style={styles.bossBarFooter}>
+            <span style={{ color: "#aaa", fontSize: 11 }}>
+              {Math.max(0, Math.ceil(display.wardenHud.hp)).toLocaleString()} / {display.wardenHud.maxHp.toLocaleString()}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Warden-slain victory screen — takes precedence over everything */}
       {display.victory && (
@@ -2474,6 +2543,65 @@ const styles: Record<string, React.CSSProperties> = {
     backdropFilter: "blur(4px)",
     fontFamily: "monospace",
     pointerEvents: "none" as const,
+  },
+  // Boss HP bar — ported from src/ui/HUD.tsx:622-680. Labyrinth-local
+  // (no store reads). Mirrors the main-game colour language so
+  // players familiar with the main game recognise the pattern.
+  bossBar: {
+    position: "absolute" as const,
+    bottom: 52,
+    left: "50%",
+    transform: "translateX(-50%)",
+    width: "min(600px, 90vw)",
+    background: "rgba(0,0,0,0.75)",
+    border: "1px solid #660033",
+    borderRadius: 8,
+    padding: "10px 14px 8px",
+    backdropFilter: "blur(6px)",
+    pointerEvents: "none" as const,
+    zIndex: 20,
+  },
+  bossBarHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  bossBarName: {
+    color: "#ff44aa",
+    fontSize: 15,
+    fontWeight: "bold" as const,
+    letterSpacing: 2,
+    fontFamily: "monospace",
+    textShadow: "0 0 6px rgba(255,80,180,0.45)",
+  },
+  bossWarn: {
+    color: "#ff4400",
+    fontSize: 13,
+    fontWeight: "bold" as const,
+    letterSpacing: 1,
+    textShadow: "0 0 8px #ff2200",
+    fontFamily: "monospace",
+  },
+  bossBarTrack: {
+    width: "100%",
+    height: 14,
+    background: "#1a0010",
+    borderRadius: 7,
+    overflow: "hidden" as const,
+    border: "1px solid #550022",
+  },
+  bossBarFill: {
+    height: "100%",
+    borderRadius: 7,
+    background: "linear-gradient(90deg, #8b0050, #ff0066, #cc0044)",
+    boxShadow: "0 0 10px #ff0066",
+    transition: "width 0.12s ease",
+  },
+  bossBarFooter: {
+    marginTop: 4,
+    textAlign: "center" as const,
+    fontFamily: "monospace",
   },
   gearStrip: {
     position: "absolute" as const,
