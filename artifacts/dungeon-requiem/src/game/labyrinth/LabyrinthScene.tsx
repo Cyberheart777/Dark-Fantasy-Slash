@@ -81,8 +81,7 @@ import {
   clearWardenState,
 } from "./LabyrinthWarden";
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
-// LabyrinthPlayer3D temporarily disabled again — see JSX below.
-// import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
+import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
 import { LabyrinthCanvasErrorBoundary } from "./LabyrinthCanvasErrorBoundary";
 import { LabyrinthDebug } from "./LabyrinthDebug";
 import {
@@ -480,16 +479,23 @@ function LabyrinthWorld({
 
   return (
     <>
-      {/* Ambient cranked from 0.85 → 1.6 and directional from 1.3 → 2.2
-          to recover the brightness lost when shadows were disabled.
-          Added a hemisphereLight as a sky/ground fill so walls and
-          floor read clearly even on iOS where PBR tends to flatten. */}
-      <ambientLight intensity={1.6} color="#a090c8" />
-      <hemisphereLight args={["#b0a0e0", "#20103a", 0.9]} />
+      {/* Lighting cranked further so the main-game Enemy3D + Player3D
+          PBR (meshStandardMaterial) meshes read brightly. Scaling up
+          ambient + hemisphere + directional in tandem keeps the colour
+          balance even while the absolute brightness rises — important
+          because Enemy3D bodies tend to be dark stone palettes that
+          sink into the floor at low light. */}
+      <ambientLight intensity={2.4} color="#c0b0e8" />
+      <hemisphereLight args={["#d0c0ff", "#30205a", 1.4]} />
       <directionalLight
         position={[30, 50, 20]}
-        intensity={2.2}
-        color="#d0b0e8"
+        intensity={3.0}
+        color="#e8d8ff"
+      />
+      <directionalLight
+        position={[-30, 50, -20]}
+        intensity={1.5}
+        color="#a890ff"
       />
       <PlayerTorch playerRef={playerRef} />
       <fog attach="fog" args={["#100820", 50, 140]} />
@@ -535,19 +541,18 @@ function LabyrinthWorld({
           game's Projectile3D via a shim-cast in LabyrinthProjectiles3D. */}
       <LabyrinthProjectiles3D projectiles={projectileList} />
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
-      {/* Robot-man warrior — procedural humanoid built from unlit
-          primitives. Always-on safety net visible on every GPU.
-          LabyrinthPlayer3D was re-enabled in step 4 commit H but
-          caused a regression: the Canvas blanked on mobile iOS even
-          though the error boundary was in place. Suspect is the
-          warrior GLB preload interfering with the module-level
-          evaluation on iOS. Temporarily disabled again until we
-          can diagnose with the debug overlay forced on. */}
+      {/* Player rendering: the main-game Player3D (warrior GLB / mage /
+          rogue procedural meshes) layers on top of the procedural
+          robot-man GeoCharacter. GeoCharacter is the always-visible
+          safety net using meshBasicMaterial — if Player3D throws or
+          the GLB fails to load, the error boundary swallows it and
+          robot-man stays visible. The misdiagnosed-as-Player3D-killing
+          black-scene bug turned out to be the ceiling plane (DoubleSide
+          render), now fixed in LabyrinthMap3D.tsx. */}
       <GeoCharacter
         playerRef={playerRef}
         attackStateRef={attackStateRef}
       />
-      {/*
       <LabyrinthCanvasErrorBoundary label="Player3D" fallback={null}>
         <LabyrinthPlayer3D
           charClass={charClass}
@@ -555,7 +560,6 @@ function LabyrinthWorld({
           attackStateRef={attackStateRef}
         />
       </LabyrinthCanvasErrorBoundary>
-      */}
       <CameraFollow playerRef={playerRef} />
       <MovementLoop
         playerRef={playerRef}
@@ -627,10 +631,10 @@ function PlayerTorch({ playerRef }: { playerRef: React.MutableRefObject<LabPlaye
   return (
     <pointLight
       ref={lightRef}
-      intensity={4.5}
-      color="#e0c0ff"
-      distance={36}
-      decay={1.0}
+      intensity={7.0}
+      color="#ffe8ff"
+      distance={50}
+      decay={0.9}
     />
   );
 }
