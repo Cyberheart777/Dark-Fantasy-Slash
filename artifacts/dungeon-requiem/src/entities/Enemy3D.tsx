@@ -19,6 +19,7 @@ import { useAnimations, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EnemyRuntime } from "../game/GameScene";
+import { AFFIX_DEFS, AFFIX_TYPES, isAffixed, type EnemyAffix } from "../data/AffixData";
 
 interface EnemyProps {
   enemy: EnemyRuntime;
@@ -1070,17 +1071,19 @@ function StatusFxLayer({ poisonStacks, bleedTimer, slowTimer }: { poisonStacks: 
 }
 
 // ─── Elite Affix Aura ────────────────────────────────────────────────────────
-
-const AFFIX_COLORS: Record<string, string> = {
-  shielded: "#4488ff",
-  vampiric: "#ff2040",
-  berserker: "#ff8020",
-};
+// Affix data (color, name, description, icon symbol) lives in
+// src/data/AffixData.ts. Renderers read AFFIX_DEFS — no inline color
+// duplication. Module-scoped material cache keeps GC pressure down.
 
 const _ringGeo = new THREE.RingGeometry(0.8, 1.0, 24);
 const _ringMats: Record<string, THREE.MeshBasicMaterial> = {};
-for (const [affix, color] of Object.entries(AFFIX_COLORS)) {
-  _ringMats[affix] = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
+for (const id of AFFIX_TYPES) {
+  _ringMats[id] = new THREE.MeshBasicMaterial({
+    color: AFFIX_DEFS[id].color,
+    transparent: true,
+    opacity: 0.4,
+    side: THREE.DoubleSide,
+  });
 }
 
 function AffixAura({ affix, shieldHp, scale }: { affix: string; shieldHp: number; scale: number }) {
@@ -1106,6 +1109,110 @@ function AffixAura({ affix, shieldHp, scale }: { affix: string; shieldHp: number
   return (
     <mesh ref={ref} geometry={_ringGeo} material={mat} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} scale={scale} />
   );
+}
+
+// ─── Affix Icon Overlay ──────────────────────────────────────────────────────
+// Floating icon(s) above each affixed enemy. Camera-billboarded so they
+// read flat from the top-down view. Today each enemy has at most one
+// affix, but the implementation iterates a list so multi-affix support
+// drops in trivially when the runtime adds it.
+//
+// Each affix is rendered as a distinct geometric primitive in the
+// affix's color, so players read the SHAPE as the icon and the COLOR
+// as the affix family (matching the existing aura ring tint):
+//
+//   shielded  → octagonal plate with white centre crossbar (shield)
+//   vampiric  → diamond-rotated square (drop)
+//   berserker → upward-pointing triangle (flame)
+//
+// Mobile-readable, no asset dependencies, no font/text rendering.
+
+function AffixIcons({ enemy }: { enemy: EnemyRuntime }) {
+  const groupRef = useRef<THREE.Group>(null);
+  // Today: one affix per enemy. Build as a list so multi-affix drops
+  // in without restructuring this component. Filter out "none" via
+  // the AffixData helper.
+  const affixes: EnemyAffix[] = isAffixed(enemy.affix as EnemyAffix) ? [enemy.affix as EnemyAffix] : [];
+  // Sit above the existing health-bar Y (hpBarHeight = scale * 2.5 + 0.5
+  // in the main render below) plus 0.55u of clearance. Rendered as a
+  // sibling of the scaled enemy mesh so the icon size is fixed on
+  // screen regardless of enemy scale.
+  const yOffset = (enemy.scale ?? 1) * 2.5 + 1.05;
+  useFrame(({ camera }) => {
+    if (!groupRef.current) return;
+    // Camera-billboard so the icon reads flat from the top-down view.
+    // Parent group has no rotation, so a direct quaternion.copy is
+    // sufficient (matches the HealthBar pattern at line ~1154).
+    groupRef.current.quaternion.copy(camera.quaternion);
+    groupRef.current.visible = enemy.dead !== true;
+  });
+  if (affixes.length === 0) return null;
+  return (
+    <group ref={groupRef} position={[0, yOffset, 0]}>
+      {affixes.map((kind, i) => (
+        <AffixIcon
+          key={kind}
+          affix={kind}
+          // Stack horizontally — centred when N items, 0.55u apart.
+          offsetX={(i - (affixes.length - 1) / 2) * 0.55}
+        />
+      ))}
+    </group>
+  );
+}
+
+function AffixIcon({ affix, offsetX }: { affix: EnemyAffix; offsetX: number }) {
+  const def = AFFIX_DEFS[affix];
+  const color = def.color;
+  if (affix === "shielded") {
+    return (
+      <group position={[offsetX, 0, 0]}>
+        {/* Octagonal plate — shield-shaped silhouette. */}
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.2, 0.2, 0.05, 8]} />
+          <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
+        </mesh>
+        {/* White centre crossbar reads as a shield boss. */}
+        <mesh position={[0, 0, 0.04]}>
+          <boxGeometry args={[0.06, 0.22, 0.01]} />
+          <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthWrite={false} />
+        </mesh>
+      </group>
+    );
+  }
+  if (affix === "vampiric") {
+    return (
+      <group position={[offsetX, 0, 0]} rotation={[0, 0, Math.PI / 4]}>
+        {/* Diamond — rotated cube, reads as a blood drop. */}
+        <mesh>
+          <boxGeometry args={[0.26, 0.26, 0.05]} />
+          <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
+        </mesh>
+        {/* Inner darker centre for depth. */}
+        <mesh position={[0, 0, 0.03]}>
+          <boxGeometry args={[0.1, 0.1, 0.01]} />
+          <meshBasicMaterial color="#660010" transparent opacity={0.7} depthWrite={false} />
+        </mesh>
+      </group>
+    );
+  }
+  if (affix === "berserker") {
+    return (
+      <group position={[offsetX, 0, 0]}>
+        {/* Triangle — cone pointing up, reads as a flame. */}
+        <mesh>
+          <coneGeometry args={[0.2, 0.36, 3]} />
+          <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
+        </mesh>
+        {/* Hot-yellow inner core. */}
+        <mesh scale={0.55}>
+          <coneGeometry args={[0.2, 0.36, 3]} />
+          <meshBasicMaterial color="#ffe080" transparent opacity={0.85} depthWrite={false} />
+        </mesh>
+      </group>
+    );
+  }
+  return null;
 }
 
 // ─── Main Enemy3D Export (with spawn scale-in + death shrink) ────────────────
@@ -1186,6 +1293,12 @@ export function Enemy3D({ enemy }: EnemyProps) {
 
       {/* Elite affix aura ring */}
       {enemy.affix !== "none" && <AffixAura affix={enemy.affix} shieldHp={enemy.shieldHp} scale={enemy.scale} />}
+
+      {/* Floating affix icon(s) above the health bar — primary
+          communication layer for affix presence. Always visible,
+          camera-billboarded, mobile-readable. Empty render when the
+          enemy has no affix. */}
+      <AffixIcons enemy={enemy} />
 
       {/* Health bar */}
       <group ref={healthBarGroupRef} position={[0, hpBarHeight, 0]}>

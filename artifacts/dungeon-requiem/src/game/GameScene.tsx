@@ -18,6 +18,7 @@ import { ENEMY_DATA, pickEnemyType } from "../data/EnemyData";
 import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
 import { DIFFICULTY_DATA } from "../data/DifficultyData";
 import { RACE_DATA, type RaceType } from "../data/RaceData";
+import { AFFIX_TYPES } from "../data/AffixData";
 import { ProgressionManager } from "../systems/ProgressionManager";
 import { createDefaultStats, type PlayerStats } from "../data/UpgradeData";
 import { buildMetaModifiers, buildTrialModifiers } from "../data/MetaUpgradeData";
@@ -669,7 +670,14 @@ function triggerSoulfire(deadEnemy: EnemyRuntime, g: GameState): void {
   }
 }
 
-const AFFIX_TYPES = ["shielded", "vampiric", "berserker"] as const;
+// Affix data lives in src/data/AffixData.ts — single source of truth
+// for the type union, color palette, descriptions, and icon symbols.
+// Importing AFFIX_TYPES keeps the spawn-roll table in sync with the
+// rest of the affix UI (icon overlay, bestiary, tooltip, banner).
+// (See AffixData.ts for the full list.)
+//
+// const AFFIX_TYPES used to live here as ["shielded","vampiric","berserker"]
+// — moved to AffixData so renderers don't have to re-declare the list.
 
 /**
  * Apply damage to an enemy, handling the shielded affix.
