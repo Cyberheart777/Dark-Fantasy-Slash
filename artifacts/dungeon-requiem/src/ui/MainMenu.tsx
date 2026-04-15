@@ -85,11 +85,6 @@ export function MainMenu() {
               ⚔ BEGIN DESCENT
             </button>
 
-            <button style={styles.btnLabyrinth} onClick={click(() => { setTrialMode(false); setPhase("labyrinth_charselect"); })}>
-              🌀 THE LABYRINTH
-              <span style={styles.labyrinthSub}>Shrinking maze · survive the closing dark</span>
-            </button>
-
             {bossKilled ? (
               <button style={styles.btnTrial} onClick={click(handleTrial)}>
                 <span style={{ color: "#ffd700", fontSize: 16 }}>🏆</span>
@@ -103,6 +98,21 @@ export function MainMenu() {
                 <div style={styles.trialLockNote}>Defeat The Warden to unlock</div>
               </div>
             )}
+
+            {/* The Labyrinth — experimental alpha mode. Moved below
+                Trial of Champions + styled dimmer so it reads as a
+                secondary / experimental option rather than a core
+                game mode. */}
+            <button style={styles.btnLabyrinth} onClick={click(() => { setTrialMode(false); setPhase("labyrinth_charselect"); })}>
+              <span style={styles.labyrinthTitleRow}>
+                <span>🌀 THE LABYRINTH</span>
+                <span style={styles.labyrinthAlphaBadge}>
+                  <span style={styles.labyrinthAlphaDot} />
+                  ALPHA
+                </span>
+              </span>
+              <span style={styles.labyrinthSub}>⚗ Experimental Alpha · Shrinking maze · survive the closing dark</span>
+            </button>
 
             <button style={styles.btnForge} onClick={click(() => setPhase("soulforge"))}>
               <span style={styles.forgeShard}>◈</span>
@@ -343,24 +353,63 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "inherit",
     width: "100%",
   },
+  // Labyrinth button — experimental-alpha styling. Muted vs. the
+  // standard game modes: dimmer background (alpha 0.5 vs 0.8),
+  // softer border (alpha 0.3 vs 0.5), desaturated text color,
+  // shallower glow. Reads as a secondary/experimental option so
+  // the player doesn't assume it's a stable core feature.
   btnLabyrinth: {
     marginTop: 10,
-    padding: "13px 32px",
-    fontSize: 14,
-    fontWeight: "bold",
+    padding: "12px 28px",
+    fontSize: 13,
+    fontWeight: "bold" as const,
     letterSpacing: 2,
-    color: "#aadfff",
-    background: "rgba(10,25,50,0.8)",
-    border: "1px solid rgba(60,140,220,0.5)",
+    color: "#7a9bb8",
+    background: "rgba(10,20,35,0.5)",
+    border: "1px dashed rgba(60,120,180,0.32)",
     borderRadius: 8,
     cursor: "pointer",
     fontFamily: "inherit",
     width: "100%",
-    boxShadow: "0 0 14px rgba(40,120,200,0.25)",
+    boxShadow: "0 0 8px rgba(40,100,160,0.12)",
     display: "flex",
-    flexDirection: "column",
+    flexDirection: "column" as const,
     alignItems: "center",
-    gap: 2,
+    gap: 4,
+    opacity: 0.92,
+  },
+  labyrinthTitleRow: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    width: "100%",
+  },
+  // ALPHA badge — mirrors eaBadge pattern (amber/gold pill with
+  // pulsing dot) but smaller, inline, attached to the Labyrinth
+  // button. Signals "experimental, not the Early Access core".
+  labyrinthAlphaBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    fontSize: 9,
+    letterSpacing: 1.5,
+    fontWeight: 900 as const,
+    color: "#ffcf55",
+    background: "rgba(60,40,0,0.7)",
+    border: "1px solid rgba(200,150,0,0.55)",
+    borderRadius: 10,
+    padding: "2px 7px",
+    fontFamily: "monospace",
+    textShadow: "0 0 5px rgba(255,180,0,0.5)",
+  },
+  labyrinthAlphaDot: {
+    display: "inline-block",
+    width: 5,
+    height: 5,
+    borderRadius: "50%",
+    background: "#ffcc00",
+    boxShadow: "0 0 5px #ffaa00",
   },
   labyrinthSub: {
     fontSize: 10,
