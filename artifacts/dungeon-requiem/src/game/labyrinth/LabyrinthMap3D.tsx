@@ -129,12 +129,27 @@ function Walls({ segments }: { segments: ReturnType<typeof extractWallSegments> 
   // No shadow casting (Canvas-level shadows are disabled for iOS
   // readability). Walls carry strong self-emissive so they're
   // distinct from the floor regardless of how aggressive the scene
-  // lighting is. Without this they'd blend into the floor's purple
-  // tone whenever ambient gets cranked up to make characters visible.
+  // lighting is.
+  //
+  // CRITICAL: frustumCulled={false}. InstancedMesh bounding-sphere
+  // computation in three.js uses the ORIGINAL GEOMETRY's bounds
+  // (the unit 1x1x1 box at origin, radius ~0.87), NOT the instance
+  // matrices. So when the player — and therefore the camera — is
+  // far from world origin (e.g. spawning in a maze corner at
+  // ~(-62, -62)), the origin-centred bounding sphere falls outside
+  // the camera frustum and three.js culls the ENTIRE mesh,
+  // including all instances that are actually in view. Disabling
+  // frustum culling means every instance is drawn every frame —
+  // ~440 boxes for a 21x21 maze, trivial for any GPU. The
+  // alternative (manually computing a bounding sphere over all
+  // instance positions via mesh.computeBoundingSphere()) is more
+  // CPU-complex and doesn't save meaningful draw time at this
+  // instance count.
   return (
     <instancedMesh
       ref={meshRef}
       args={[undefined, undefined, segments.length]}
+      frustumCulled={false}
     >
       <boxGeometry args={[1, 1, 1]} />
       <meshStandardMaterial
