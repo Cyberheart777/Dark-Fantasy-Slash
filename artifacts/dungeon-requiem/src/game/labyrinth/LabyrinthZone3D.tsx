@@ -1,14 +1,16 @@
 /**
  * LabyrinthZone3D.tsx
  * Visual for the closing zone:
- *   - A tall dark cylinder shell at the zone boundary (the "wall of
- *     corruption" approaching the player)
- *   - A semi-transparent ground disc filling the consumed exterior
- *     so the player can see from far away which areas are dead
- *   - A glowing ring pulse at the boundary for visibility
+ *   - A tall venom-green cylinder shell at the zone boundary
+ *   - An OPAQUE venom-green ground overlay filling the "dead" exterior
+ *     so the safe area reads as a clear bright hole in a sickly fog
+ *   - A bright neon-green ring pulse AT the boundary as the
+ *     crossing-line indicator
  *
- * The geometry animates via useFrame, reading the radius prop.
- * All material is unlit / emissive so lighting doesn't wash it out.
+ * Previously the outside was a 85%-opaque dark-purple disc, which
+ * blended into the dark maze floor on the bottom half of the screen
+ * and made the danger zone hard to read. Now it's unambiguously
+ * toxic green.
  */
 
 import { useRef } from "react";
@@ -25,6 +27,9 @@ interface Props {
 
 const WALL_HEIGHT = LABYRINTH_CONFIG.WALL_HEIGHT * 1.15;
 const OUTER_BOUND = LABYRINTH_HALF * 2.2;
+/** Venom green — unmistakable against the dark maze floor. */
+const VENOM_GREEN = "#3dff8a";
+const VENOM_DARK = "#0d3a1c";
 
 export function LabyrinthZone3D({ radius, isPaused }: Props) {
   const wallRef = useRef<THREE.Mesh>(null);
@@ -36,15 +41,14 @@ export function LabyrinthZone3D({ radius, isPaused }: Props) {
     if (wallRef.current) {
       wallRef.current.scale.set(radius, 1, radius);
     }
-    // Ground pulse ring at the boundary
+    // Ground pulse ring at the boundary — pulses slightly for visibility
     if (ringRef.current) {
       const pulseSpeed = isPaused ? 1.2 : 2.6;
-      const pulse = 1 + 0.06 * Math.sin(state.clock.elapsedTime * pulseSpeed);
+      const pulse = 1 + 0.04 * Math.sin(state.clock.elapsedTime * pulseSpeed);
       ringRef.current.scale.set(radius * pulse, 1, radius * pulse);
     }
-    // Ground overlay — dark disc with a hole in the middle at current radius
-    // We achieve the hole by scaling the inner ring geometry. Since
-    // RingGeometry is fixed at creation, we use a separate mesh pair.
+    // Inverse "mask" disc that covers the safe interior so the venom
+    // exterior plane only shows OUTSIDE the safe zone.
     if (floorRef.current) {
       floorRef.current.scale.set(radius, 1, radius);
     }
@@ -52,55 +56,53 @@ export function LabyrinthZone3D({ radius, isPaused }: Props) {
 
   return (
     <group>
-      {/* Outer ground: huge dark disc covering the entire maze exterior */}
+      {/* Opaque venom-green exterior overlay — covers entire maze from
+          under the floor, then the inner mask disc cuts a hole at
+          the current safe radius so only the danger ring shows. */}
       <ExteriorGroundPlane />
 
-      {/* Inverse scaler — a mesh that scales WITH radius to "cover" the safe
-          portion of the ground disc. The layer order is: exterior plane
-          (dark) below, then this floor ref (matching floor color) above,
-          which "cuts a hole" in the dark overlay as it scales with radius. */}
+      {/* Inner mask — scales with radius; rendered on top of the venom
+          exterior plane and matches the floor colour so the safe
+          zone looks like the normal maze floor. Effectively "cuts
+          a hole" in the venom overlay. depthWrite=false so it
+          doesn't occlude walls standing on the floor. */}
       <mesh ref={floorRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.011, 0]}>
         <circleGeometry args={[1, 96]} />
-        <meshBasicMaterial color="#3a2c50" transparent opacity={1.0} />
+        <meshBasicMaterial color="#1a1230" depthWrite={false} />
       </mesh>
 
-      {/* Tall cylinder shell at the boundary — the "wall of corruption" */}
+      {/* Boundary cylinder — the venom fog rising up at the edge. */}
       <mesh ref={wallRef} position={[0, WALL_HEIGHT / 2, 0]}>
         <cylinderGeometry args={[1, 1, WALL_HEIGHT, 96, 1, true]} />
         <meshBasicMaterial
-          color="#20002a"
+          color={VENOM_DARK}
           side={THREE.BackSide}
           transparent
-          opacity={0.92}
+          opacity={0.82}
           depthWrite={false}
         />
       </mesh>
 
-      {/* Inner glow wisps on the boundary cylinder — purple aurora feel */}
-      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-        <ringGeometry args={[0.985, 1.015, 96]} />
+      {/* Bright neon-green boundary ring — the "this is the line" cue.
+          Thick and fully opaque so it reads from any angle. */}
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
+        <ringGeometry args={[0.975, 1.02, 96]} />
         <meshBasicMaterial
-          color="#c040ff"
+          color={VENOM_GREEN}
           side={THREE.DoubleSide}
-          transparent
-          opacity={0.85}
         />
       </mesh>
     </group>
   );
 }
 
-/** Large dark disc that sits under the shrinking floor-circle, showing
- *  the exterior of the current safe zone. Stationary and full-size. */
+/** Large opaque venom-green disc that sits beneath the mask,
+ *  colouring everything outside the current safe radius. */
 function ExteriorGroundPlane() {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
       <circleGeometry args={[OUTER_BOUND, 64]} />
-      <meshBasicMaterial
-        color="#0a0014"
-        transparent
-        opacity={0.85}
-      />
+      <meshBasicMaterial color={VENOM_GREEN} />
     </mesh>
   );
 }

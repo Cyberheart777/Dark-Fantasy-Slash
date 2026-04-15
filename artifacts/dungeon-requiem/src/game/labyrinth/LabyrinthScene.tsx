@@ -28,7 +28,7 @@ import {
   WALL_N, WALL_E, WALL_S, WALL_W,
 } from "./LabyrinthMaze";
 import { LabyrinthMap3D } from "./LabyrinthMap3D";
-import { LabyrinthMobileControls } from "./LabyrinthMobileControls";
+import { LabyrinthMobileControls, type LabAimOverride } from "./LabyrinthMobileControls";
 import { LabyrinthZone3D } from "./LabyrinthZone3D";
 import {
   computeZoneState,
@@ -103,6 +103,7 @@ import {
   addLabXp,
   spawnLabXpOrb,
   tickLabXpOrbs,
+  rollEnemyLoot,
   type LabProgressionState,
 } from "./LabyrinthProgression";
 import { XPOrb3D } from "../../entities/XPOrb3D";
@@ -298,6 +299,11 @@ export function LabyrinthScene() {
   // collision-checked in CombatEnemyLoop; rendered via the main-game
   // Projectile3D.
   const projectilesRef = useRef<LabProjectile[]>([]);
+  // Aim override from the mobile aim stick. When active, the combat
+  // loop aims attacks at `angle` instead of auto-targeting the
+  // nearest enemy. Kept as a labyrinth-local ref so we don't need
+  // to extend InputManager3D (core-game file).
+  const aimOverrideRef = useRef<LabAimOverride>({ active: false, angle: 0 });
   // Wall-to-wall traps. Spawned once per run at scene mount (same as
   // enemies), kept in a ref (stationary state machines — no React
   // re-render needed for their phase changes; their emitter visuals
@@ -372,6 +378,7 @@ export function LabyrinthScene() {
           projectilesRef={projectilesRef}
           trapsRef={trapsRef}
           chestsRef={chestsRef}
+          aimOverrideRef={aimOverrideRef}
           critChance={classDef.critChance}
           runStartMs={runStartMs}
         />
@@ -381,7 +388,7 @@ export function LabyrinthScene() {
         playerRef={playerRef}
         sharedRef={sharedRef}
       />
-      <LabyrinthMobileControls inputRef={inputRef} />
+      <LabyrinthMobileControls inputRef={inputRef} aimOverrideRef={aimOverrideRef} />
       <LabyrinthDebug
         playerRef={playerRef}
         sharedRef={sharedRef}
@@ -416,6 +423,7 @@ function LabyrinthWorld({
   projectilesRef,
   trapsRef,
   chestsRef,
+  aimOverrideRef,
   critChance,
   runStartMs,
 }: {
@@ -443,6 +451,7 @@ function LabyrinthWorld({
   projectilesRef: React.MutableRefObject<LabProjectile[]>;
   trapsRef: React.MutableRefObject<LabTrap[]>;
   chestsRef: React.MutableRefObject<LabChest[]>;
+  aimOverrideRef: React.MutableRefObject<LabAimOverride>;
   critChance: number;
   runStartMs: React.MutableRefObject<number>;
 }) {
@@ -594,6 +603,7 @@ function LabyrinthWorld({
         chestsRef={chestsRef}
         labPoisonRef={labPoisonRef}
         groundFxRef={groundFxRef}
+        aimOverrideRef={aimOverrideRef}
         critChance={critChance}
         charClass={charClass}
         onEnemiesChange={setEnemyList}
@@ -990,8 +1000,10 @@ function MovementLoop({
     // Select active velocity. During a dash, the player glides at
     // LAB_DASH_SPEED in the locked dash direction (joystick is ignored
     // until the dash ends — same as the main game). Otherwise normal
-    // 9 u/s movement.
-    const WALK_SPEED = 9;
+    // walk speed — reduced 15% from the main-game baseline of 9 u/s
+    // to give corridor combat more time-to-react (matches the 25%
+    // weapon-range reduction in the combat stats).
+    const WALK_SPEED = 7.65;
     let moveVX: number;
     let moveVZ: number;
     if (dashState.timer > 0) {
@@ -1035,13 +1047,43 @@ function MovementLoop({
 // Single useFrame handles both player-attack input and enemy AI so damage
 // and consumption stay in a predictable order. Order per frame:
 //   1. Tick attack cooldown / swing visual timer
-//   2. On attack press: start swing, hit-test against live enemies,
-//      apply damage, record kills
+//   2. AUTO-ATTACK: if cooldown ready and the nearest enemy is within
+//      range, swing/fire automatically; otherwise wait. Manual attack
+//      input still fires even without a target (desktop keyboard feel).
 //   3. Tick every live enemy (AI + movement + melee); accumulate the
 //      total damage enemies dealt the player this frame
 //   4. Apply accumulated enemy damage to the player (checks defeat)
 //   5. Evict fully-faded dead enemies — if the array changes, push the
 //      new list to React state so the renderer refreshes.
+
+/** Mage/rogue auto-attack detection range. Slightly longer than the
+ *  projectile's actual reach so the player starts firing as soon as
+ *  a target comes into range. */
+const RANGED_AUTO_RANGE = 12;
+
+/** Find the nearest alive enemy to (px, pz) within maxRange; returns
+ *  null if none. Used by auto-attack aim and range gating. */
+function findNearestEnemyInRange(
+  enemies: readonly EnemyRuntime[],
+  px: number,
+  pz: number,
+  maxRange: number,
+): EnemyRuntime | null {
+  const maxSq = maxRange * maxRange;
+  let best: EnemyRuntime | null = null;
+  let bestSq = maxSq;
+  for (const e of enemies) {
+    if (e.state === "dead") continue;
+    const dx = e.x - px;
+    const dz = e.z - pz;
+    const d = dx * dx + dz * dz;
+    if (d < bestSq) {
+      bestSq = d;
+      best = e;
+    }
+  }
+  return best;
+}
 
 function CombatEnemyLoop({
   maze,
@@ -1061,6 +1103,7 @@ function CombatEnemyLoop({
   chestsRef,
   labPoisonRef,
   groundFxRef,
+  aimOverrideRef,
   critChance,
   charClass,
   onEnemiesChange,
@@ -1086,6 +1129,7 @@ function CombatEnemyLoop({
   chestsRef: React.MutableRefObject<LabChest[]>;
   labPoisonRef: React.MutableRefObject<LabPoisonState>;
   groundFxRef: React.MutableRefObject<LabGroundFx[]>;
+  aimOverrideRef: React.MutableRefObject<LabAimOverride>;
   critChance: number;
   charClass: CharacterClass;
   onEnemiesChange: (enemies: EnemyRuntime[]) => void;
@@ -1124,17 +1168,42 @@ function CombatEnemyLoop({
     if (isWarrior) tickLabWarrior(warriorStateRef.current, delta);
     if (!isWarrior) tickRangedAttack(rangedAttackStateRef.current, delta);
 
-    // 2) Attack input dispatch per class.
-    //    Warrior → melee swing arc (existing path).
-    //    Mage    → piercing arcane orb (spawns a player projectile).
-    //    Rogue   → 3-dagger fan (spawns three player projectiles).
-    //    Ranged kills flow through the existing projectile tick's
-    //    onEnemyKilled callback — no duplicate handling needed here.
+    // 2) Auto-attack per class. No manual trigger — the player fires
+    //    whenever their cooldown is ready AND a target is available:
+    //      Warrior → swing the melee arc if the nearest alive enemy
+    //                is within swing reach (+small buffer).
+    //      Mage    → fire an orb if the nearest alive enemy is within
+    //                RANGED_AUTO_RANGE.
+    //      Rogue   → fire a dagger fan under the same conditions.
+    //    Aim direction uses the optional InputManager aim override
+    //    (mobile aim stick, falls back to facing-the-nearest-enemy).
+    //    Manual attack input still swings/fires if the player tapped
+    //    attack on desktop (spacebar / click) — that keeps keyboard
+    //    play snappy even though the button is no longer required.
     const inputState = input.state;
-    if (inputState.attack) {
-      input.consumeAttack();
+    const autoAimRange = isWarrior
+      ? combatStats.atkRange * 1.15
+      : RANGED_AUTO_RANGE;
+    const aimTarget = findNearestEnemyInRange(enemies, p.x, p.z, autoAimRange);
+    let aimAngle = p.angle;
+    if (aimOverrideRef.current.active) {
+      // Mobile aim stick wins over auto-aim — player is steering attacks.
+      aimAngle = aimOverrideRef.current.angle;
+      p.angle = aimAngle;
+    } else if (aimTarget) {
+      aimAngle = Math.atan2(aimTarget.x - p.x, -(aimTarget.z - p.z));
+      p.angle = aimAngle;
+    }
+    // Fire whenever we have a target OR the player is manually aiming
+    // (mobile stick active) OR they pressed the desktop attack key.
+    const canAttack =
+      aimTarget !== null ||
+      aimOverrideRef.current.active ||
+      inputState.attack;
+    if (inputState.attack) input.consumeAttack();
+    if (canAttack) {
       if (isWarrior) {
-        if (tryStartSwing(atk, p.angle, combatStats)) {
+        if (tryStartSwing(atk, aimAngle, combatStats)) {
           audioManager.play("attack_melee");
           for (const e of enemies) {
             if (e.state === "dead") continue;
@@ -1147,6 +1216,14 @@ function CombatEnemyLoop({
                 audioManager.play("enemy_death");
                 spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" ? "#ff40ff" : "#ff3030");
                 spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
+                // Bonus loot roll — mirrors the treasure-chest payout.
+                const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
+                if (loot.rolled) {
+                  audioManager.play("gear_drop");
+                  if (loot.healOnPickup > 0) {
+                    p.hp = Math.min(p.maxHp, p.hp + loot.healOnPickup);
+                  }
+                }
                 const gained = registerKill(warriorStateRef.current);
                 if (gained > 0) {
                   p.maxHp += gained;
@@ -1162,11 +1239,11 @@ function CombatEnemyLoop({
           }
         }
       } else if (isMage) {
-        if (tryFireMageOrb(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, p.angle)) {
+        if (tryFireMageOrb(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle)) {
           audioManager.play("attack_orb");
         }
       } else if (isRogue) {
-        if (tryFireRogueFan(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, p.angle)) {
+        if (tryFireRogueFan(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle)) {
           audioManager.play("attack_dagger");
         }
       }
@@ -1217,6 +1294,13 @@ function CombatEnemyLoop({
         audioManager.play("enemy_death");
         spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" ? "#ff40ff" : "#ff3030");
         spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
+        const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
+        if (loot.rolled) {
+          audioManager.play("gear_drop");
+          if (loot.healOnPickup > 0) {
+            p.hp = Math.min(p.maxHp, p.hp + loot.healOnPickup);
+          }
+        }
         if (isWarrior) {
           const gained = registerKill(warriorStateRef.current);
           if (gained > 0) {

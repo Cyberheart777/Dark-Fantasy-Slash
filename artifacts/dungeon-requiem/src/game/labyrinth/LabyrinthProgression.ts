@@ -104,6 +104,71 @@ export function spawnLabXpOrb(list: XPOrb[], x: number, z: number): void {
   });
 }
 
+/** Boss / rare-drop tier orb — always orange (100 XP). Used by the
+ *  Warden and any future mini-boss kills. */
+export function spawnLabBossOrb(list: XPOrb[], x: number, z: number): void {
+  const ox = x + (Math.random() - 0.5) * 0.6;
+  const oz = z + (Math.random() - 0.5) * 0.6;
+  list.push({
+    id: `laborb${orbId++}`,
+    x: ox,
+    z: oz,
+    value: 100,
+    collected: false,
+    floatOffset: Math.random() * Math.PI * 2,
+    crystalTier: "orange",
+    collectTimer: 0,
+  });
+}
+
+// ─── Enemy loot drops ────────────────────────────────────────────────────────
+// When an enemy dies, roll the loot table. Every kind drops a single
+// XP orb (default behaviour, handled inline at the kill site), and in
+// addition has a chance to drop bonus loot mirroring the treasure-chest
+// payout: a burst of extra orbs + a small heal on pickup.
+
+const ENEMY_LOOT_CHANCE: Record<string, number> = {
+  // kind → probability of a bonus treasure burst on kill (0..1)
+  corridor_guardian: 0.18,
+  trap_spawner: 0.35,
+  mimic: 0.55,
+  shadow_stalker: 0.40,
+  warden: 1.0,
+};
+
+export interface LabLootDrop {
+  /** Small heal the caller applies to the player after pickup
+   *  (0 if no heal). */
+  healOnPickup: number;
+  /** Whether a bonus burst was rolled this call. */
+  rolled: boolean;
+}
+
+/** Called at each enemy kill. Mutates the XP-orb list to add bonus
+ *  orbs when the loot roll hits; returns the heal amount the caller
+ *  should queue for the next pickup, plus the rolled flag for SFX. */
+export function rollEnemyLoot(
+  list: XPOrb[],
+  kind: string,
+  x: number,
+  z: number,
+): LabLootDrop {
+  const chance = ENEMY_LOOT_CHANCE[kind] ?? 0.15;
+  const rolled = Math.random() < chance;
+  if (!rolled) return { healOnPickup: 0, rolled: false };
+  // Burst of 2-4 extra orbs, mirroring the treasure chest loot.
+  const extra = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < extra; i++) {
+    const angle = (i / extra) * Math.PI * 2 + Math.random() * 0.4;
+    const dist = 0.6 + Math.random() * 0.6;
+    spawnLabXpOrb(list, x + Math.cos(angle) * dist, z + Math.sin(angle) * dist);
+  }
+  // Heal — the caller awards this to the player so pickup feels
+  // coherent with treasure chests (which heal on open).
+  const heal = kind === "warden" ? 60 : 8;
+  return { healOnPickup: heal, rolled: true };
+}
+
 // ─── Pickup + tick ───────────────────────────────────────────────────────────
 
 /** How close the player must be to vacuum an orb in. Matches the main
