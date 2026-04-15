@@ -35,6 +35,16 @@ import type { GameState } from "../GameScene";
 import type { EnemyRuntime as LabEnemy } from "./LabyrinthEnemy";
 import { createPlayerShim } from "./LabyrinthShims";
 
+// ─── Champion health bar tuning ────────────────────────────────────────────
+// Priority-styled bar — wider than the main-game standard enemy bar
+// (1.2 units) and ringed in gold so the player reads rivals as a
+// priority target at a glance. Positioned above the class-mesh head
+// line; billboarded toward the camera each frame.
+const RIVAL_BAR_WIDTH = 1.8;       // wider than main-game's 1.2
+const RIVAL_BAR_HEIGHT = 0.16;
+const RIVAL_BAR_BORDER_INSET = 0.05;
+const RIVAL_BAR_Y = 3.6;           // above the class mesh (~2.4 tall)
+
 /** Dark-tint colour per rival kind. Chosen to desaturate + darken
  *  the base class palette while staying class-legible. */
 const RIVAL_TINT: Record<string, THREE.Color> = {
@@ -139,9 +149,71 @@ function RivalChampion3D({ enemy }: { enemy: LabEnemy }) {
     shim.player.isDashing = (enemy.rival?.activeSec ?? 0) > 0;
   });
 
+  // Health bar sits OUTSIDE the tinted group so the traverse above
+  // doesn't repaint its gold border + red fill with the rival palette.
+  return (
+    <>
+      <group ref={groupRef}>
+        <Player3D gs={shimRef} />
+      </group>
+      <RivalHealthBar enemy={enemy} />
+    </>
+  );
+}
+
+/** Priority-target HP bar billboarded above a rival champion. Gold
+ *  border frames the bar so it's visually distinct from the
+ *  main-game standard-enemy bar (which has no border). Fill colour
+ *  tints red-to-gold as HP drops — red at high HP (threat cue),
+ *  gold at the 50% mark (progress), bright red at <25% (finisher). */
+function RivalHealthBar({ enemy }: { enemy: LabEnemy }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const fillRef = useRef<THREE.Mesh>(null);
+  useFrame(({ camera }) => {
+    if (!groupRef.current) return;
+    // Track the live enemy position + keep the bar camera-facing so
+    // it reads flat under the top-down view.
+    groupRef.current.position.set(enemy.x, RIVAL_BAR_Y, enemy.z);
+    groupRef.current.quaternion.copy(camera.quaternion);
+    // Hide once dead so the husk doesn't keep a ghost bar floating.
+    groupRef.current.visible = enemy.state !== "dead";
+    // Update fill width + colour from live HP.
+    if (fillRef.current) {
+      const pct = Math.max(0, Math.min(1, enemy.hp / Math.max(1, enemy.maxHp)));
+      const innerW = RIVAL_BAR_WIDTH - RIVAL_BAR_BORDER_INSET * 2;
+      const w = innerW * pct;
+      fillRef.current.scale.x = Math.max(0.0001, w / innerW);
+      // Anchor to the left edge by offsetting by (w - innerW)/2.
+      fillRef.current.position.x = (w - innerW) / 2;
+      const mat = fillRef.current.material as THREE.MeshBasicMaterial;
+      if (pct > 0.5) {
+        mat.color.set("#ff3030");      // high-HP red — threat
+      } else if (pct > 0.25) {
+        mat.color.set("#ffb030");      // mid-HP gold — progress
+      } else {
+        mat.color.set("#ff6010");      // low-HP bright orange — finisher
+      }
+    }
+  });
   return (
     <group ref={groupRef}>
-      <Player3D gs={shimRef} />
+      {/* Gold border — wider than the inner track so the rim reads
+          as a frame around the bar. */}
+      <mesh position={[0, 0, -0.002]}>
+        <planeGeometry args={[RIVAL_BAR_WIDTH + 0.1, RIVAL_BAR_HEIGHT + 0.1]} />
+        <meshBasicMaterial color="#ffc040" />
+      </mesh>
+      {/* Dark background track inside the gold border. */}
+      <mesh position={[0, 0, -0.001]}>
+        <planeGeometry args={[RIVAL_BAR_WIDTH, RIVAL_BAR_HEIGHT]} />
+        <meshBasicMaterial color="#1a0005" />
+      </mesh>
+      {/* HP fill — scaled horizontally via ref each frame. Base width
+          is the inner track minus the border inset; scale goes 0..1. */}
+      <mesh ref={fillRef} position={[0, 0, 0]}>
+        <planeGeometry args={[RIVAL_BAR_WIDTH - RIVAL_BAR_BORDER_INSET * 2, RIVAL_BAR_HEIGHT - RIVAL_BAR_BORDER_INSET * 2]} />
+        <meshBasicMaterial color="#ff3030" />
+      </mesh>
     </group>
   );
 }
