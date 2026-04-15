@@ -127,12 +127,16 @@ export function spawnLabBossOrb(list: XPOrb[], x: number, z: number): void {
 // addition has a chance to drop bonus loot mirroring the treasure-chest
 // payout: a burst of extra orbs + a small heal on pickup.
 
+// Labyrinth intentionally drops far more loot than the main game —
+// corridor combat is shorter / more lethal, so every fight feels
+// rewarding even if you don't finish the run. These rates apply
+// ONLY in the labyrinth — main-game enemy drops are unchanged.
 const ENEMY_LOOT_CHANCE: Record<string, number> = {
   // kind → probability of a bonus treasure burst on kill (0..1)
-  corridor_guardian: 0.18,
-  trap_spawner: 0.35,
-  mimic: 0.55,
-  shadow_stalker: 0.40,
+  corridor_guardian: 0.65,
+  trap_spawner: 0.85,
+  mimic: 0.95,
+  shadow_stalker: 0.80,
   warden: 1.0,
 };
 
@@ -153,19 +157,36 @@ export function rollEnemyLoot(
   x: number,
   z: number,
 ): LabLootDrop {
-  const chance = ENEMY_LOOT_CHANCE[kind] ?? 0.15;
+  const chance = ENEMY_LOOT_CHANCE[kind] ?? 0.5;
   const rolled = Math.random() < chance;
   if (!rolled) return { healOnPickup: 0, rolled: false };
-  // Burst of 2-4 extra orbs, mirroring the treasure chest loot.
-  const extra = 2 + Math.floor(Math.random() * 3);
+  // Burst size scales with enemy kind — mimics and the warden drop
+  // significantly more than a patrol guardian. Much bigger bursts
+  // than the previous 2-4-orb implementation so drops feel like
+  // actual loot showers.
+  const burstByKind: Record<string, [number, number]> = {
+    corridor_guardian: [4, 7],
+    trap_spawner: [6, 10],
+    mimic: [8, 12],
+    shadow_stalker: [6, 9],
+    warden: [20, 28],
+  };
+  const [lo, hi] = burstByKind[kind] ?? [4, 7];
+  const extra = lo + Math.floor(Math.random() * (hi - lo + 1));
   for (let i = 0; i < extra; i++) {
-    const angle = (i / extra) * Math.PI * 2 + Math.random() * 0.4;
-    const dist = 0.6 + Math.random() * 0.6;
+    const angle = (i / extra) * Math.PI * 2 + Math.random() * 0.5;
+    const dist = 0.6 + Math.random() * 1.1;
     spawnLabXpOrb(list, x + Math.cos(angle) * dist, z + Math.sin(angle) * dist);
   }
   // Heal — the caller awards this to the player so pickup feels
-  // coherent with treasure chests (which heal on open).
-  const heal = kind === "warden" ? 60 : 8;
+  // coherent with treasure chests (which heal on open). Warden drops
+  // a big heal since it's the end-game fight.
+  const heal =
+    kind === "warden" ? 80 :
+    kind === "mimic" ? 20 :
+    kind === "trap_spawner" ? 12 :
+    kind === "shadow_stalker" ? 15 :
+    10;
   return { healOnPickup: heal, rolled: true };
 }
 

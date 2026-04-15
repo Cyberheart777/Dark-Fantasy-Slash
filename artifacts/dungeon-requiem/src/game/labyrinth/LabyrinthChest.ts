@@ -46,9 +46,12 @@ const REVEAL_DURATION_SEC = 0.35;
 const TRAPPED_POISON_RADIUS = 3;
 const TRAPPED_POISON_LIFETIME = 8;
 const TRAPPED_POISON_COLOR = "#7bff50";
-const TREASURE_ORB_MIN = 3;
-const TREASURE_ORB_MAX = 5;
-const TREASURE_HEAL = 10;
+// Labyrinth treasure chests drop far more than main-game gear drops
+// to make the labyrinth feel loot-rich even for runs that end short.
+// Doubled the orb burst + heal from the first pass.
+const TREASURE_ORB_MIN = 8;
+const TREASURE_ORB_MAX = 14;
+const TREASURE_HEAL = 25;
 
 let chestId = 0;
 let groundFxId = 0;

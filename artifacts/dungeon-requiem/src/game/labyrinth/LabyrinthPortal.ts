@@ -28,11 +28,15 @@ import {
   type ZoneState,
 } from "./LabyrinthZone";
 
-/** Fixed spawn schedule. (atSec, count). */
+/** Fixed spawn schedule. (atSec, count). First burst lands at 45s
+ *  so the player discovers the extraction mechanic quickly; previous
+ *  3-minute gate meant most players died before seeing one. More
+ *  portals total (8 vs 6) for a more portal-rich run. */
 export const PORTAL_MILESTONES: readonly { atSec: number; count: number }[] = [
-  { atSec: 180, count: 3 },
-  { atSec: 300, count: 2 },
-  { atSec: 420, count: 1 },
+  { atSec: 45, count: 2 },
+  { atSec: 120, count: 3 },
+  { atSec: 240, count: 2 },
+  { atSec: 360, count: 1 },
 ];
 
 /** Buffer from the *next* zone target so the portal survives at least

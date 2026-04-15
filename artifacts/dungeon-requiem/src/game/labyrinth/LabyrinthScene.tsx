@@ -1000,10 +1000,11 @@ function MovementLoop({
     // Select active velocity. During a dash, the player glides at
     // LAB_DASH_SPEED in the locked dash direction (joystick is ignored
     // until the dash ends — same as the main game). Otherwise normal
-    // walk speed — reduced 15% from the main-game baseline of 9 u/s
-    // to give corridor combat more time-to-react (matches the 25%
-    // weapon-range reduction in the combat stats).
-    const WALK_SPEED = 7.65;
+    // walk speed — further reduced ~35% from the previous 7.65 value
+    // (itself 15% below main-game's 9 u/s) to give corridor combat
+    // a deliberate tactical-roguelite pace. Player leans on dash for
+    // quick repositioning. Total 45% below the main game baseline.
+    const WALK_SPEED = 5.0;
     let moveVX: number;
     let moveVZ: number;
     if (dashState.timer > 0) {
