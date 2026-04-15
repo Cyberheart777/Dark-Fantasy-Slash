@@ -50,6 +50,29 @@ export type EnemyKind =
   | "rival_mage"
   | "rival_rogue";
 
+/** Rival-champion kind predicate. Used to exclude rivals from the
+ *  standard-enemy damage multiplier + any other "rivals are special"
+ *  logic that needs to discriminate on kind. */
+function isRivalKind(kind: EnemyKind): boolean {
+  return kind === "rival_warrior" || kind === "rival_mage" || kind === "rival_rogue";
+}
+
+// ─── Damage multiplier ──────────────────────────────────────────────────────
+/** Multiplier applied to ALL standard enemy damage outputs in the
+ *  labyrinth — melee swings (guardian / heavy / mimic / stalker),
+ *  trap-spawner projectile damage, and wall-trap beam damage.
+ *
+ *  Does NOT apply to:
+ *    - Rival champions (rival_warrior / rival_mage / rival_rogue) —
+ *      they have their own tuning constants and are tuned
+ *      separately per the combat-pass spec.
+ *    - Warden (boss) — uses LabyrinthWarden.ts, untouched.
+ *
+ *  Single tunable. Bumping this value above 1.5 makes standard
+ *  patrol enemies genuinely threatening; dropping below 1.0 (unlikely)
+ *  would nerf them. */
+export const LAB_ENEMY_DAMAGE_MULT = 1.5;
+
 export type EnemyAiState = "patrol" | "chase" | "attack" | "dead";
 
 export interface EnemyRuntime {
@@ -868,6 +891,12 @@ export function updateEnemy(
       if (enemy.kind === "rival_warrior" && enemy.rival?.buffActive) {
         dmg *= RIVAL_WARRIOR_WARCRY_MULT;
       }
+      // Standard-enemy damage multiplier (item 4 of combat pass).
+      // Applied to all non-rival standard enemies. Rivals are
+      // excluded because they're tuned on their own constants.
+      if (!isRivalKind(enemy.kind)) {
+        dmg *= LAB_ENEMY_DAMAGE_MULT;
+      }
       playerDamage.value += dmg;
       enemy.attackCooldown = tuning.cd;
       if (enemy.kind === "rival_rogue" && enemy.rival?.poisonArmed) {
@@ -1154,7 +1183,7 @@ function updateTrapSpawner(
     x: enemy.x,
     z: enemy.z,
     vx, vz,
-    damage: TRAP_SPAWNER_PROJECTILE_DAMAGE,
+    damage: TRAP_SPAWNER_PROJECTILE_DAMAGE * LAB_ENEMY_DAMAGE_MULT,
     radius: 0.4,
     lifetime: TRAP_SPAWNER_PROJECTILE_LIFETIME,
     piercing: false,

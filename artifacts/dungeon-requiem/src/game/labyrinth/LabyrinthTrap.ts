@@ -16,6 +16,7 @@
 import { LABYRINTH_CONFIG } from "./LabyrinthConfig";
 import { WALL_N, WALL_E, WALL_S, WALL_W, cellToWorld, type Maze } from "./LabyrinthMaze";
 import { spawnLabProjectile, type LabProjectile } from "./LabyrinthProjectile";
+import { LAB_ENEMY_DAMAGE_MULT } from "./LabyrinthEnemy";
 
 export type TrapPhase = "warn" | "fire" | "cooldown";
 export type TrapAxis = "horizontal" | "vertical";
@@ -140,7 +141,7 @@ export function tickLabTraps(
           x: t.ax,
           z: t.az,
           vx, vz,
-          damage: TRAP_DAMAGE,
+          damage: TRAP_DAMAGE * LAB_ENEMY_DAMAGE_MULT,
           radius: 0.5,
           lifetime: FIRE_SEC + 0.1,
           piercing: true, // beams shouldn't stop on first hit — they keep travelling
