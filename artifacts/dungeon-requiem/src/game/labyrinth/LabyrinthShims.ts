@@ -175,6 +175,10 @@ export function enemyTypeForKind(kind: LabEnemy["kind"]): string {
     case "mimic": return "scuttler";
     case "shadow_stalker": return "wraith";
     case "warden": return "boss";
+    // Champions reuse the main-game's elite visual — same silhouette
+    // as a guardian but scaled up and recoloured in visualsForKind
+    // below so players read it as a mini-boss, not another guardian.
+    case "champion": return "elite";
   }
 }
 
@@ -197,6 +201,11 @@ function visualsForKind(kind: LabEnemy["kind"]): {
       return { scale: 0.9, color: "#101018", emissive: "#3a2a5a" };
     case "warden":
       return { scale: 1.8, color: "#2a0a2a", emissive: "#a020ff" };
+    // Champion — scale 1.5 (between guardian 1.0 and warden 1.8),
+    // gold accents on a deep-red base so it reads as "elite warrior"
+    // silhouette. Distinguishable at a glance from a patrol guardian.
+    case "champion":
+      return { scale: 1.5, color: "#b84020", emissive: "#ffcc40" };
   }
 }
 

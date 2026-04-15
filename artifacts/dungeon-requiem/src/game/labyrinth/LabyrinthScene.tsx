@@ -72,6 +72,8 @@ import {
   makeShadowStalker,
   findStalkerSpawnCell,
   makeCorridorGuardianAt,
+  makeChampion,
+  findChampionSpawnCell,
   type EnemyRuntime,
 } from "./LabyrinthEnemy";
 import {
@@ -194,6 +196,17 @@ interface LabSharedState {
   victory: boolean;
   /** true once a warden has been spawned this run (prevents re-spawn). */
   wardenSpawned: boolean;
+  /** true once the champion (Nemesis-style mini-boss) has spawned.
+   *  Only one per run. See item 4. */
+  championSpawned: boolean;
+  /** true once the champion has been killed AND dropped the key.
+   *  Item 7 wires the visible key pickup + loot-room unlock; for
+   *  now this boolean flags the "you have the key" run-state that
+   *  the HUD reads to show the key icon. */
+  hasKey: boolean;
+  /** Elapsed-seconds timestamp of the most recent champion spawn.
+   *  Drives the "A CHAMPION HUNTS YOU" HUD banner (fades over 3.5s). */
+  championAnnouncedAt: number;
   /** HUD boss-bar snapshot. null while no warden exists; populated
    *  on spawn and mutated each frame by CombatEnemyLoop. alive flips
    *  false on warden kill — the HUD reads this to hide the bar. */
@@ -300,6 +313,9 @@ export function LabyrinthScene() {
     victory: false,
     wardenSpawned: false,
     wardenHud: null,
+    championSpawned: false,
+    hasKey: false,
+    championAnnouncedAt: -Infinity,
     outsideZone: false,
     safeDirX: 0, safeDirZ: 0,
     poisonStacks: 0,
@@ -1374,6 +1390,15 @@ function CombatEnemyLoop({
                   clearWardenState(e.id);
                   audioManager.play("wave_clear");
                 }
+                if (e.kind === "champion") {
+                  // Drop the loot-room key. Item 7 will add a visible
+                  // key pickup + unlock interaction; for now we flag
+                  // the shared state directly so the HUD can show
+                  // "KEY" and the upcoming loot-room logic can read
+                  // it off sharedRef.
+                  shared.hasKey = true;
+                  audioManager.play("wave_clear");
+                }
               }
             }
           }
@@ -1476,6 +1501,10 @@ function CombatEnemyLoop({
           clearWardenState(e.id);
           audioManager.play("wave_clear");
         }
+        if (e.kind === "champion") {
+          shared.hasKey = true;
+          audioManager.play("wave_clear");
+        }
       },
     });
 
@@ -1567,6 +1596,23 @@ function CombatEnemyLoop({
         }
       }
       stalkerSpawnTimer.current = LABYRINTH_CONFIG.SHADOW_STALKER_INTERVAL_SEC;
+    }
+
+    // 7a-b) Champion (Nemesis) spawn. Exactly one per run, triggered
+    //       at elapsed >= 60 s so the player has time to explore and
+    //       equip some gear first. Spawns at a far-from-player outer-
+    //       ring dead-end. On spawn: set championSpawned flag + seed
+    //       the announcement timestamp + play boss_spawn SFX.
+    if (!shared.championSpawned && shared.zone.elapsedSec >= 60) {
+      const spawnPos = findChampionSpawnCell(maze, p.x, p.z);
+      if (spawnPos) {
+        enemies.push(makeChampion(spawnPos.x, spawnPos.z));
+        onEnemiesChange(enemies.slice());
+        shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
+        shared.championSpawned = true;
+        shared.championAnnouncedAt = shared.zone.elapsedSec;
+        audioManager.play("boss_spawn");
+      }
     }
 
     // 7b) Chest proximity + reveal tick. May spawn XP orbs (treasure),
@@ -1958,6 +2004,8 @@ function LabyrinthHUD({
     warrior: null as LabSharedState["warrior"],
     equipped: { weapon: null, armor: null, trinket: null } as LabSharedState["equipped"],
     wardenHud: null as LabSharedState["wardenHud"],
+    hasKey: false,
+    championAnnouncedAt: -Infinity,
   });
 
   useEffect(() => {
@@ -2010,6 +2058,8 @@ function LabyrinthHUD({
         warrior: s.warrior,
         equipped: s.equipped,
         wardenHud: s.wardenHud,
+        hasKey: s.hasKey,
+        championAnnouncedAt: s.championAnnouncedAt,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -2135,6 +2185,22 @@ function LabyrinthHUD({
       {/* Equipped-gear slots — three icons (weapon / armor / trinket)
           with rarity-color borders. Rendered under the threat box. */}
       <GearSlotStrip equipped={display.equipped} />
+
+      {/* Key icon — only visible once the champion has been slain.
+          Item 7 will add the loot-room unlock that consumes this. */}
+      {display.hasKey && (
+        <div style={styles.keyIndicator}>
+          <span style={styles.keyIcon}>🗝</span>
+          <span style={styles.keyLabel}>VAULT KEY</span>
+        </div>
+      )}
+
+      {/* Champion arrival banner — fades in/out over 3.5 s from the
+          spawn timestamp. Red-orange to match the champion palette. */}
+      <ChampionBanner
+        elapsedSec={display.elapsedSec}
+        announcedAt={display.championAnnouncedAt}
+      />
 
       {/* Poison stack pip bar (only visible when stacks > 0) */}
       {display.poisonStacks > 0 && !display.defeated && !display.extracted && (
@@ -2269,6 +2335,30 @@ function LabyrinthHUD({
 }
 
 /** Poison-stack pip bar shown under the HP bar while the shroud is active. */
+/** Fading "A CHAMPION HUNTS YOU" banner that appears on champion
+ *  spawn and fades out over 3.5 s. Stateless — the HUD polls
+ *  championAnnouncedAt from sharedRef and this component computes
+ *  opacity from (elapsed - announcedAt). Hidden before the first
+ *  announcement and after 3.5 s. */
+function ChampionBanner({ elapsedSec, announcedAt }: {
+  elapsedSec: number;
+  announcedAt: number;
+}) {
+  if (!isFinite(announcedAt)) return null;
+  const dt = elapsedSec - announcedAt;
+  if (dt < 0 || dt > 3.5) return null;
+  // Fade in over first 0.25s, hold, fade out over last 0.8s.
+  let opacity = 1;
+  if (dt < 0.25) opacity = dt / 0.25;
+  else if (dt > 2.7) opacity = Math.max(0, 1 - (dt - 2.7) / 0.8);
+  return (
+    <div style={{ ...styles.championBanner, opacity }}>
+      <div style={styles.championBannerTop}>⚔ A CHAMPION HUNTS YOU ⚔</div>
+      <div style={styles.championBannerSub}>SLAY IT FOR THE VAULT KEY</div>
+    </div>
+  );
+}
+
 /** Three-slot equipped gear strip shown under the threat box. Reads
  *  the sharedRef.equipped snapshot via the HUD's display poll. Empty
  *  slots render as dim placeholders so the UI stays at a fixed size. */
@@ -2602,6 +2692,66 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 4,
     textAlign: "center" as const,
     fontFamily: "monospace",
+  },
+  // Key indicator — small "VAULT KEY" pill under the gear strip.
+  // Visible once shared.hasKey flips true (champion killed, item 4).
+  // Item 7 will hide this when the key is consumed at the loot-room
+  // door.
+  keyIndicator: {
+    position: "absolute" as const,
+    top: 248,
+    right: 20,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "5px 10px",
+    background: "linear-gradient(90deg, rgba(80,40,0,0.85), rgba(120,70,0,0.7))",
+    border: "1px solid rgba(255,180,60,0.65)",
+    borderRadius: 6,
+    boxShadow: "0 0 14px rgba(255,170,60,0.4)",
+    fontFamily: "monospace",
+    pointerEvents: "none" as const,
+  },
+  keyIcon: {
+    fontSize: 22,
+    textShadow: "0 0 8px rgba(255,200,80,0.8)",
+  },
+  keyLabel: {
+    color: "#ffdc8a",
+    fontSize: 11,
+    fontWeight: "bold" as const,
+    letterSpacing: 2,
+  },
+  // Champion announcement banner — big central banner that fades on
+  // spawn. Styling mirrors the main-game boss announcement but with
+  // the champion's red-orange palette instead of boss-pink.
+  championBanner: {
+    position: "absolute" as const,
+    top: "22%",
+    left: "50%",
+    transform: "translateX(-50%)",
+    padding: "14px 28px",
+    background: "radial-gradient(ellipse at center, rgba(160,40,10,0.82), rgba(60,10,0,0.55) 70%, transparent 100%)",
+    borderRadius: 10,
+    textAlign: "center" as const,
+    pointerEvents: "none" as const,
+    transition: "opacity 0.12s linear",
+    fontFamily: "monospace",
+    zIndex: 30,
+  },
+  championBannerTop: {
+    color: "#ff6030",
+    fontSize: 22,
+    fontWeight: "bold" as const,
+    letterSpacing: 3,
+    textShadow: "0 0 12px rgba(255,100,40,0.7)",
+  },
+  championBannerSub: {
+    color: "#ffcc80",
+    fontSize: 13,
+    letterSpacing: 2,
+    marginTop: 4,
+    textShadow: "0 0 6px rgba(255,170,80,0.6)",
   },
   gearStrip: {
     position: "absolute" as const,

@@ -31,7 +31,7 @@ import {
 } from "./LabyrinthMaze";
 import { spawnLabProjectile, type LabProjectile } from "./LabyrinthProjectile";
 
-export type EnemyKind = "corridor_guardian" | "trap_spawner" | "mimic" | "shadow_stalker" | "warden";
+export type EnemyKind = "corridor_guardian" | "trap_spawner" | "mimic" | "shadow_stalker" | "warden" | "champion";
 
 export type EnemyAiState = "patrol" | "chase" | "attack" | "dead";
 
@@ -125,6 +125,28 @@ const STALKER_ATTACK_COOLDOWN = 0.9;
 const STALKER_COLLISION_RADIUS = 0.6;
 /** Distance at which stalker snaps from phasing to opaque — the "spotted!" moment. */
 export const STALKER_REVEAL_DIST = LABYRINTH_CONFIG.CELL_SIZE * 1.5;
+
+// ─── Champion tuning ─────────────────────────────────────────────────────────
+// Labyrinth's Nemesis-style mini-boss. Exactly one spawns per run at
+// a distant outer-ring cell once the run has been going ~60s. Meant
+// to feel like the warden's little brother: tougher than any
+// standard enemy, easier than the boss, and always drops a key on
+// kill for loot-room access (wired in item #7).
+//
+// Tuning is scaled to labyrinth combat, not main game:
+//   Guardian HP 120, Warden HP 800 → Champion HP 400 (midway).
+//   Guardian dmg 10, Warden dmg 35 → Champion dmg 25.
+//   Stalker is the fastest at 5.5; champion matches that — it
+//   should feel like a Class-A threat that can't be kited.
+
+export const CHAMPION_HP = 400;
+const CHAMPION_SPEED = 5.5;
+const CHAMPION_DETECTION = LABYRINTH_CONFIG.CELL_SIZE * 8;  // huge — spots you anywhere
+const CHAMPION_LEASH = LABYRINTH_CONFIG.CELL_SIZE * 20;     // never disengages
+const CHAMPION_ATTACK_RANGE = 2.2;
+const CHAMPION_ATTACK_DAMAGE = 25;
+const CHAMPION_ATTACK_COOLDOWN = 1.1;
+const CHAMPION_COLLISION_RADIUS = 1.1;
 
 /** After death, how long the husk lingers before being evicted. */
 export const ENEMY_DEATH_FADE_SEC = 0.6;
@@ -286,6 +308,62 @@ export function findStalkerSpawnCell(
   return best;
 }
 
+let championIdCounter = 0;
+
+/** Create a champion (Nemesis-style mini-boss). Starts in `chase` so
+ *  the player feels the pressure immediately. Spawn location is
+ *  chosen by the caller via findChampionSpawnCell. */
+export function makeChampion(x: number, z: number): EnemyRuntime {
+  return {
+    id: `champion-${championIdCounter++}`,
+    kind: "champion",
+    x, z,
+    angle: 0,
+    hp: CHAMPION_HP,
+    maxHp: CHAMPION_HP,
+    state: "chase",
+    aiTimer: 0,
+    attackCooldown: 0,
+    deathFadeSec: 0,
+    hitFlashTimer: 0,
+    patrolTargetX: null,
+    patrolTargetZ: null,
+    lastMoveX: 0,
+    lastMoveZ: 0,
+    fireTimer: 0,
+  };
+}
+
+/** Pick an outer-ring dead-end far from the player for the champion's
+ *  arrival. Uses Chebyshev distance from maze center ≥ 6 to ensure
+ *  the outer ring; falls back to any far-from-player dead-end if no
+ *  outer-ring candidates exist. */
+export function findChampionSpawnCell(
+  maze: Maze,
+  playerX: number,
+  playerZ: number,
+): { x: number; z: number } | null {
+  const cs = LABYRINTH_CONFIG.CELL_SIZE;
+  const minDistSq = (cs * 6) * (cs * 6);
+  const center = maze.center;
+  const outerDeadEnds = maze.deadEnds.filter((c) => {
+    const dc = Math.abs(c.col - center.col);
+    const dr = Math.abs(c.row - center.row);
+    return Math.max(dc, dr) >= 6;
+  });
+  const pool = outerDeadEnds.length > 0 ? outerDeadEnds : maze.deadEnds;
+  let best: { x: number; z: number; d: number } | null = null;
+  for (const de of pool) {
+    const { x, z } = cellToWorld(de.col, de.row);
+    const dx = x - playerX;
+    const dz = z - playerZ;
+    const d = dx * dx + dz * dz;
+    if (d < minDistSq) continue;
+    if (!best || d > best.d) best = { x, z, d };
+  }
+  return best;
+}
+
 /**
  * Pick `count` spawn cells for Trap Spawner turrets. Prefers dead-end cells
  * (enemies are harder to out-flank when wedged at a dead-end) and otherwise
@@ -387,6 +465,8 @@ export function updateEnemy(
       ? { speed: MIMIC_SPEED, detect: MIMIC_DETECTION, leash: MIMIC_LEASH, range: MIMIC_ATTACK_RANGE, damage: MIMIC_ATTACK_DAMAGE, cd: MIMIC_ATTACK_COOLDOWN, collR: MIMIC_COLLISION_RADIUS }
     : enemy.kind === "shadow_stalker"
       ? { speed: STALKER_SPEED, detect: STALKER_DETECTION, leash: STALKER_LEASH, range: STALKER_ATTACK_RANGE, damage: STALKER_ATTACK_DAMAGE, cd: STALKER_ATTACK_COOLDOWN, collR: STALKER_COLLISION_RADIUS }
+    : enemy.kind === "champion"
+      ? { speed: CHAMPION_SPEED, detect: CHAMPION_DETECTION, leash: CHAMPION_LEASH, range: CHAMPION_ATTACK_RANGE, damage: CHAMPION_ATTACK_DAMAGE, cd: CHAMPION_ATTACK_COOLDOWN, collR: CHAMPION_COLLISION_RADIUS }
     : { speed: GUARDIAN_SPEED, detect: GUARDIAN_DETECTION, leash: GUARDIAN_LEASH, range: GUARDIAN_ATTACK_RANGE, damage: GUARDIAN_ATTACK_DAMAGE, cd: GUARDIAN_ATTACK_COOLDOWN, collR: GUARDIAN_COLLISION_RADIUS };
 
   const dx = playerX - enemy.x;
@@ -600,6 +680,7 @@ export function enemyCollisionRadius(kind: EnemyKind): number {
     case "mimic": return MIMIC_COLLISION_RADIUS;
     case "shadow_stalker": return STALKER_COLLISION_RADIUS;
     case "warden": return 1.8;
+    case "champion": return CHAMPION_COLLISION_RADIUS;
   }
 }
 
