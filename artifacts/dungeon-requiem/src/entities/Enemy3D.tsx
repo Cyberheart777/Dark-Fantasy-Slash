@@ -681,8 +681,11 @@ class GLBErrorBoundary extends Component<
   }
 }
 
-// Preload alongside the player's preload — same URL, useGLTF dedupes.
-useGLTF.preload(WARRIOR_GLB_URL);
+// Warrior-champion GLB preload disabled alongside the player-warrior
+// revert — both now render with the procedural WarriorChampionMesh /
+// WarriorMeshAnimated. Commented (not deleted) so the GLB path can
+// be re-enabled by uncommenting if the asset is restored.
+// useGLTF.preload(WARRIOR_GLB_URL);
 
 function WarriorChampionMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
@@ -1168,12 +1171,11 @@ export function Enemy3D({ enemy }: EnemyProps) {
         {enemy.type === "elite" && <EliteMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}
         {enemy.type === "boss" && <BossMesh {...meshProps} {...attackProps} />}
         {enemy.type === "xp_goblin" && <XPGoblinMesh {...meshProps} />}
+        {/* Warrior champion GLB reverted to procedural alongside the
+            player-warrior revert. Keeps the warrior silhouette
+            consistent across player + champion enemy. */}
         {enemy.type === "warrior_champion" && (
-          <GLBErrorBoundary fallback={<WarriorChampionMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}>
-            <Suspense fallback={<WarriorChampionMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}>
-              <WarriorChampionGLBMesh flash={flash} />
-            </Suspense>
-          </GLBErrorBoundary>
+          <WarriorChampionMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />
         )}
         {enemy.type === "mage_champion" && <MageChampionMesh {...meshProps} />}
         {enemy.type === "rogue_champion" && <RogueChampionMesh {...meshProps} walkSpeed={walkSpeed} />}

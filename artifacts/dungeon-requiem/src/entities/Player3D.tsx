@@ -29,7 +29,12 @@ export function Player3D({ gs }: PlayerProps) {
 
   if (charClass === "mage")  return <MageMeshAnimated  gs={gs} />;
   if (charClass === "rogue") return <RogueMeshAnimated gs={gs} />;
-  return <WarriorMeshWithGLB gs={gs} />;
+  // Warrior GLB reverted to procedural per user request — consistent,
+  // stable visual across both main game and labyrinth. Mage + Rogue
+  // GLBs are unaffected. The GLB loader code below is kept for now
+  // (dead) in case we ever re-enable; the preload is disabled in
+  // WarriorMeshGLB definition so the network fetch no longer fires.
+  return <WarriorMeshAnimated gs={gs} />;
 }
 
 // ─── Warrior: GLB loader with procedural fallback ────────────────────────────
@@ -168,9 +173,11 @@ function WarriorMeshGLB({ gs }: PlayerProps) {
   return <primitive object={scene} />;
 }
 
-// Preload the GLB so the first character-select → playing transition doesn't
-// hitch waiting on an 8MB fetch. Safe to call at module scope.
-useGLTF.preload(WARRIOR_GLB_URL);
+// Warrior GLB preload disabled — reverted to procedural warrior.
+// The GLB loader + preload below stays as dead code in case the
+// asset is re-enabled later; commenting the preload stops the
+// browser from fetching the 8 MB file on every page load.
+// useGLTF.preload(WARRIOR_GLB_URL);
 
 // ─── Warrior — low-poly geometry (GLBs load at Electron/Steam package time) ───
 
