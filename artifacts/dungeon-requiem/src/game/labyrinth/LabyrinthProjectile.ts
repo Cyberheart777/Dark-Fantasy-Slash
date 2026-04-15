@@ -35,7 +35,7 @@ export interface LabProjectile {
   hitIds: Set<string>;  // enemy/player ids already hit this projectile
   color: string;
   glowColor: string;
-  style: "orb" | "dagger";
+  style: "orb" | "dagger" | "crescent";
   dead: boolean;
 }
 
@@ -135,9 +135,13 @@ export function tickLabProjectiles(
       }
     } else {
       // Enemy projectile → check player sphere.
+      // Collision radius is max(player, projectile). Most enemy
+      // projectiles have p.radius < playerRadius so this is a no-op
+      // for them; the arc-slash crescent sets p.radius = 1.6 to get
+      // its wide collision footprint without affecting others.
       const dx = ctx.playerX - p.x;
       const dz = ctx.playerZ - p.z;
-      const rr = ctx.playerRadius;
+      const rr = Math.max(ctx.playerRadius, p.radius);
       if (dx * dx + dz * dz <= rr * rr) {
         ctx.playerDamageAccum.value += p.damage;
         p.dead = true;

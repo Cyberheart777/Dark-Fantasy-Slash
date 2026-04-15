@@ -217,6 +217,22 @@ const RIVAL_WARRIOR_WARCRY_SEC = 4.0;
 const RIVAL_WARRIOR_WARCRY_CD = 20.0;
 /** Damage multiplier while War Cry is active. */
 const RIVAL_WARRIOR_WARCRY_MULT = 1.4;
+/** Arc-slash cooldown (seconds). Ported from Trial of Champions
+ *  warrior_champion (GameScene.tsx:2283-2289). ToC uses 2.8s base
+ *  with enrage scaling; labyrinth spec pins it to a consistent 2s
+ *  (no phase scaling this pass — tune post-Alpha if needed). */
+const RIVAL_WARRIOR_ARC_SLASH_CD = 2.0;
+/** Arc-slash damage. ToC uses e.damage * 1.2; we mirror that on the
+ *  labyrinth's RIVAL_WARRIOR_ATTACK_DAMAGE. */
+const RIVAL_WARRIOR_ARC_SLASH_DAMAGE_MULT = 1.2;
+/** Projectile speed — ToC base is 8 u/s. */
+const RIVAL_WARRIOR_ARC_SLASH_SPEED = 8.0;
+/** Max engagement range for arc-slash firing — the rival won't
+ *  bother from across the maze; ports ToC's cDist <= 12 check. */
+const RIVAL_WARRIOR_ARC_SLASH_MAX_DIST = 12.0;
+/** Min engagement range — if the player is already in melee range,
+ *  swing instead. Keeps arc slash as a mid-range pressure tool. */
+const RIVAL_WARRIOR_ARC_SLASH_MIN_DIST = 2.5;
 
 export const RIVAL_MAGE_HP = 280;
 const RIVAL_MAGE_SPEED = 4.5;
@@ -706,6 +722,42 @@ export function updateEnemy(
         r.buffActive = true;
         r.activeSec = RIVAL_WARRIOR_WARCRY_SEC;
         r.abilityCooldown = RIVAL_WARRIOR_WARCRY_CD;
+      }
+      // Arc-slash fire check — port of the Trial of Champions
+      // warrior_champion crescent burst (GameScene.tsx:2253-2273).
+      // Fires one crescent every 2 s toward the player whenever the
+      // player is within the engagement band. secondaryCooldown
+      // tracks this independently from War Cry's abilityCooldown.
+      if (r.secondaryCooldown <= 0) {
+        const dxA = playerX - enemy.x;
+        const dzA = playerZ - enemy.z;
+        const distA = Math.sqrt(dxA * dxA + dzA * dzA);
+        if (distA > RIVAL_WARRIOR_ARC_SLASH_MIN_DIST && distA < RIVAL_WARRIOR_ARC_SLASH_MAX_DIST) {
+          const baseAngle = Math.atan2(dxA, dzA);
+          const speed = RIVAL_WARRIOR_ARC_SLASH_SPEED;
+          let dmg = RIVAL_WARRIOR_ATTACK_DAMAGE * RIVAL_WARRIOR_ARC_SLASH_DAMAGE_MULT;
+          if (r.buffActive) dmg *= RIVAL_WARRIOR_WARCRY_MULT;
+          projectiles.push({
+            id: `arcslash${rivalIdCounter++}`,
+            owner: "enemy",
+            x: enemy.x,
+            z: enemy.z,
+            vx: Math.sin(baseAngle) * speed,
+            vz: Math.cos(baseAngle) * speed,
+            damage: dmg,
+            // Bigger collision footprint than a standard enemy orb —
+            // tickLabProjectiles uses max(playerRadius, p.radius).
+            radius: 1.6,
+            lifetime: 2.5,
+            piercing: false,
+            hitIds: new Set(),
+            color: "#ff4400",
+            glowColor: "#ff2200",
+            style: "crescent",
+            dead: false,
+          });
+          r.secondaryCooldown = RIVAL_WARRIOR_ARC_SLASH_CD;
+        }
       }
     }
   }
