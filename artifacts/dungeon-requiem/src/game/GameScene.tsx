@@ -123,6 +123,11 @@ export interface EnemyRuntime {
   // ── Elite affixes ─────────────────────────────────────────────────────
   affix: "none" | "shielded" | "vampiric" | "berserker";
   shieldHp: number;            // shielded affix: absorbs first hit
+  /** Seconds remaining on the affix-icon pulse animation. Set to
+   *  0.5 by the affix-trigger sites (shield break, vampiric heal,
+   *  berserker land hit) and decayed each frame by Enemy3D's
+   *  AffixIcons useFrame. Visual-only — does not affect mechanics. */
+  affixPulseTimer: number;
 }
 
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
@@ -563,7 +568,7 @@ function spawnGoblin(): EnemyRuntime {
     minionTimer: 0, radialTimer: 3.8, // taunt cycle timer
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: 0,
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
-    affix: "none" as const, shieldHp: 0,
+    affix: "none" as const, shieldHp: 0, affixPulseTimer: 0,
   };
 }
 
@@ -688,6 +693,7 @@ function applyEnemyDamage(e: EnemyRuntime, rawDmg: number): number {
     e.shieldHp = 0;
     e.hitFlashTimer = 0.3;
     e.emissive = e.color; // clear blue tint
+    e.affixPulseTimer = 0.5; // teach the player: shield just absorbed a hit
     return 0; // shield absorbed the hit
   }
   e.hp -= rawDmg;
@@ -730,7 +736,7 @@ function spawnEnemy(wave: number, hpMult = 1, dmgMult = 1, speedMult = 1): Enemy
     minionTimer: 0, radialTimer: 0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
-    affix: "none" as const, shieldHp: 0,
+    affix: "none" as const, shieldHp: 0, affixPulseTimer: 0,
   };
   // Roll affix: 12% chance after wave 10, non-boss enemies only
   if (wave >= 10 && type !== "boss" && Math.random() < 0.12) {
@@ -783,7 +789,7 @@ function spawnBoss(wave: number): EnemyRuntime {
     radialTimer: 5,
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: Math.round(def.damage * (1 + (bossCount - 1) * 0.15)),
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
-    affix: "none" as const, shieldHp: 0,
+    affix: "none" as const, shieldHp: 0, affixPulseTimer: 0,
   };
 }
 
@@ -811,7 +817,7 @@ function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult =
     radialTimer: cls === "mage" ? 2.2 : cls === "rogue" ? 0.75 : 0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
-    affix: "none" as const, shieldHp: 0,
+    affix: "none" as const, shieldHp: 0, affixPulseTimer: 0,
   };
 }
 
@@ -1691,9 +1697,19 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
-              // Vampiric affix: heal 20% of damage dealt
+              // Vampiric affix: heal 20% of damage dealt + pulse
+              // the icon so the player learns the heal-on-hit
+              // mechanic from visual feedback (item 2 spec).
               if (e.affix === "vampiric") {
                 e.hp = Math.min(e.maxHp, e.hp + effective * 0.2);
+                e.affixPulseTimer = 0.5;
+              }
+              // Berserker doesn't have a discrete activation event
+              // (its buff is applied at spawn), so we pulse on every
+              // melee hit it lands — telegraphs that THIS enemy is
+              // doing extra damage right now.
+              if (e.affix === "berserker") {
+                e.affixPulseTimer = 0.5;
               }
               // Iron Reprisal shockwave
               if (stats.ironReprisalEnabled) {

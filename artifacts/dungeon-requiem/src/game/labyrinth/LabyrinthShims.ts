@@ -272,6 +272,7 @@ export function createEnemyShim(labEnemy: LabEnemy): EnemyRuntime {
     convergenceTimer: 0,
     affix: "none",
     shieldHp: 0,
+    affixPulseTimer: 0,
   };
 }
 

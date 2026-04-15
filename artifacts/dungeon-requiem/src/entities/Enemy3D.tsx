@@ -1136,15 +1136,22 @@ function AffixIcons({ enemy }: { enemy: EnemyRuntime }) {
   // Sit above the existing health-bar Y (hpBarHeight = scale * 2.5 + 0.5
   // in the main render below) plus 0.55u of clearance. Rendered as a
   // sibling of the scaled enemy mesh so the icon size is fixed on
-  // screen regardless of enemy scale.
+  // screen regardless of enemy.scale.
   const yOffset = (enemy.scale ?? 1) * 2.5 + 1.05;
-  useFrame(({ camera }) => {
+  useFrame((state, delta) => {
     if (!groupRef.current) return;
     // Camera-billboard so the icon reads flat from the top-down view.
     // Parent group has no rotation, so a direct quaternion.copy is
     // sufficient (matches the HealthBar pattern at line ~1154).
-    groupRef.current.quaternion.copy(camera.quaternion);
+    groupRef.current.quaternion.copy(state.camera.quaternion);
     groupRef.current.visible = enemy.dead !== true;
+    // Decay the affix-icon pulse timer here so the visual stops
+    // wherever the activation site set it. Only this renderer cares
+    // about the pulse — keeping the decay local avoids a per-frame
+    // pass in the combat loop.
+    if (enemy.affixPulseTimer > 0) {
+      enemy.affixPulseTimer = Math.max(0, enemy.affixPulseTimer - delta);
+    }
   });
   if (affixes.length === 0) return null;
   return (
@@ -1153,6 +1160,7 @@ function AffixIcons({ enemy }: { enemy: EnemyRuntime }) {
         <AffixIcon
           key={kind}
           affix={kind}
+          enemy={enemy}
           // Stack horizontally — centred when N items, 0.55u apart.
           offsetX={(i - (affixes.length - 1) / 2) * 0.55}
         />
@@ -1161,58 +1169,81 @@ function AffixIcons({ enemy }: { enemy: EnemyRuntime }) {
   );
 }
 
-function AffixIcon({ affix, offsetX }: { affix: EnemyAffix; offsetX: number }) {
+function AffixIcon({ affix, enemy, offsetX }: { affix: EnemyAffix; enemy: EnemyRuntime; offsetX: number }) {
   const def = AFFIX_DEFS[affix];
   const color = def.color;
-  if (affix === "shielded") {
-    return (
-      <group position={[offsetX, 0, 0]}>
-        {/* Octagonal plate — shield-shaped silhouette. */}
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.2, 0.2, 0.05, 8]} />
-          <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
-        </mesh>
-        {/* White centre crossbar reads as a shield boss. */}
-        <mesh position={[0, 0, 0.04]}>
-          <boxGeometry args={[0.06, 0.22, 0.01]} />
-          <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthWrite={false} />
-        </mesh>
-      </group>
-    );
-  }
-  if (affix === "vampiric") {
-    return (
-      <group position={[offsetX, 0, 0]} rotation={[0, 0, Math.PI / 4]}>
-        {/* Diamond — rotated cube, reads as a blood drop. */}
-        <mesh>
-          <boxGeometry args={[0.26, 0.26, 0.05]} />
-          <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
-        </mesh>
-        {/* Inner darker centre for depth. */}
-        <mesh position={[0, 0, 0.03]}>
-          <boxGeometry args={[0.1, 0.1, 0.01]} />
-          <meshBasicMaterial color="#660010" transparent opacity={0.7} depthWrite={false} />
-        </mesh>
-      </group>
-    );
-  }
-  if (affix === "berserker") {
-    return (
-      <group position={[offsetX, 0, 0]}>
-        {/* Triangle — cone pointing up, reads as a flame. */}
-        <mesh>
-          <coneGeometry args={[0.2, 0.36, 3]} />
-          <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
-        </mesh>
-        {/* Hot-yellow inner core. */}
-        <mesh scale={0.55}>
-          <coneGeometry args={[0.2, 0.36, 3]} />
-          <meshBasicMaterial color="#ffe080" transparent opacity={0.85} depthWrite={false} />
-        </mesh>
-      </group>
-    );
-  }
-  return null;
+  // Wrapper group whose scale we drive each frame from the pulse
+  // timer. Pulse curve: linear ease-out from 1.55 -> 1.0 over the
+  // 0.5s lifetime. Brief, doesn't loop — matches item-2 spec.
+  const pulseRef = useRef<THREE.Group>(null);
+  // Shielded gets a separate flash plate that strobes white on
+  // activation; ref into it for opacity control.
+  const flashRef = useRef<THREE.Mesh>(null);
+  useFrame(() => {
+    if (!pulseRef.current) return;
+    const t = enemy.affixPulseTimer;
+    // Pulse fraction 0..1 across the 0.5s window. 1 = just triggered.
+    const pulse = t > 0 ? Math.max(0, Math.min(1, t / 0.5)) : 0;
+    const scale = 1 + pulse * 0.55;
+    pulseRef.current.scale.setScalar(scale);
+    if (flashRef.current) {
+      const mat = flashRef.current.material as THREE.MeshBasicMaterial;
+      mat.opacity = pulse;  // strobe white on shield-absorb
+    }
+  });
+  return (
+    <group ref={pulseRef} position={[offsetX, 0, 0]}>
+      {affix === "shielded" && (
+        <>
+          {/* Octagonal plate — shield-shaped silhouette. */}
+          <mesh rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.2, 0.2, 0.05, 8]} />
+            <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
+          </mesh>
+          {/* White centre crossbar reads as a shield boss. */}
+          <mesh position={[0, 0, 0.04]}>
+            <boxGeometry args={[0.06, 0.22, 0.01]} />
+            <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthWrite={false} />
+          </mesh>
+          {/* White flash plate on top — opacity driven by pulse
+              timer. Strobes during the 0.5s after a shield absorbs
+              a hit. */}
+          <mesh ref={flashRef} position={[0, 0, 0.05]}>
+            <cylinderGeometry args={[0.24, 0.24, 0.02, 8]} />
+            <meshBasicMaterial color="#ffffff" transparent opacity={0} depthWrite={false} />
+          </mesh>
+        </>
+      )}
+      {affix === "vampiric" && (
+        <group rotation={[0, 0, Math.PI / 4]}>
+          {/* Diamond — rotated cube, reads as a blood drop. */}
+          <mesh>
+            <boxGeometry args={[0.26, 0.26, 0.05]} />
+            <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
+          </mesh>
+          {/* Inner darker centre for depth. */}
+          <mesh position={[0, 0, 0.03]}>
+            <boxGeometry args={[0.1, 0.1, 0.01]} />
+            <meshBasicMaterial color="#660010" transparent opacity={0.7} depthWrite={false} />
+          </mesh>
+        </group>
+      )}
+      {affix === "berserker" && (
+        <>
+          {/* Triangle — cone pointing up, reads as a flame. */}
+          <mesh>
+            <coneGeometry args={[0.2, 0.36, 3]} />
+            <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
+          </mesh>
+          {/* Hot-yellow inner core. */}
+          <mesh scale={0.55}>
+            <coneGeometry args={[0.2, 0.36, 3]} />
+            <meshBasicMaterial color="#ffe080" transparent opacity={0.85} depthWrite={false} />
+          </mesh>
+        </>
+      )}
+    </group>
+  );
 }
 
 // ─── Main Enemy3D Export (with spawn scale-in + death shrink) ────────────────
