@@ -178,6 +178,8 @@ import {
 } from "./LabyrinthDash";
 import { CHARACTER_DATA, type CharacterClass } from "../../data/CharacterData";
 import type { RaceType } from "../../data/RaceData";
+import { resolveLabPlayerStats } from "./LabyrinthStats";
+import type { PlayerStats } from "../../data/UpgradeData";
 import { audioManager } from "../../audio/AudioManager";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
@@ -314,20 +316,29 @@ export function LabyrinthScene() {
   const selectedRace = useGameStore((s) => s.selectedRace);
   const classDef = CHARACTER_DATA[selectedClass];
 
-  // Combat stats derived from the class definition. Labyrinth mode
-  // reduces weapon range by 25% vs the main game — tighter melee
-  // arcs and shorter projectile ranges tune the tight corridor
-  // combat where the main-game's wide-open-arena ranges feel too
-  // generous. Same shape as combatStats so the combat system code
-  // is unchanged.
+  // Resolved player stats — composes class + race + Soul Forge +
+  // Trial buffs via the same pipeline the main game uses
+  // (GameScene.tsx:264-293). One-shot resolve at scene mount;
+  // gear bonuses still layer on top per-tick via gearStateRef.
+  const labStats = useMemo(
+    () => resolveLabPlayerStats(selectedClass, selectedRace),
+    [selectedClass, selectedRace],
+  );
+
+  // Combat stats derived from the RESOLVED player stats (not raw
+  // classDef) so Soul Forge upgrades like Honed Edge (+2 dmg/rank),
+  // Swift Strikes (+1% atkspd/rank), and Executioner's Reach
+  // (+0.5 range/rank) carry into the labyrinth. Labyrinth mode
+  // still reduces weapon range by 25% vs the main game — tighter
+  // corridor combat.
   const LABYRINTH_RANGE_MULT = 0.75;
   const combatStats: LabCombatStats = useMemo(() => ({
-    damage: classDef.damage,
-    atkRange: classDef.attackRange * LABYRINTH_RANGE_MULT,
-    // attackSpeed is in swings-per-second in CharacterData; convert
-    // to seconds-per-swing for atkCooldown.
-    atkCooldown: 1 / Math.max(0.01, classDef.attackSpeed),
-  }), [classDef]);
+    damage: labStats.damage,
+    atkRange: labStats.attackRange * LABYRINTH_RANGE_MULT,
+    // attackSpeed is in swings-per-second; convert to
+    // seconds-per-swing for atkCooldown.
+    atkCooldown: 1 / Math.max(0.01, labStats.attackSpeed),
+  }), [labStats]);
 
   // InputManager lives at the scene level so both the R3F Canvas and the
   // mobile-touch overlay (which is outside Canvas) can share it.
@@ -336,9 +347,13 @@ export function LabyrinthScene() {
 
   // Shared player + zone state. The Canvas useFrame loop writes to this;
   // the HUD polls it on an interval so we don't re-render React at 60fps.
+  // Initial HP comes from the resolved stats so Soul Forge Iron
+  // Soul (+10 HP/rank) + Trial of Champions clear bonuses flow
+  // through to the labyrinth starting pool. Captured ONCE via
+  // useRef-init so remounting the scene doesn't wipe in-run HP.
   const playerRef = useRef<LabPlayer>({
     x: 0, z: 0, angle: 0, vx: 0, vz: 0,
-    hp: classDef.hp, maxHp: classDef.hp,
+    hp: labStats.maxHealth, maxHp: labStats.maxHealth,
     isDashing: false,
   });
   const labDashRef = useRef<LabDashState>(makeLabDashState());
@@ -577,7 +592,8 @@ export function LabyrinthScene() {
           labPoisonRef={labPoisonRef}
           attackStateRef={attackStateRef}
           labDashRef={labDashRef}
-          dashCooldownSec={classDef.dashCooldown}
+          dashCooldownSec={labStats.dashCooldown}
+          moveSpeedBonus={labStats.moveSpeed - classDef.moveSpeed}
           enemiesRef={enemiesRef}
           deathFxRef={deathFxRef}
           groundFxRef={groundFxRef}
@@ -595,13 +611,14 @@ export function LabyrinthScene() {
           ranSalvageRef={ranSalvageRef}
           lootRoomCell={lootRoomCell}
           vaultOpenDir={lootLayout.vaultOpenDir}
-          critChance={classDef.critChance}
+          critChance={labStats.critChance}
           runStartMs={runStartMs}
         />
       </Canvas>
       <LabyrinthHUD
         maze={maze}
         charClass={selectedClass}
+        labStats={labStats}
         playerRef={playerRef}
         sharedRef={sharedRef}
         gearStateRef={gearStateRef}
@@ -632,6 +649,7 @@ function LabyrinthWorld({
   attackStateRef,
   labDashRef,
   dashCooldownSec,
+  moveSpeedBonus,
   enemiesRef,
   deathFxRef,
   groundFxRef,
@@ -666,6 +684,8 @@ function LabyrinthWorld({
    *  a primitive rather than re-deriving inside the loop because the
    *  class is fixed for the lifetime of the scene. */
   dashCooldownSec: number;
+  /** Soul Forge + race movement-speed delta. See MovementLoop prop. */
+  moveSpeedBonus: number;
   enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
   deathFxRef: React.MutableRefObject<LabDeathFx[]>;
   groundFxRef: React.MutableRefObject<LabGroundFx[]>;
@@ -836,6 +856,7 @@ function LabyrinthWorld({
         dashCooldownSec={dashCooldownSec}
         gearStateRef={gearStateRef}
         lootRoomCell={lootRoomCell}
+        moveSpeedBonus={moveSpeedBonus}
       />
       <CombatEnemyLoop
         maze={maze}
@@ -1204,6 +1225,7 @@ function MovementLoop({
   dashCooldownSec,
   gearStateRef,
   lootRoomCell,
+  moveSpeedBonus,
 }: {
   playerRef: React.MutableRefObject<LabPlayer>;
   maze: Maze;
@@ -1213,6 +1235,10 @@ function MovementLoop({
   dashCooldownSec: number;
   gearStateRef: React.MutableRefObject<LabGearState>;
   lootRoomCell: { col: number; row: number };
+  /** Soul Forge + race movement-speed delta over the class baseline.
+   *  Added to the labyrinth's 5.0 BASE_WALK_SPEED so meta upgrades
+   *  flow through without overwriting the labyrinth slow-down. */
+  moveSpeedBonus: number;
 }) {
   // World-space centre of the loot-room cell; used by the loot-door
   // collision check below. Recomputed only when lootRoomCell changes.
@@ -1274,9 +1300,15 @@ function MovementLoop({
     // quick repositioning. Total 45% below the main game baseline.
     // Gear moveSpeed bonus is added on top — cap at +6 so a triple-
     // stacked moveSpeed build can't teleport across the map.
+    // Labyrinth moves at a deliberately slower 5.0 baseline vs the
+    // main game's ~8-13 class range — tighter pacing for corridor
+    // combat. Soul Forge + race bonuses applied as a DELTA
+    // (moveSpeedBonus prop) so flat speed upgrades (Phantom Step
+    // +0.4/rank) carry through without overwriting the labyrinth
+    // slow-down. Gear moveSpeed bonus capped at +6 on top of that.
     const BASE_WALK_SPEED = 5.0;
-    const moveBonus = Math.min(6, gearStateRef.current.bonuses.moveSpeed ?? 0);
-    const WALK_SPEED = BASE_WALK_SPEED + moveBonus;
+    const gearMoveBonus = Math.min(6, gearStateRef.current.bonuses.moveSpeed ?? 0);
+    const WALK_SPEED = BASE_WALK_SPEED + moveSpeedBonus + gearMoveBonus;
     let moveVX: number;
     let moveVZ: number;
     if (dashState.timer > 0) {
@@ -2269,6 +2301,7 @@ function collidesWithAnyWall(
 function LabyrinthHUD({
   maze,
   charClass,
+  labStats,
   playerRef,
   sharedRef,
   gearStateRef,
@@ -2276,6 +2309,10 @@ function LabyrinthHUD({
 }: {
   maze: Maze;
   charClass: CharacterClass;
+  /** Resolved starting stats (class + race + Soul Forge + Trial).
+   *  Passed down to the Character view for display so "base" values
+   *  in the diagnostic already include meta upgrades. */
+  labStats: PlayerStats;
   playerRef: React.MutableRefObject<LabPlayer>;
   sharedRef: React.MutableRefObject<LabSharedState>;
   gearStateRef: React.MutableRefObject<LabGearState>;
@@ -2672,6 +2709,7 @@ function LabyrinthHUD({
           {pauseView === "character" && (
             <LabyrinthCharacterView
               charClass={charClass}
+              labStats={labStats}
               playerRef={playerRef}
               gearStateRef={gearStateRef}
               progressionRef={progressionRef}
@@ -2817,6 +2855,7 @@ function ChampionBanner({ elapsedSec, announcedAt }: {
  */
 function LabyrinthCharacterView({
   charClass,
+  labStats,
   playerRef,
   gearStateRef,
   progressionRef,
@@ -2824,6 +2863,10 @@ function LabyrinthCharacterView({
   onBack,
 }: {
   charClass: CharacterClass;
+  /** Resolved starting stats (class + race + Soul Forge + Trial).
+   *  The "base" values displayed in the stat sheet come from here
+   *  so the diagnostic already reflects meta bonuses. */
+  labStats: PlayerStats;
   playerRef: React.MutableRefObject<LabPlayer>;
   gearStateRef: React.MutableRefObject<LabGearState>;
   progressionRef: React.MutableRefObject<LabProgressionState>;
@@ -2831,6 +2874,7 @@ function LabyrinthCharacterView({
   onBack: () => void;
 }) {
   const def = CHARACTER_DATA[charClass];
+  const classRaw = def;  // raw class baseline (pre-meta) — shown as "class" line
   const p = playerRef.current;
   const gear = gearStateRef.current;
   const b = gear.bonuses;
@@ -2879,18 +2923,25 @@ function LabyrinthCharacterView({
     bump();
   };
 
-  // Mirror the same math the combat loop does every tick. If the
-  // combat loop's formula changes, update this block to match
-  // (there is no shared helper — the values ARE the live reads).
-  const baseAtkSpeed = def.attackSpeed;
+  // Mirror the same math the combat loop does every tick. "Base"
+  // comes from labStats (which already includes Soul Forge + race
+  // + Trial buffs). "Gear" comes from the cached bonus totals. The
+  // effective value is base + gear (matching the per-tick formula
+  // inside CombatEnemyLoop / MovementLoop).
+  const baseAtkSpeed = labStats.attackSpeed;
   const effAtkSpeed = baseAtkSpeed + (b.attackSpeed ?? 0);
-  const effDamage = def.damage + (b.damage ?? 0);
-  const effCrit = def.critChance + (b.critChance ?? 0);
-  const effMoveSpeedRaw = 5.0 + Math.min(6, b.moveSpeed ?? 0);   // mirrors MovementLoop cap
-  const effArmor = def.armor;                                     // no gear armor bonus wired yet
+  const effDamage = labStats.damage + (b.damage ?? 0);
+  const effCrit = labStats.critChance + (b.critChance ?? 0);
+  // Move speed: labyrinth's 5.0 baseline + Soul Forge/race delta over
+  // the class baseline + gear bonus (capped). Same formula as
+  // MovementLoop's WALK_SPEED calc.
+  const metaMoveBonus = labStats.moveSpeed - classRaw.moveSpeed;
+  const effMoveSpeedRaw = 5.0 + metaMoveBonus + Math.min(6, b.moveSpeed ?? 0);
+  const effArmor = labStats.armor;
   const regenPerSec = 0.1 * level;
-  // Range: combatStats.atkRange = classDef.attackRange * 0.75
-  const effRange = def.attackRange * 0.75;
+  // Range: combatStats.atkRange = labStats.attackRange * 0.75 (same
+  // labyrinth corridor-combat modifier as the combat loop).
+  const effRange = labStats.attackRange * 0.75;
 
   // Equipped-gear rows — itemised bonus display so the player can
   // see exactly which piece contributes what (vs. just the total).
@@ -2923,14 +2974,52 @@ function LabyrinthCharacterView({
       {/* ─── Live stats block ─── */}
       <div style={styles.charSectionTitle}>LIVE STATS</div>
       <div style={styles.charStatsGrid}>
-        <StatRow label="Health" value={`${Math.ceil(p.hp)} / ${p.maxHp}`} hint={`+${(b.maxHealth ?? 0).toFixed(0)} gear`} />
+        <StatRow
+          label="Health"
+          value={`${Math.ceil(p.hp)} / ${p.maxHp}`}
+          hint={`class ${classRaw.hp} · meta ${(labStats.maxHealth - classRaw.hp).toFixed(0)} · gear ${(b.maxHealth ?? 0).toFixed(0)}`}
+        />
         <StatRow label="Regen / sec" value={regenPerSec.toFixed(2)} hint={`0.1 × LVL ${level}`} />
-        <StatRow label="Damage" value={effDamage.toFixed(1)} hint={`${def.damage.toFixed(1)} base + ${(b.damage ?? 0).toFixed(1)} gear`} />
-        <StatRow label="Attack speed" value={effAtkSpeed.toFixed(2)} hint={`${baseAtkSpeed.toFixed(2)} base + ${(b.attackSpeed ?? 0).toFixed(2)} gear`} />
-        <StatRow label="Attack range" value={effRange.toFixed(1)} hint={`${def.attackRange.toFixed(1)} × 0.75 labyrinth`} />
-        <StatRow label="Crit chance" value={`${(effCrit * 100).toFixed(1)}%`} hint={`${(def.critChance * 100).toFixed(1)}% base + ${((b.critChance ?? 0) * 100).toFixed(1)}% gear`} />
-        <StatRow label="Move speed" value={effMoveSpeedRaw.toFixed(2)} hint={`5.00 base + ${Math.min(6, b.moveSpeed ?? 0).toFixed(2)} gear (cap 6)`} />
-        <StatRow label="Armor" value={effArmor.toFixed(0)} hint="base class value" />
+        <StatRow
+          label="Damage"
+          value={effDamage.toFixed(1)}
+          hint={`class ${classRaw.damage} · meta ${(labStats.damage - classRaw.damage).toFixed(0)} · gear ${(b.damage ?? 0).toFixed(1)}`}
+        />
+        <StatRow
+          label="Attack speed"
+          value={effAtkSpeed.toFixed(2)}
+          hint={`class ${classRaw.attackSpeed.toFixed(2)} · meta +${(labStats.attackSpeed - classRaw.attackSpeed).toFixed(2)} · gear +${(b.attackSpeed ?? 0).toFixed(2)}`}
+        />
+        <StatRow
+          label="Attack range"
+          value={effRange.toFixed(1)}
+          hint={`${labStats.attackRange.toFixed(1)} × 0.75 labyrinth`}
+        />
+        <StatRow
+          label="Crit chance"
+          value={`${(effCrit * 100).toFixed(1)}%`}
+          hint={`class ${(classRaw.critChance * 100).toFixed(1)}% · meta ${((labStats.critChance - classRaw.critChance) * 100).toFixed(1)}% · gear ${((b.critChance ?? 0) * 100).toFixed(1)}%`}
+        />
+        <StatRow
+          label="Crit damage"
+          value={`${labStats.critDamageMultiplier.toFixed(2)}×`}
+          hint="base class multiplier"
+        />
+        <StatRow
+          label="Move speed"
+          value={effMoveSpeedRaw.toFixed(2)}
+          hint={`5.00 lab base · meta ${metaMoveBonus.toFixed(2)} · gear ${Math.min(6, b.moveSpeed ?? 0).toFixed(2)} (cap 6)`}
+        />
+        <StatRow
+          label="Armor"
+          value={effArmor.toFixed(0)}
+          hint={`class ${classRaw.armor} · meta ${(labStats.armor - classRaw.armor).toFixed(0)}`}
+        />
+        <StatRow
+          label="Dash CD"
+          value={`${labStats.dashCooldown.toFixed(2)}s`}
+          hint={`class ${classRaw.dashCooldown.toFixed(2)}s · meta ${(labStats.dashCooldown - classRaw.dashCooldown).toFixed(2)}s`}
+        />
         {charClass === "rogue" && (
           <StatRow label="Poison (shroud)" value="3 dps / stack · cap 5" hint="labyrinth default" />
         )}
