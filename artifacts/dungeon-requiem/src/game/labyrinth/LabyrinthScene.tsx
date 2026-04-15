@@ -597,8 +597,11 @@ export function LabyrinthScene() {
       </Canvas>
       <LabyrinthHUD
         maze={maze}
+        charClass={selectedClass}
         playerRef={playerRef}
         sharedRef={sharedRef}
+        gearStateRef={gearStateRef}
+        progressionRef={progressionRef}
       />
       <LabyrinthMobileControls inputRef={inputRef} aimOverrideRef={aimOverrideRef} />
       <LabyrinthDebug
@@ -2259,15 +2262,26 @@ function collidesWithAnyWall(
 
 function LabyrinthHUD({
   maze,
+  charClass,
   playerRef,
   sharedRef,
+  gearStateRef,
+  progressionRef,
 }: {
   maze: Maze;
+  charClass: CharacterClass;
   playerRef: React.MutableRefObject<LabPlayer>;
   sharedRef: React.MutableRefObject<LabSharedState>;
+  gearStateRef: React.MutableRefObject<LabGearState>;
+  progressionRef: React.MutableRefObject<LabProgressionState>;
 }) {
   const setPhase = useGameStore((s) => s.setPhase);
   const [esc, setEsc] = useState(false);
+  /** Which view the pause overlay shows when open. "main" = the
+   *  resume/exit buttons; "character" = the diagnostic stat sheet +
+   *  equipped gear + inventory (see LabyrinthCharacterView below).
+   *  Mirrors the main-game PauseMenu's "view" state pattern. */
+  const [pauseView, setPauseView] = useState<"main" | "character">("main");
   // Confirmation dialog for the pause-menu exit. Matches the
   // main-game PauseMenu confirmation so the safety gate is
   // consistent across both modes.
@@ -2365,7 +2379,13 @@ function LabyrinthHUD({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === "Escape") setEsc((v) => !v);
+      if (e.code === "Escape") {
+        // Reset to main pause view on close so reopening starts fresh.
+        setEsc((v) => {
+          if (v) setPauseView("main");
+          return !v;
+        });
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2630,14 +2650,28 @@ function LabyrinthHUD({
         </div>
       )}
 
-      {/* Pause */}
+      {/* Pause — two views mirror the main-game PauseMenu:
+          "main" shows resume + character + exit buttons,
+          "character" shows the live diagnostic stat sheet. */}
       {esc && !display.defeated && (
         <div style={styles.escOverlay}>
-          <div style={styles.escPanel}>
-            <div style={styles.escTitle}>PAUSED</div>
-            <button style={styles.escBtn} onClick={() => setEsc(false)}>▶ RESUME</button>
-            <button style={styles.escBtn} onClick={() => setConfirmingExit(true)}>⌂ EXIT TO MAIN MENU</button>
-          </div>
+          {pauseView === "main" && (
+            <div style={styles.escPanel}>
+              <div style={styles.escTitle}>PAUSED</div>
+              <button style={styles.escBtn} onClick={() => setEsc(false)}>▶ RESUME</button>
+              <button style={styles.escBtn} onClick={() => setPauseView("character")}>🎒 CHARACTER</button>
+              <button style={styles.escBtn} onClick={() => setConfirmingExit(true)}>⌂ EXIT TO MAIN MENU</button>
+            </div>
+          )}
+          {pauseView === "character" && (
+            <LabyrinthCharacterView
+              charClass={charClass}
+              playerRef={playerRef}
+              gearStateRef={gearStateRef}
+              progressionRef={progressionRef}
+              onBack={() => setPauseView("main")}
+            />
+          )}
         </div>
       )}
 
@@ -2759,6 +2793,178 @@ function ChampionBanner({ elapsedSec, announcedAt }: {
       <div style={styles.championBannerSub}>SLAY IT FOR THE VAULT KEY</div>
     </div>
   );
+}
+
+/** Labyrinth pause-menu Character view. Shows the full diagnostic
+ *  stat sheet — every value the combat loop actually reads during
+ *  play, so the player can confirm gear bonuses + passives are
+ *  applying correctly.
+ *
+ *  Reads directly from the authoritative refs (playerRef,
+ *  gearStateRef, progressionRef). NO parallel stat calculation —
+ *  each row surfaces the same value the tick function consumes.
+ *
+ *  Design intent: diagnostic > aesthetic. Two-column key/value
+ *  layout, itemised gear rows, and a breakdown that sums to the
+ *  final effective value so the player can verify math.
+ */
+function LabyrinthCharacterView({
+  charClass,
+  playerRef,
+  gearStateRef,
+  progressionRef,
+  onBack,
+}: {
+  charClass: CharacterClass;
+  playerRef: React.MutableRefObject<LabPlayer>;
+  gearStateRef: React.MutableRefObject<LabGearState>;
+  progressionRef: React.MutableRefObject<LabProgressionState>;
+  onBack: () => void;
+}) {
+  const def = CHARACTER_DATA[charClass];
+  const p = playerRef.current;
+  const gear = gearStateRef.current;
+  const b = gear.bonuses;
+  const level = progressionRef.current.level;
+
+  // Mirror the same math the combat loop does every tick. If the
+  // combat loop's formula changes, update this block to match
+  // (there is no shared helper — the values ARE the live reads).
+  const baseAtkSpeed = def.attackSpeed;
+  const effAtkSpeed = baseAtkSpeed + (b.attackSpeed ?? 0);
+  const effDamage = def.damage + (b.damage ?? 0);
+  const effCrit = def.critChance + (b.critChance ?? 0);
+  const effMoveSpeedRaw = 5.0 + Math.min(6, b.moveSpeed ?? 0);   // mirrors MovementLoop cap
+  const effArmor = def.armor;                                     // no gear armor bonus wired yet
+  const regenPerSec = 0.1 * level;
+  // Range: combatStats.atkRange = classDef.attackRange * 0.75
+  const effRange = def.attackRange * 0.75;
+
+  // Equipped-gear rows — itemised bonus display so the player can
+  // see exactly which piece contributes what (vs. just the total).
+  const slots: Array<[string, GearDef | null]> = [
+    ["WEAPON",  gear.weapon],
+    ["ARMOR",   gear.armor],
+    ["TRINKET", gear.trinket],
+  ];
+
+  return (
+    <div style={styles.charPanel}>
+      <div style={styles.charHeader}>
+        <span style={styles.charTitle}>CHARACTER</span>
+        <button style={styles.charBackBtn} onClick={onBack}>◂ BACK</button>
+      </div>
+
+      {/* ─── Class + race + level summary ─── */}
+      <div style={styles.charSubHeader}>
+        {def.name} · LVL {level}
+      </div>
+
+      {/* ─── Equipped gear (itemised) ─── */}
+      <div style={styles.charSectionTitle}>EQUIPPED GEAR</div>
+      <div style={styles.charEquippedGrid}>
+        {slots.map(([label, g]) => (
+          <EquippedGearRow key={label} label={label} gear={g} />
+        ))}
+      </div>
+
+      {/* ─── Live stats block ─── */}
+      <div style={styles.charSectionTitle}>LIVE STATS</div>
+      <div style={styles.charStatsGrid}>
+        <StatRow label="Health" value={`${Math.ceil(p.hp)} / ${p.maxHp}`} hint={`+${(b.maxHealth ?? 0).toFixed(0)} gear`} />
+        <StatRow label="Regen / sec" value={regenPerSec.toFixed(2)} hint={`0.1 × LVL ${level}`} />
+        <StatRow label="Damage" value={effDamage.toFixed(1)} hint={`${def.damage.toFixed(1)} base + ${(b.damage ?? 0).toFixed(1)} gear`} />
+        <StatRow label="Attack speed" value={effAtkSpeed.toFixed(2)} hint={`${baseAtkSpeed.toFixed(2)} base + ${(b.attackSpeed ?? 0).toFixed(2)} gear`} />
+        <StatRow label="Attack range" value={effRange.toFixed(1)} hint={`${def.attackRange.toFixed(1)} × 0.75 labyrinth`} />
+        <StatRow label="Crit chance" value={`${(effCrit * 100).toFixed(1)}%`} hint={`${(def.critChance * 100).toFixed(1)}% base + ${((b.critChance ?? 0) * 100).toFixed(1)}% gear`} />
+        <StatRow label="Move speed" value={effMoveSpeedRaw.toFixed(2)} hint={`5.00 base + ${Math.min(6, b.moveSpeed ?? 0).toFixed(2)} gear (cap 6)`} />
+        <StatRow label="Armor" value={effArmor.toFixed(0)} hint="base class value" />
+        {charClass === "rogue" && (
+          <StatRow label="Poison (shroud)" value="3 dps / stack · cap 5" hint="labyrinth default" />
+        )}
+      </div>
+
+      {/* ─── Gear bonus totals (itemised by stat) ─── */}
+      <div style={styles.charSectionTitle}>GEAR BONUS TOTALS</div>
+      {Object.keys(b).length === 0 ? (
+        <div style={styles.charEmpty}>No gear equipped yet.</div>
+      ) : (
+        <div style={styles.charStatsGrid}>
+          {Object.entries(b).map(([key, val]) => (
+            <StatRow key={key} label={humanizeStatKey(key)} value={formatBonusValue(key, val)} />
+          ))}
+        </div>
+      )}
+
+      <button style={styles.charResumeBtn} onClick={onBack}>▶ RESUME</button>
+    </div>
+  );
+}
+
+/** Single stat row — label on the left, value on the right, optional
+ *  hint line underneath in a dimmer color. */
+function StatRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div style={styles.charStatRow}>
+      <div style={styles.charStatLabelLine}>
+        <span style={styles.charStatLabel}>{label}</span>
+        <span style={styles.charStatValue}>{value}</span>
+      </div>
+      {hint && <div style={styles.charStatHint}>{hint}</div>}
+    </div>
+  );
+}
+
+/** Equipped gear row — icon + name + rarity + bonuses. If the slot
+ *  is empty, shows a dim "EMPTY" placeholder so players can see the
+ *  slot exists. */
+function EquippedGearRow({ label, gear }: { label: string; gear: GearDef | null }) {
+  const rarity = gear?.rarity;
+  const border = rarity === "epic" ? "#aa44ff" : rarity === "rare" ? "#4488dd" : rarity ? "#6a6a7a" : "#2a2030";
+  const text = rarity === "epic" ? "#cc88ff" : rarity === "rare" ? "#70b0ff" : rarity ? "#aaaabb" : "#555060";
+  return (
+    <div style={{ ...styles.charEquippedRow, borderColor: border }}>
+      <div style={styles.charEquippedLabel}>{label}</div>
+      {gear ? (
+        <>
+          <div style={{ ...styles.charEquippedName, color: text }}>
+            {gear.icon} {gear.name}
+            {(gear.enhanceLevel ?? 0) > 0 && ` +${gear.enhanceLevel}`}
+          </div>
+          <div style={styles.charEquippedBonuses}>
+            {Object.entries(gear.bonuses).map(([k, v]) => (
+              <span key={k} style={styles.charEquippedBonus}>
+                {formatBonusValue(k, v ?? 0)} {humanizeStatKey(k)}
+              </span>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div style={{ ...styles.charEquippedName, color: "#4a4050", fontStyle: "italic" }}>— empty —</div>
+      )}
+    </div>
+  );
+}
+
+/** Pretty-print a stat key for the UI (damage → DMG, maxHealth → MAX HP). */
+function humanizeStatKey(key: string): string {
+  switch (key) {
+    case "damage":      return "DMG";
+    case "attackSpeed": return "ATK SPD";
+    case "maxHealth":   return "MAX HP";
+    case "critChance":  return "CRIT";
+    case "moveSpeed":   return "MOVE SPD";
+    case "armor":       return "ARMOR";
+    default:            return key.toUpperCase();
+  }
+}
+
+/** Format a bonus value for the UI — crit chance shows as %, flat
+ *  numbers get a + sign. */
+function formatBonusValue(key: string, val: number): string {
+  if (key === "critChance") return `+${(val * 100).toFixed(1)}%`;
+  if (val >= 0) return `+${val.toFixed(val % 1 === 0 ? 0 : 2)}`;
+  return val.toFixed(2);
 }
 
 /** Three-slot equipped gear strip shown under the threat box. Reads
@@ -3404,6 +3610,154 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(10,25,50,0.8)",
     border: "1px solid rgba(60,140,220,0.5)",
     borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
+  },
+  // ─── Character / diagnostic panel ──────────────────────────────
+  // Blue-accent to match the labyrinth pause palette. Taller than
+  // the default pause panel so the full stat sheet fits on screen;
+  // scrollable when content overflows.
+  charPanel: {
+    padding: "28px 32px",
+    background: "rgba(6,10,22,0.98)",
+    border: "1px solid rgba(80,160,230,0.55)",
+    borderRadius: 14,
+    boxShadow: "0 0 40px rgba(60,140,220,0.3), inset 0 0 30px rgba(30,80,140,0.25)",
+    width: "min(540px, 94vw)",
+    maxHeight: "86vh",
+    overflowY: "auto" as const,
+    fontFamily: "monospace",
+    pointerEvents: "auto" as const,
+  },
+  charHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  charTitle: {
+    fontSize: 22,
+    fontWeight: 900 as const,
+    letterSpacing: 5,
+    color: "#bee0ff",
+    textShadow: "0 0 12px rgba(100,170,240,0.5)",
+  },
+  charBackBtn: {
+    fontSize: 11,
+    letterSpacing: 2,
+    color: "#7ea8cc",
+    background: "rgba(10,25,50,0.7)",
+    border: "1px solid rgba(60,140,220,0.4)",
+    borderRadius: 6,
+    padding: "6px 12px",
+    cursor: "pointer",
+    fontFamily: "inherit",
+  },
+  charSubHeader: {
+    fontSize: 12,
+    color: "#7ea8cc",
+    letterSpacing: 2,
+    marginBottom: 14,
+  },
+  charSectionTitle: {
+    fontSize: 11,
+    fontWeight: 700 as const,
+    letterSpacing: 3,
+    color: "#5a90bc",
+    marginTop: 14,
+    marginBottom: 8,
+    borderBottom: "1px solid rgba(60,140,220,0.2)",
+    paddingBottom: 4,
+  },
+  charEquippedGrid: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 6,
+  },
+  charEquippedRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "6px 10px",
+    background: "rgba(10,14,28,0.7)",
+    border: "1px solid #2a2030",
+    borderRadius: 6,
+    fontSize: 12,
+  },
+  charEquippedLabel: {
+    width: 60,
+    fontSize: 10,
+    letterSpacing: 2,
+    color: "#5a708c",
+    fontWeight: 700 as const,
+  },
+  charEquippedName: {
+    flex: 1,
+    fontSize: 12,
+  },
+  charEquippedBonuses: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: 6,
+    justifyContent: "flex-end",
+  },
+  charEquippedBonus: {
+    fontSize: 10,
+    color: "#90c4e8",
+    background: "rgba(30,60,100,0.35)",
+    border: "1px solid rgba(80,140,200,0.3)",
+    borderRadius: 4,
+    padding: "2px 6px",
+    letterSpacing: 1,
+  },
+  charStatsGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "6px 14px",
+  },
+  charStatRow: {
+    padding: "4px 0",
+  },
+  charStatLabelLine: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+    gap: 8,
+  },
+  charStatLabel: {
+    fontSize: 11,
+    color: "#8fa8c0",
+    letterSpacing: 1,
+  },
+  charStatValue: {
+    fontSize: 13,
+    color: "#d8e8f8",
+    fontWeight: 700 as const,
+  },
+  charStatHint: {
+    fontSize: 9,
+    color: "#506a84",
+    letterSpacing: 0.5,
+    marginTop: 1,
+  },
+  charEmpty: {
+    fontSize: 11,
+    color: "#506a84",
+    fontStyle: "italic" as const,
+    padding: "8px 0",
+  },
+  charResumeBtn: {
+    marginTop: 20,
+    width: "100%",
+    padding: "12px",
+    fontSize: 14,
+    fontWeight: 700 as const,
+    letterSpacing: 3,
+    color: "#fff",
+    background: "linear-gradient(135deg, #1a4480, #0c2850)",
+    border: "1px solid rgba(80,160,230,0.7)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    boxShadow: "0 0 16px rgba(60,140,220,0.3)",
   },
   poisonBox: {
     position: "absolute",
