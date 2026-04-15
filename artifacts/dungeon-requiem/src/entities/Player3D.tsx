@@ -12,6 +12,7 @@ import { useAnimations, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { GameState } from "../game/GameScene";
+import { meshScaleForRace } from "../data/RaceData";
 
 interface PlayerProps {
   gs: React.RefObject<GameState | null>;
@@ -179,6 +180,20 @@ function WarriorMeshGLB({ gs }: PlayerProps) {
 // browser from fetching the 8 MB file on every page load.
 // useGLTF.preload(WARRIOR_GLB_URL);
 
+// ─── Shared race-scale helper ────────────────────────────────────────────────
+// Reads `race` from gs.current and applies the corresponding non-uniform
+// scale to the character's outer group. Called each frame by all three
+// class meshes (Warrior / Mage / Rogue) so race selection is reflected
+// consistently across the roster. Hitbox + collision radius + move
+// speed are deliberately NOT touched — this is a visual-only scale
+// per the Alpha-pass spec. If race is unset (labyrinth shim default),
+// falls back to "human" → [1, 1, 1].
+function applyRaceScale(gs: React.RefObject<GameState | null>, group: THREE.Group) {
+  const race = gs.current?.race ?? "human";
+  const [sx, sy, sz] = meshScaleForRace(race);
+  group.scale.set(sx, sy, sz);
+}
+
 // ─── Warrior — low-poly geometry (GLBs load at Electron/Steam package time) ───
 
 function WarriorMeshAnimated({ gs }: PlayerProps) {
@@ -202,6 +217,7 @@ function WarriorMeshAnimated({ gs }: PlayerProps) {
     const p = gs.current.player;
     groupRef.current.position.set(p.x, 0, p.z);
     groupRef.current.rotation.y = p.angle + Math.PI;
+    applyRaceScale(gs, groupRef.current);
     const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
     lastX.current = p.x; lastZ.current = p.z;
     if (leftArmRef.current && rightArmRef.current && legsRef.current) {
@@ -307,6 +323,7 @@ function MageMeshAnimated({ gs }: PlayerProps) {
     const p = gs.current.player;
     groupRef.current.position.set(p.x, 0, p.z);
     groupRef.current.rotation.y = p.angle + Math.PI;
+    applyRaceScale(gs, groupRef.current);
     const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
     lastX.current = p.x; lastZ.current = p.z;
     if (leftArmRef.current && rightArmRef.current && legsRef.current) {
@@ -407,6 +424,7 @@ function RogueMeshAnimated({ gs }: PlayerProps) {
     const p = gs.current.player;
     groupRef.current.position.set(p.x, 0, p.z);
     groupRef.current.rotation.y = p.angle + Math.PI;
+    applyRaceScale(gs, groupRef.current);
     const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
     lastX.current = p.x; lastZ.current = p.z;
     if (leftArmRef.current && rightArmRef.current && legsRef.current) {

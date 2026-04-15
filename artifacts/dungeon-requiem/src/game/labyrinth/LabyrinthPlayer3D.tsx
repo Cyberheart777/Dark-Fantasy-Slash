@@ -17,6 +17,7 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import type { CharacterClass } from "../../data/CharacterData";
+import type { RaceType } from "../../data/RaceData";
 import { Player3D } from "../../entities/Player3D";
 import type { GameState } from "../GameScene";
 import type { PlayerAttackState } from "./LabyrinthCombat";
@@ -33,16 +34,19 @@ interface LabPlayerForVisual {
 
 interface Props {
   charClass: CharacterClass;
+  race: RaceType;
   playerRef: React.MutableRefObject<LabPlayerForVisual>;
   attackStateRef: React.MutableRefObject<PlayerAttackState>;
 }
 
-export function LabyrinthPlayer3D({ charClass, playerRef, attackStateRef }: Props) {
+export function LabyrinthPlayer3D({ charClass, race, playerRef, attackStateRef }: Props) {
   // Built once per mount. Player3D reads charClass once at top-level,
   // so changing charClass mid-scene would need a remount; the labyrinth
-  // doesn't change class mid-run, so a single shim is fine.
+  // doesn't change class mid-run, so a single shim is fine. Race goes
+  // into the same shim — Player3D's applyRaceScale() reads it each
+  // frame to drive the mesh's non-uniform scale.
   const shimRef = useRef<GameState | null>(null);
-  if (!shimRef.current) shimRef.current = createPlayerShim(charClass);
+  if (!shimRef.current) shimRef.current = createPlayerShim(charClass, race);
 
   // Track the previous swing-visual timer so updatePlayerShim can bump
   // the shim's `attackTrigger` counter exactly once per swing (on the

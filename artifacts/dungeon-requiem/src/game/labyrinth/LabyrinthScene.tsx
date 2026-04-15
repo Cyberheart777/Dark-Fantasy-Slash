@@ -168,6 +168,7 @@ import {
   type LabDashState,
 } from "./LabyrinthDash";
 import { CHARACTER_DATA, type CharacterClass } from "../../data/CharacterData";
+import type { RaceType } from "../../data/RaceData";
 import { audioManager } from "../../audio/AudioManager";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
@@ -286,6 +287,7 @@ export function LabyrinthScene() {
   // old flow) still works. Labyrinth-specific locks are handled in
   // LabyrinthCharSelect — this component just reads whatever was set.
   const selectedClass = useGameStore((s) => s.selectedClass) as CharacterClass;
+  const selectedRace = useGameStore((s) => s.selectedRace);
   const classDef = CHARACTER_DATA[selectedClass];
 
   // Combat stats derived from the class definition. Labyrinth mode
@@ -456,6 +458,7 @@ export function LabyrinthScene() {
         <LabyrinthWorld
           maze={maze}
           charClass={selectedClass}
+          race={selectedRace}
           combatStats={combatStats}
           inputRef={inputRef}
           playerRef={playerRef}
@@ -505,6 +508,7 @@ export function LabyrinthScene() {
 function LabyrinthWorld({
   maze,
   charClass,
+  race,
   combatStats,
   inputRef,
   playerRef,
@@ -534,6 +538,7 @@ function LabyrinthWorld({
 }: {
   maze: Maze;
   charClass: CharacterClass;
+  race: RaceType;
   combatStats: LabCombatStats;
   inputRef: React.MutableRefObject<InputManager3D | null>;
   playerRef: React.MutableRefObject<LabPlayer>;
@@ -698,6 +703,7 @@ function LabyrinthWorld({
       >
         <LabyrinthPlayer3D
           charClass={charClass}
+          race={race}
           playerRef={playerRef}
           attackStateRef={attackStateRef}
         />
@@ -2116,6 +2122,10 @@ function LabyrinthHUD({
 }) {
   const setPhase = useGameStore((s) => s.setPhase);
   const [esc, setEsc] = useState(false);
+  // Confirmation dialog for the pause-menu exit. Matches the
+  // main-game PauseMenu confirmation so the safety gate is
+  // consistent across both modes.
+  const [confirmingExit, setConfirmingExit] = useState(false);
   // Poll shared state at 10Hz for display only (don't re-render at 60fps).
   const [display, setDisplay] = useState({
     hp: 100, maxHp: 100,
@@ -2468,7 +2478,38 @@ function LabyrinthHUD({
           <div style={styles.escPanel}>
             <div style={styles.escTitle}>PAUSED</div>
             <button style={styles.escBtn} onClick={() => setEsc(false)}>▶ RESUME</button>
-            <button style={styles.escBtn} onClick={exit}>⌂ EXIT TO MAIN MENU</button>
+            <button style={styles.escBtn} onClick={() => setConfirmingExit(true)}>⌂ EXIT TO MAIN MENU</button>
+          </div>
+        </div>
+      )}
+
+      {/* Abandon-run confirmation. Shares the exit-gate spec with the
+          main-game PauseMenu: "Stay in Run" is the dominant default,
+          "Abandon Run" is visually de-emphasised, so a mistaken tap
+          can't kill the run. Palette uses the labyrinth's blue
+          accent to match the pause panel above. */}
+      {confirmingExit && !display.defeated && (
+        <div style={styles.confirmOverlay}>
+          <div style={styles.confirmPanel}>
+            <div style={styles.confirmTitle}>ABANDON YOUR RUN?</div>
+            <div style={styles.confirmSub}>All progress will be lost.</div>
+            <div style={styles.confirmBtnCol}>
+              <button
+                style={styles.confirmPrimary}
+                onClick={() => setConfirmingExit(false)}
+              >
+                ◂ STAY IN RUN
+              </button>
+              <button
+                style={styles.confirmDestructive}
+                onClick={() => {
+                  setConfirmingExit(false);
+                  exit();
+                }}
+              >
+                ABANDON RUN
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3015,6 +3056,82 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     backdropFilter: "blur(6px)",
+  },
+  // Abandon-run confirmation modal. Sits above the pause panel via
+  // a higher backdrop alpha + stacked overlay. Blue accent matches
+  // the labyrinth pause colour language (vs. main game's purple).
+  confirmOverlay: {
+    position: "absolute" as const,
+    inset: 0,
+    background: "rgba(0,0,0,0.82)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    backdropFilter: "blur(8px)",
+    zIndex: 30,
+  },
+  confirmPanel: {
+    padding: "36px 48px",
+    background: "rgba(6,10,22,0.98)",
+    border: "1px solid rgba(80,160,230,0.55)",
+    borderRadius: 14,
+    boxShadow: "0 0 40px rgba(60,140,220,0.3), inset 0 0 30px rgba(30,80,140,0.25)",
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    maxWidth: 420,
+  },
+  confirmTitle: {
+    fontSize: 22,
+    fontWeight: 900 as const,
+    letterSpacing: 4,
+    color: "#bee0ff",
+    textShadow: "0 0 14px rgba(100,170,240,0.6)",
+    marginBottom: 10,
+    fontFamily: "monospace",
+  },
+  confirmSub: {
+    fontSize: 13,
+    color: "#7ea8cc",
+    letterSpacing: 1.5,
+    marginBottom: 22,
+    fontFamily: "monospace",
+  },
+  confirmBtnCol: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 10,
+    alignItems: "center",
+  },
+  // Primary "Stay in Run" — dominant gradient button so the safe
+  // choice is visually obvious.
+  confirmPrimary: {
+    width: 260,
+    padding: "14px",
+    fontSize: 15,
+    fontWeight: "bold" as const,
+    letterSpacing: 3,
+    color: "#fff",
+    background: "linear-gradient(135deg, #1a4480, #0c2850)",
+    border: "1px solid rgba(80,160,230,0.7)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    boxShadow: "0 0 20px rgba(60,140,220,0.35)",
+  },
+  // Destructive "Abandon Run" — dim, smaller, clearly de-prioritised.
+  confirmDestructive: {
+    width: 200,
+    padding: "10px",
+    fontSize: 12,
+    fontWeight: 600 as const,
+    letterSpacing: 2,
+    color: "#cc8080",
+    background: "rgba(30,10,10,0.6)",
+    border: "1px solid rgba(140,40,40,0.5)",
+    borderRadius: 6,
+    cursor: "pointer",
+    fontFamily: "inherit",
   },
   escPanel: {
     padding: "40px 48px",

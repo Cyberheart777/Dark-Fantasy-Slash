@@ -26,6 +26,7 @@
  */
 
 import type { CharacterClass } from "../../data/CharacterData";
+import type { RaceType } from "../../data/RaceData";
 import type {
   GameState,
   PlayerRuntime,
@@ -46,7 +47,7 @@ export interface LabPlayerVisualSource {
 
 /** Returns a ref-able GameState populated with defaults. Call once per
  *  scene mount; update with `updatePlayerShim` each frame. */
-export function createPlayerShim(charClass: CharacterClass): GameState {
+export function createPlayerShim(charClass: CharacterClass, race: RaceType = "human"): GameState {
   const player: PlayerRuntime = {
     x: 0, z: 0,
     angle: 0,
@@ -111,6 +112,7 @@ export function createPlayerShim(charClass: CharacterClass): GameState {
     waveTimer: 0,
     spawnInterval: 0,
     charClass,
+    race,
     progression: null,
     input: null,
     running: true,

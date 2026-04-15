@@ -186,6 +186,11 @@ export interface GameState {
   spawnTimer: number; waveTimer: number;
   spawnInterval: number;
   charClass: CharacterClass;
+  /** Race chosen at character-select. Alpha pass: affects visual
+   *  mesh scale only (Player3D reads race.heightMult / widthMult).
+   *  Stat multipliers in RACE_DATA are all at identity values
+   *  currently — see RaceData.ts module docstring. */
+  race: RaceType;
   progression: ProgressionManager;
   input: InputManager3D;
   running: boolean;
@@ -3237,6 +3242,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       spawnTimer: 0, waveTimer: 0,
       spawnInterval: GAME_CONFIG.DIFFICULTY.BASE_SPAWN_INTERVAL,
       charClass: cls,
+      race,
       progression,
       input,
       running: false,
@@ -3320,6 +3326,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           spawnTimer: 0, waveTimer: 0,
           spawnInterval: GAME_CONFIG.DIFFICULTY.BASE_SPAWN_INTERVAL,
           charClass: cls,
+          race,
           progression: prog,
           input: g.input,
           running: true,
