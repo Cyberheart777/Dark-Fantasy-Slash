@@ -1578,6 +1578,18 @@ function CombatEnemyLoop({
     shared.xpToNext = progressionRef.current.xpToNext;
     shared.totalXp = progressionRef.current.totalXp;
 
+    // Passive HP regen — labyrinth-only. Scales linearly with player
+    // level: 0.1 HP/sec at L1, +0.1 per level (L2=0.2, L10=1.0, ...).
+    // Small enough that combat pressure still matters, but adds up
+    // during exploration lulls. Skipped when dead (p.hp <= 0) or
+    // already at full HP (clamp makes it a no-op anyway, but we skip
+    // the math). Does NOT touch PlayerRuntime or the main-game
+    // GameScene healing pipeline.
+    if (p.hp > 0 && p.hp < p.maxHp) {
+      const regenPerSec = 0.1 * progressionRef.current.level;
+      p.hp = Math.min(p.maxHp, p.hp + regenPerSec * delta);
+    }
+
     // 7a) Shadow-stalker spawn. Every SHADOW_STALKER_INTERVAL_SEC, if no
     //     stalker is currently alive, materialise one at the farthest
     //     dead-end from the player. Only one alive at a time — keeps
