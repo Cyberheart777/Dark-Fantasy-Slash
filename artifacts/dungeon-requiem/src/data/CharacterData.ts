@@ -53,7 +53,7 @@ export const CHARACTER_DATA: Record<CharacterClass, CharacterDef> = {
     dashCooldown: 2.2,
     critChance: 0.05,
     attackType: "melee",
-    attackRange: 6.5,
+    attackRange: 5.85,
     projectileSpeed: 0,
     projectilePiercing: false,
     projectileCount: 0,
