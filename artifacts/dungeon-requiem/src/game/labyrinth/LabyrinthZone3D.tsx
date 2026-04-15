@@ -47,18 +47,27 @@ export function LabyrinthZone3D({ radius, isPaused }: Props) {
   const maskRef = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
+    // Cylinder wall at the boundary — cylinderGeometry's radius is in
+    // the X-Z plane, so scale.set(R, 1, R) is correct here.
     if (wallRef.current) {
       wallRef.current.scale.set(radius, 1, radius);
     }
+    // Ring + mask are circleGeometry rotated [-π/2, 0, 0] to lie
+    // horizontal. CircleGeometry's radius is in LOCAL X-Y. After the
+    // rotation, local X maps to world X and local Y maps to world -Z.
+    // So to scale the circle's WORLD radius we set scale.set(R, R, 1)
+    // — NOT (R, 1, R), which would only scale local X (world X) and
+    // leave local Y (world Z) at unit radius → a 1-unit-wide ellipse
+    // that's almost invisible. This was the long-standing bug behind
+    // "the green is everywhere" — the mask disc was never actually
+    // covering the safe zone.
     if (ringRef.current) {
       const pulseSpeed = isPaused ? 1.2 : 2.6;
       const pulse = 1 + 0.04 * Math.sin(state.clock.elapsedTime * pulseSpeed);
-      ringRef.current.scale.set(radius * pulse, 1, radius * pulse);
+      ringRef.current.scale.set(radius * pulse, radius * pulse, 1);
     }
-    // Depth mask scales with the safe radius — that's what creates the
-    // "hole" in the venom overlay.
     if (maskRef.current) {
-      maskRef.current.scale.set(radius, 1, radius);
+      maskRef.current.scale.set(radius, radius, 1);
     }
   });
 
