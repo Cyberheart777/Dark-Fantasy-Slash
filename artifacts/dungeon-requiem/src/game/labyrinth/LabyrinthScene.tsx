@@ -144,8 +144,12 @@ import {
   rollLabGearDrop,
   spawnLabGearDrop,
   tickLabGearDrops,
-  equipLabGear,
+  pickupLabGear,
+  equipFromInventory,
+  sellFromInventory,
   salvageLabGear,
+  LAB_INVENTORY_CAPACITY,
+  LAB_SALVAGE_VALUE,
   type LabGearState,
   type LabGearDropRuntime,
 } from "./LabyrinthGear";
@@ -1927,22 +1931,24 @@ function CombatEnemyLoop({
     }
 
     // 7c) Gear ground-drop tick — lifetime decay + proximity pickup.
-    //     On pickup: auto-equip (or swap, dropping the old piece back
-    //     to the ground for another 12 s lifetime). equipLabGear()
-    //     recomputes bonuses IMMEDIATELY so the next frame's combat
-    //     tick reads the fresh values.
+    //     pickupLabGear() decides where the new piece goes:
+    //       - empty slot  → equip
+    //       - slot full + inventory has room → inventory
+    //       - slot full + inventory full     → swap, drop old
+    //     Bonuses + maxHp recompute immediately when an equip happens.
     const gearTick = tickLabGearDrops(gearDropsRef.current, delta, p.x, p.z);
     if (gearTick.pickedUp) {
       audioManager.play("gear_drop");
-      const { oldGear, maxHealthDelta } = equipLabGear(gearStateRef.current, gearTick.pickedUp);
-      if (maxHealthDelta !== 0) {
-        p.maxHp += maxHealthDelta;
-        p.hp = Math.min(p.maxHp, p.hp + maxHealthDelta);
+      const result = pickupLabGear(gearStateRef.current, gearTick.pickedUp);
+      if (result.maxHealthDelta !== 0) {
+        p.maxHp += result.maxHealthDelta;
+        p.hp = Math.min(p.maxHp, p.hp + result.maxHealthDelta);
       }
-      if (oldGear) {
-        // Drop the old piece slightly offset so its ground drop doesn't
-        // clip on top of the player and immediately re-pick up.
-        spawnLabGearDrop(gearDropsRef.current, oldGear, p.x + 1.2, p.z + 1.2);
+      if (result.placement === "dropped" && result.displacedGear) {
+        // Only the swap path (inventory was full) evicts to ground.
+        // Offset the drop so the player doesn't re-trigger it next
+        // frame.
+        spawnLabGearDrop(gearDropsRef.current, result.displacedGear, p.x + 1.2, p.z + 1.2);
       }
       shared.equipped = {
         weapon: gearStateRef.current.weapon,
@@ -2669,6 +2675,7 @@ function LabyrinthHUD({
               playerRef={playerRef}
               gearStateRef={gearStateRef}
               progressionRef={progressionRef}
+              sharedRef={sharedRef}
               onBack={() => setPauseView("main")}
             />
           )}
@@ -2813,12 +2820,14 @@ function LabyrinthCharacterView({
   playerRef,
   gearStateRef,
   progressionRef,
+  sharedRef,
   onBack,
 }: {
   charClass: CharacterClass;
   playerRef: React.MutableRefObject<LabPlayer>;
   gearStateRef: React.MutableRefObject<LabGearState>;
   progressionRef: React.MutableRefObject<LabProgressionState>;
+  sharedRef: React.MutableRefObject<LabSharedState>;
   onBack: () => void;
 }) {
   const def = CHARACTER_DATA[charClass];
@@ -2826,6 +2835,49 @@ function LabyrinthCharacterView({
   const gear = gearStateRef.current;
   const b = gear.bonuses;
   const level = progressionRef.current.level;
+
+  // Render-bump counter. Equip/sell handlers mutate gearStateRef
+  // directly (refs don't re-render), so we force a refresh by
+  // bumping a state counter each time the player takes an action.
+  const [, setTick] = useState(0);
+  const bump = () => setTick((t) => t + 1);
+
+  /** Equip the inventory[index] piece into its matching slot. Any
+   *  currently-equipped piece moves INTO the vacated inventory slot
+   *  (swap). Applies maxHp delta to the player + syncs the HUD's
+   *  shared.equipped snapshot so the top-right gear strip updates
+   *  on the next 100ms poll after unpause. */
+  const handleEquip = (index: number) => {
+    const res = equipFromInventory(gearStateRef.current, index);
+    if (!res) return;
+    if (res.maxHealthDelta !== 0) {
+      playerRef.current.maxHp += res.maxHealthDelta;
+      playerRef.current.hp = Math.min(
+        playerRef.current.maxHp,
+        playerRef.current.hp + res.maxHealthDelta,
+      );
+    }
+    sharedRef.current.equipped = {
+      weapon: gearStateRef.current.weapon,
+      armor: gearStateRef.current.armor,
+      trinket: gearStateRef.current.trinket,
+    };
+    audioManager.play("gear_drop");
+    bump();
+  };
+
+  /** Sell an inventory piece — salvages at LAB_SALVAGE_VALUE[rarity]
+   *  and deposits straight into the Soul Forge balance via
+   *  useMetaStore.addShards(). Mirrors the main-game "sell" button
+   *  behaviour in the PauseMenu character view. */
+  const handleSell = (index: number) => {
+    const value = sellFromInventory(gearStateRef.current, index);
+    if (value > 0) {
+      useMetaStore.getState().addShards(value);
+      audioManager.play("xp_pickup");
+    }
+    bump();
+  };
 
   // Mirror the same math the combat loop does every tick. If the
   // combat loop's formula changes, update this block to match
@@ -2896,6 +2948,30 @@ function LabyrinthCharacterView({
         </div>
       )}
 
+      {/* ─── Inventory (20-slot capacity) ─── */}
+      <div style={styles.charSectionTitle}>
+        SPARE GEAR ({gear.inventory.length}/{LAB_INVENTORY_CAPACITY})
+      </div>
+      {gear.inventory.length === 0 ? (
+        <div style={styles.charEmpty}>
+          Empty. New pickups land here when the matching slot is already full.
+        </div>
+      ) : (
+        <div style={styles.charInventoryList}>
+          {gear.inventory.map((item, idx) => (
+            <InventoryRow
+              key={`${item.id}-${idx}`}
+              item={item}
+              onEquip={() => handleEquip(idx)}
+              onSell={() => handleSell(idx)}
+            />
+          ))}
+        </div>
+      )}
+      <div style={styles.charInventoryHint}>
+        Run-only. All gear auto-salvages into Soul Forge crystals at run end.
+      </div>
+
       <button style={styles.charResumeBtn} onClick={onBack}>▶ RESUME</button>
     </div>
   );
@@ -2918,6 +2994,50 @@ function StatRow({ label, value, hint }: { label: string; value: string; hint?: 
 /** Equipped gear row — icon + name + rarity + bonuses. If the slot
  *  is empty, shows a dim "EMPTY" placeholder so players can see the
  *  slot exists. */
+/** Single inventory row — gear name + rarity border + bonus chips
+ *  + EQUIP / SELL action buttons. Equip swaps with the currently-
+ *  equipped slot (old equipped moves into this inventory slot).
+ *  Sell salvages at LAB_SALVAGE_VALUE[rarity] and deposits directly
+ *  into the Soul Forge crystal balance. */
+function InventoryRow({
+  item,
+  onEquip,
+  onSell,
+}: {
+  item: GearDef;
+  onEquip: () => void;
+  onSell: () => void;
+}) {
+  const border = item.rarity === "epic" ? "#aa44ff"
+               : item.rarity === "rare" ? "#4488dd"
+               : "#6a6a7a";
+  const text   = item.rarity === "epic" ? "#cc88ff"
+               : item.rarity === "rare" ? "#70b0ff"
+               : "#aaaabb";
+  const salvageValue = LAB_SALVAGE_VALUE[item.rarity] ?? 0;
+  return (
+    <div style={{ ...styles.charInventoryRow, borderColor: border }}>
+      <div style={{ ...styles.charInventoryName, color: text }}>
+        {item.icon} {item.name}
+        {(item.enhanceLevel ?? 0) > 0 && ` +${item.enhanceLevel}`}
+      </div>
+      <div style={styles.charInventoryBonuses}>
+        {Object.entries(item.bonuses).map(([k, v]) => (
+          <span key={k} style={styles.charEquippedBonus}>
+            {formatBonusValue(k, v ?? 0)} {humanizeStatKey(k)}
+          </span>
+        ))}
+      </div>
+      <div style={styles.charInventoryActions}>
+        <button style={styles.charInvBtnEquip} onClick={onEquip}>EQUIP</button>
+        <button style={styles.charInvBtnSell} onClick={onSell}>
+          SELL · {salvageValue}◈
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function EquippedGearRow({ label, gear }: { label: string; gear: GearDef | null }) {
   const rarity = gear?.rarity;
   const border = rarity === "epic" ? "#aa44ff" : rarity === "rare" ? "#4488dd" : rarity ? "#6a6a7a" : "#2a2030";
@@ -3758,6 +3878,69 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontFamily: "inherit",
     boxShadow: "0 0 16px rgba(60,140,220,0.3)",
+  },
+  // ─── Inventory section ────────────────────────────────────────
+  charInventoryList: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 5,
+  },
+  charInventoryRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto auto",
+    alignItems: "center",
+    gap: 10,
+    padding: "6px 10px",
+    background: "rgba(10,14,28,0.7)",
+    border: "1px solid #2a2030",
+    borderRadius: 6,
+  },
+  charInventoryName: {
+    fontSize: 12,
+    gridColumn: "1",
+  },
+  charInventoryBonuses: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: 4,
+    justifyContent: "flex-end",
+    gridColumn: "2",
+  },
+  charInventoryActions: {
+    display: "flex",
+    gap: 4,
+    gridColumn: "3",
+  },
+  charInvBtnEquip: {
+    fontSize: 10,
+    letterSpacing: 1.5,
+    color: "#bee0ff",
+    background: "rgba(20,50,100,0.6)",
+    border: "1px solid rgba(80,160,230,0.5)",
+    borderRadius: 4,
+    padding: "4px 8px",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontWeight: 700 as const,
+  },
+  charInvBtnSell: {
+    fontSize: 10,
+    letterSpacing: 1.5,
+    color: "#ffb080",
+    background: "rgba(50,30,10,0.6)",
+    border: "1px solid rgba(200,120,50,0.4)",
+    borderRadius: 4,
+    padding: "4px 8px",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontWeight: 700 as const,
+  },
+  charInventoryHint: {
+    fontSize: 10,
+    color: "#506a84",
+    fontStyle: "italic" as const,
+    marginTop: 6,
+    textAlign: "center" as const,
   },
   poisonBox: {
     position: "absolute",

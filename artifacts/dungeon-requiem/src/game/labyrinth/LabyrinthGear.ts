@@ -40,6 +40,13 @@ export const LAB_SALVAGE_VALUE: Record<string, number> = {
   epic: 35,
 };
 
+/** Inventory capacity. Matches the main game's inventory cap so a
+ *  labyrinth run can hold as much spare gear as a main-game run
+ *  before auto-salvage at extraction. Hardcoded both here and in
+ *  the character-view render (PauseMenu.tsx uses the same 20 for
+ *  "SPARE GEAR (N/20)") — bump in both places if changed. */
+export const LAB_INVENTORY_CAPACITY = 20;
+
 // ─── Enemy-kind → main-game enemy-type mapping ───────────────────────────────
 
 /** Maps labyrinth enemy kinds to main-game enemy-type keys used by
@@ -156,10 +163,16 @@ export interface LabGearState {
    *  by recomputeBonuses() on every equip. Combat code reads this
    *  directly — no need to recompute per frame. */
   bonuses: Record<string, number>;
+  /** Run-only inventory of unequipped gear. Capped at
+   *  LAB_INVENTORY_CAPACITY (20). New pickups go here first; only
+   *  slotted into an EQUIPPED slot if that slot is empty OR the
+   *  player explicitly swaps via the pause-menu Character view.
+   *  Auto-salvaged alongside equipped gear at run end. */
+  inventory: GearDef[];
 }
 
 export function makeLabGearState(): LabGearState {
-  return { weapon: null, armor: null, trinket: null, bonuses: {} };
+  return { weapon: null, armor: null, trinket: null, bonuses: {}, inventory: [] };
 }
 
 /** Recompute `state.bonuses` by summing enhanced bonuses from all three
@@ -177,32 +190,110 @@ export function recomputeBonuses(state: LabGearState): void {
   state.bonuses = out;
 }
 
-/** Equip a gear piece into its slot.
- *   - If the slot is empty: equip, return { oldGear: null, maxHealthDelta: +new }.
- *   - If the slot is occupied: swap, return the old piece so the caller
- *     can drop it back to the ground. maxHealthDelta = newMaxHealth −
- *     oldMaxHealth so the caller can update player.maxHp (and heal by
- *     the delta, mirroring main-game equipGear behaviour).
+/** Outcome of a pickup-path decision. The scene uses this to know
+ *  whether to drop the old equipped piece back to the ground (only
+ *  happens when the inventory was full at pickup time). */
+export interface PickupResult {
+  /** Where the newly picked-up gear ended up. */
+  placement: "equipped" | "inventory" | "dropped";
+  /** If placement==="equipped" and the slot was occupied, this is
+   *  the PREVIOUS equipped piece that's been moved out. Null when
+   *  the slot was empty. When dropped=true we drop this back to
+   *  the ground (inventory was full so we had to swap). */
+  displacedGear: GearDef | null;
+  /** Net change to player.maxHp from the equip. Caller applies it
+   *  to playerRef.current.maxHp + heals by the delta. 0 when the
+   *  pickup just went into the inventory. */
+  maxHealthDelta: number;
+}
+
+/** Decide what happens when the player walks over a gear drop.
+ *
+ *   1. Slot empty           → equip directly, no displacement.
+ *   2. Slot occupied + inventory has space → put NEW gear in
+ *      inventory. Equipped is untouched. Player can swap later
+ *      from the pause-menu Character view.
+ *   3. Slot occupied + inventory FULL → swap and drop the old
+ *      equipped piece back on the ground (same as the old
+ *      equipLabGear behaviour). Prevents hard-locking the player
+ *      out of new gear once they've hoarded 20 pieces.
  */
-export function equipLabGear(
+export function pickupLabGear(
   state: LabGearState,
   gear: GearDef,
-): { oldGear: GearDef | null; maxHealthDelta: number } {
+): PickupResult {
   const slot = gear.slot;
-  const oldGear = state[slot] ?? null;
-  const oldMaxHealth = oldGear ? (getEnhancedBonuses(oldGear).maxHealth ?? 0) : 0;
+  const existing = state[slot] ?? null;
+
+  // Case 1 — empty slot, direct equip.
+  if (!existing) {
+    const newMaxHealth = getEnhancedBonuses(gear).maxHealth ?? 0;
+    state[slot] = gear;
+    recomputeBonuses(state);
+    return { placement: "equipped", displacedGear: null, maxHealthDelta: newMaxHealth };
+  }
+
+  // Case 2 — slot occupied, inventory has room: stash pickup.
+  if (state.inventory.length < LAB_INVENTORY_CAPACITY) {
+    state.inventory.push(gear);
+    return { placement: "inventory", displacedGear: null, maxHealthDelta: 0 };
+  }
+
+  // Case 3 — slot occupied, inventory full: swap + drop old.
+  const oldMaxHealth = getEnhancedBonuses(existing).maxHealth ?? 0;
   const newMaxHealth = getEnhancedBonuses(gear).maxHealth ?? 0;
   state[slot] = gear;
   recomputeBonuses(state);
-  return { oldGear, maxHealthDelta: newMaxHealth - oldMaxHealth };
+  return { placement: "dropped", displacedGear: existing, maxHealthDelta: newMaxHealth - oldMaxHealth };
+}
+
+/** Equip the inventory[index] item into its matching slot, moving
+ *  any currently-equipped piece into the vacated inventory slot
+ *  (swap). maxHealthDelta is the net HP change the caller applies
+ *  to the player. Returns null if the index is out of bounds. */
+export function equipFromInventory(
+  state: LabGearState,
+  index: number,
+): { maxHealthDelta: number } | null {
+  const item = state.inventory[index];
+  if (!item) return null;
+  const slot = item.slot;
+  const existing = state[slot] ?? null;
+  const oldMaxHealth = existing ? (getEnhancedBonuses(existing).maxHealth ?? 0) : 0;
+  const newMaxHealth = getEnhancedBonuses(item).maxHealth ?? 0;
+  state[slot] = item;
+  // Replace inventory slot with the displaced gear (or remove if
+  // nothing was equipped). splice keeps the inventory indices
+  // stable for the rest of the list.
+  if (existing) {
+    state.inventory[index] = existing;
+  } else {
+    state.inventory.splice(index, 1);
+  }
+  recomputeBonuses(state);
+  return { maxHealthDelta: newMaxHealth - oldMaxHealth };
+}
+
+/** Sell the inventory[index] item for its salvage value. Returns
+ *  the crystal amount (LAB_SALVAGE_VALUE[rarity]) for the caller
+ *  to deposit via useMetaStore.getState().addShards(amount). */
+export function sellFromInventory(
+  state: LabGearState,
+  index: number,
+): number {
+  const item = state.inventory[index];
+  if (!item) return 0;
+  const value = LAB_SALVAGE_VALUE[item.rarity] ?? 0;
+  state.inventory.splice(index, 1);
+  return value;
 }
 
 // ─── Run-end salvage ─────────────────────────────────────────────────────────
 
 /** Compute total Soul Forge crystals earned by salvaging every
- *  equipped piece + every unlooted ground drop. Caller deposits via
- *  useMetaStore.getState().addShards(total). Uses LAB_SALVAGE_VALUE
- *  (mirrors main-game GEAR_SELL_VALUE). */
+ *  equipped piece + every inventory item + every unlooted ground
+ *  drop. Caller deposits via useMetaStore.getState().addShards(total).
+ *  Uses LAB_SALVAGE_VALUE (mirrors main-game GEAR_SELL_VALUE). */
 export function salvageLabGear(
   state: LabGearState,
   unlootedDrops: LabGearDropRuntime[],
@@ -215,8 +306,7 @@ export function salvageLabGear(
   addValue(state.weapon);
   addValue(state.armor);
   addValue(state.trinket);
-  for (const drop of unlootedDrops) {
-    addValue(drop.gear);
-  }
+  for (const item of state.inventory) addValue(item);
+  for (const drop of unlootedDrops) addValue(drop.gear);
   return total;
 }
