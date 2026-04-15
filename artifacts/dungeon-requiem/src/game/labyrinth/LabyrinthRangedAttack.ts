@@ -15,10 +15,15 @@
 
 import { spawnLabProjectile, type LabProjectile } from "./LabyrinthProjectile";
 
+// Labyrinth mode tightens ranged attacks by 25% to match the melee
+// range reduction applied in LabyrinthScene (see LABYRINTH_RANGE_MULT).
+// Corridor combat is tight; main-game ranges would let you snipe
+// across half the maze.
+
 // ─── Mage — piercing arcane orb ──────────────────────────────────────────────
 const MAGE_BASE_DAMAGE = 20;
 const MAGE_PROJECTILE_SPEED = 18;
-const MAGE_PROJECTILE_LIFETIME = 14 / 18; // 14u range / 18 u/s = ~0.78s
+const MAGE_PROJECTILE_LIFETIME = (14 * 0.75) / 18; // 10.5u range / 18 u/s
 const MAGE_COOLDOWN = 0.95;
 const MAGE_COLOR = "#e080ff";
 const MAGE_GLOW = "#ff60ff";
@@ -26,7 +31,7 @@ const MAGE_GLOW = "#ff60ff";
 // ─── Rogue — 3-dagger fan ────────────────────────────────────────────────────
 const ROGUE_BASE_DAMAGE = 12;         // per dagger
 const ROGUE_PROJECTILE_SPEED = 20;
-const ROGUE_PROJECTILE_LIFETIME = 11 / 20; // 11u range
+const ROGUE_PROJECTILE_LIFETIME = (11 * 0.75) / 20; // 8.25u range
 const ROGUE_COOLDOWN = 0.6;
 const ROGUE_COLOR = "#a0ffff";
 const ROGUE_GLOW = "#40e0ff";

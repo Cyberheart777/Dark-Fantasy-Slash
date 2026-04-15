@@ -18,13 +18,13 @@ import {
 } from "./LabyrinthConfig";
 import { extractWallSegments, type Maze } from "./LabyrinthMaze";
 
-const FLOOR_COLOR = "#3a2c50";
-// Walls were "#2a2038" with a "#5a4078" emissive accent — too dark to
-// read against the floor under fog, and the instanced-mesh combination
-// of castShadow + receiveShadow + emissive caused visible edge flicker
-// at the corners where wall segments met. Lifted to a brighter
-// dusk-purple stone, matte material, no shadow casting (see Walls()).
-const WALL_COLOR = "#7a6a96";
+// Walls vs floor contrast: strong hue separation so the maze layout
+// reads at a glance. Floor sits in deep-indigo territory; walls are
+// pushed to a brighter steel-lavender that catches the eye. Previous
+// palette was the same purple family with different brightness, which
+// collapsed into one blob when both had strong emissive.
+const FLOOR_COLOR = "#1a1230";      // deep indigo (was #3a2c50)
+const WALL_COLOR = "#b0a4d8";       // bright steel-lavender (was #7a6a96)
 
 interface LabyrinthMap3DProps {
   maze: Maze;
@@ -45,17 +45,16 @@ export function LabyrinthMap3D({ maze }: LabyrinthMap3DProps) {
 // ─── Floor ───────────────────────────────────────────────────────────────────
 
 function Floor() {
-  // Strongly self-emissive so the floor is visible without depending
-  // on direct lighting. Now that scene lights have been dialled back
-  // to keep characters from washing out walls, the floor needs to
-  // carry its own brightness baseline. Same trick for walls below.
+  // Floor is deliberately dim — the walls carry the brightness now.
+  // Low emissive keeps it visible on iOS PBR (won't go pitch black)
+  // but deep enough that the steel-lavender walls pop against it.
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
       <planeGeometry args={[LABYRINTH_WORLD_EXTENT, LABYRINTH_WORLD_EXTENT]} />
       <meshStandardMaterial
         color={FLOOR_COLOR}
-        emissive="#5a3870"
-        emissiveIntensity={1.4}
+        emissive="#2a1a48"
+        emissiveIntensity={0.5}
         roughness={0.88}
         metalness={0.06}
       />
@@ -140,8 +139,8 @@ function Walls({ segments }: { segments: ReturnType<typeof extractWallSegments> 
       <boxGeometry args={[1, 1, 1]} />
       <meshStandardMaterial
         color={WALL_COLOR}
-        emissive="#7050a0"
-        emissiveIntensity={1.2}
+        emissive="#8a78c4"
+        emissiveIntensity={1.0}
         roughness={0.92}
         metalness={0}
       />

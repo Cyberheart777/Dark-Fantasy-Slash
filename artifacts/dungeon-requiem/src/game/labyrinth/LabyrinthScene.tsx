@@ -231,11 +231,16 @@ export function LabyrinthScene() {
   const selectedClass = useGameStore((s) => s.selectedClass) as CharacterClass;
   const classDef = CHARACTER_DATA[selectedClass];
 
-  // Combat stats derived from the class definition. Same shape as
-  // combatStats so the combat system code is unchanged.
+  // Combat stats derived from the class definition. Labyrinth mode
+  // reduces weapon range by 25% vs the main game — tighter melee
+  // arcs and shorter projectile ranges tune the tight corridor
+  // combat where the main-game's wide-open-arena ranges feel too
+  // generous. Same shape as combatStats so the combat system code
+  // is unchanged.
+  const LABYRINTH_RANGE_MULT = 0.75;
   const combatStats: LabCombatStats = useMemo(() => ({
     damage: classDef.damage,
-    atkRange: classDef.attackRange,
+    atkRange: classDef.attackRange * LABYRINTH_RANGE_MULT,
     // attackSpeed is in swings-per-second in CharacterData; convert
     // to seconds-per-swing for atkCooldown.
     atkCooldown: 1 / Math.max(0.01, classDef.attackSpeed),
@@ -901,15 +906,15 @@ function GeoCharacter({
 function CameraFollow({ playerRef }: { playerRef: React.MutableRefObject<LabPlayer> }) {
   const { camera } = useThree();
   const target = useRef(new THREE.Vector3());
-  // Mostly top-down: ~12.5° tilt instead of the previous ~33.7°. This
-  // makes the safe-zone disc read as a circle on screen instead of a
-  // foreshortened ellipse, while keeping a hint of perspective so the
-  // walls still look 3D rather than flat.
-  const currentPos = useRef(new THREE.Vector3(0, 36, 8));
+  // Camera zoomed in (was y=36 / back=8). Drops roughly 40% closer —
+  // maze walls fill more of the screen and corridor play reads as
+  // immersive rather than map-view. Tilt ratio preserved (~15° off
+  // straight-down) so the zone disc still reads as a circle.
+  const currentPos = useRef(new THREE.Vector3(0, 22, 6));
 
   useFrame((_, delta) => {
     const p = playerRef.current;
-    const desired = new THREE.Vector3(p.x, 36, p.z + 8);
+    const desired = new THREE.Vector3(p.x, 22, p.z + 6);
     currentPos.current.lerp(desired, Math.min(1, delta * 6));
     camera.position.copy(currentPos.current);
     target.current.set(p.x, 0, p.z);
