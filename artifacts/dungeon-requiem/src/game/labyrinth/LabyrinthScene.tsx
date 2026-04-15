@@ -1885,6 +1885,26 @@ function ZoneTickLoop({
         shared.lastPortalPopupSec = elapsedSec;
         shared.lastPortalPopupCount = newPortals.length;
         portalsChanged = true;
+        // Audio cue — one play per milestone regardless of portal
+        // count. Reuses wave_clear because there's no dedicated
+        // portal_spawn sound in the main-game registry and adding
+        // one would require a core audio-system edit.
+        audioManager.play("wave_clear");
+        // Visual beacon — drop a short-lived purple ground disc at
+        // each new portal's location so the spawn reads visually
+        // even when the player is at the opposite end of the maze.
+        // Reuses the existing LabGroundFx pipeline (renderer +
+        // lifetime tick already running), so no new render state.
+        for (const np of newPortals) {
+          groundFxRef.current.push({
+            id: `portal-beacon-${np.id}`,
+            x: np.x,
+            z: np.z,
+            radius: 3.2,
+            lifetime: 2.0,
+            color: "#c080ff",
+          });
+        }
       }
       shared.spawnedMilestones.add(i);
     }
@@ -2230,6 +2250,8 @@ function LabyrinthHUD({
         <PortalArrow
           dx={display.nearestPortalDirX}
           dz={display.nearestPortalDirZ}
+          popupAtSec={display.lastPortalPopupSec}
+          elapsedSec={display.elapsedSec}
         />
       )}
 
@@ -2438,8 +2460,23 @@ function PoisonPips({ stacks, dps }: { stacks: number; dps: number }) {
 }
 
 /** Screen-edge arrow pointing toward the nearest live extraction portal. */
-function PortalArrow({ dx, dz }: { dx: number; dz: number }) {
+function PortalArrow({ dx, dz, popupAtSec, elapsedSec }: {
+  dx: number;
+  dz: number;
+  popupAtSec: number;
+  elapsedSec: number;
+}) {
   const angleDeg = Math.atan2(dx, -dz) * (180 / Math.PI);
+  // Pulse harder for the first 3.5 s after a milestone spawn so
+  // players notice a new portal regardless of where their eyes are.
+  const spawnAge = elapsedSec - popupAtSec;
+  const freshPulse = spawnAge >= 0 && spawnAge < 3.5;
+  const pulse = 1 + 0.12 * Math.sin(elapsedSec * 6);
+  const size = freshPulse ? 52 * pulse : 44;
+  const opacity = freshPulse ? 1 : 0.85;
+  const shadow = freshPulse
+    ? "0 0 18px #d090ff, 0 0 36px #a040ff, 0 0 54px #6030cc"
+    : "0 0 14px #a040ff, 0 0 28px #6030cc";
   return (
     <div style={{
       position: "absolute",
@@ -2447,10 +2484,11 @@ function PortalArrow({ dx, dz }: { dx: number; dz: number }) {
       left: "50%",
       transform: `translate(-50%, -50%) rotate(${angleDeg}deg) translateY(-min(22vh, 180px))`,
       pointerEvents: "none",
-      fontSize: 36,
-      color: "#c080ff",
-      textShadow: "0 0 14px #a040ff, 0 0 28px #6030cc",
-      opacity: 0.75,
+      fontSize: size,
+      color: "#e0c0ff",
+      textShadow: shadow,
+      opacity,
+      transition: "font-size 0.12s linear, text-shadow 0.12s linear",
     }}>
       ⬭
     </div>
@@ -2473,9 +2511,14 @@ function PortalPopup({
   let opacity = 1;
   if (age < 0.2) opacity = age / 0.2;
   else if (age > 2.8) opacity = Math.max(0, 1 - (age - 2.8) / 0.7);
+  // Slow heartbeat pulse on the title to draw the eye — 1.0..1.06
+  // scale oscillation at ~2 Hz during the hold phase.
+  const pulse = 1 + 0.06 * Math.sin(age * 12);
   return (
     <div style={{ ...styles.portalPopup, opacity }}>
-      <div style={styles.portalPopupTitle}>⬭ EXTRACTION PORTAL OPENED</div>
+      <div style={{ ...styles.portalPopupTitle, transform: `scale(${pulse})` }}>
+        ⬭ EXTRACTION PORTAL OPENED ⬭
+      </div>
       <div style={styles.portalPopupSub}>
         {count === 1
           ? "1 NEW SITE · WALK INTO IT TO ESCAPE"
@@ -2900,33 +2943,39 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 6,
     justifyContent: "flex-start",
   },
+  // Portal spawn banner — beefed up in item 5/8. Larger title,
+  // double-ring border, stronger glow, bigger footprint than the
+  // original subtle popup.
   portalPopup: {
-    position: "absolute",
-    top: "18%",
+    position: "absolute" as const,
+    top: "15%",
     left: "50%",
     transform: "translateX(-50%)",
-    padding: "14px 28px",
-    background: "rgba(30,10,50,0.85)",
-    border: "1px solid rgba(160,80,255,0.55)",
-    borderRadius: 10,
-    boxShadow: "0 0 24px rgba(160,80,255,0.4)",
-    pointerEvents: "none",
+    padding: "18px 42px",
+    background: "radial-gradient(ellipse at center, rgba(60,20,100,0.92), rgba(20,0,40,0.82) 80%)",
+    border: "2px solid rgba(200,120,255,0.8)",
+    borderRadius: 12,
+    boxShadow: "0 0 30px rgba(180,100,255,0.6), inset 0 0 18px rgba(120,60,200,0.45)",
+    pointerEvents: "none" as const,
     textAlign: "center" as const,
     transition: "opacity 0.15s",
+    zIndex: 25,
+    fontFamily: "monospace",
   },
   portalPopupTitle: {
-    fontSize: 18,
-    fontWeight: 900,
-    letterSpacing: 4,
-    color: "#e0a8ff",
-    textShadow: "0 0 10px rgba(200,120,255,0.7)",
+    fontSize: 26,
+    fontWeight: 900 as const,
+    letterSpacing: 5,
+    color: "#f0d0ff",
+    textShadow: "0 0 16px rgba(220,140,255,0.9), 0 0 32px rgba(160,80,240,0.7)",
   },
   portalPopupSub: {
-    fontSize: 11,
-    letterSpacing: 2,
-    color: "rgba(220,180,255,0.85)",
-    marginTop: 5,
+    fontSize: 13,
+    letterSpacing: 3,
+    color: "#e0b8ff",
+    marginTop: 8,
     fontFamily: "monospace",
+    textShadow: "0 0 8px rgba(200,140,255,0.6)",
   },
   extractedOverlay: {
     position: "absolute",
