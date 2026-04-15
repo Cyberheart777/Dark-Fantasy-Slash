@@ -36,6 +36,7 @@ import { AttackEffect } from "../effects/AttackEffect";
 import { Projectile3D } from "../entities/Projectile3D";
 import { HUD } from "../ui/HUD";
 import { AffixTooltip } from "../ui/AffixTooltip";
+import { AffixBanner } from "../ui/AffixBanner";
 import { LevelUp } from "../ui/LevelUp";
 import { PauseMenu } from "../ui/PauseMenu";
 import { MobileControls } from "../ui/MobileControls";
@@ -3509,6 +3510,10 @@ export function GameScene({ onRestart }: GameSceneProps) {
       {/* Affix tap-to-inspect tooltip — populated by Enemy3D.onClick.
           Mounted at scene root so it overlays the canvas + HUD. */}
       <AffixTooltip />
+      {/* First-encounter banner — fires once per affix per session
+          via gameStore.markAffixEncountered (called from Enemy3D's
+          AffixIcons mount). */}
+      <AffixBanner />
       {phase === "paused" && (
         <PauseMenu
           onExtract={handleExtract}

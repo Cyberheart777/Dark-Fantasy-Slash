@@ -1134,6 +1134,14 @@ function AffixIcons({ enemy }: { enemy: EnemyRuntime }) {
   // in without restructuring this component. Filter out "none" via
   // the AffixData helper.
   const affixes: EnemyAffix[] = isAffixed(enemy.affix as EnemyAffix) ? [enemy.affix as EnemyAffix] : [];
+  // First-encounter banner: register every affix this enemy carries
+  // when the icon group mounts. The store de-dupes (one banner per
+  // affix per session), so calling on every Enemy3D mount is safe.
+  useEffect(() => {
+    if (affixes.length === 0) return;
+    const mark = useGameStore.getState().markAffixEncountered;
+    for (const a of affixes) mark(a);
+  }, [affixes]);
   // Sit above the existing health-bar Y (hpBarHeight = scale * 2.5 + 0.5
   // in the main render below) plus 0.55u of clearance. Rendered as a
   // sibling of the scaled enemy mesh so the icon size is fixed on

@@ -159,6 +159,15 @@ export interface GameUIState {
    *  the AffixTooltip overlay (HUD-level DOM popup). */
   inspectedAffix: { enemyType: string; affixes: string[] } | null;
 
+  /** Set of affix ids encountered in the CURRENT SESSION (resets on
+   *  reload). Used to gate the first-encounter banner — each affix
+   *  shows the banner once per session, never repeats. */
+  encounteredAffixesSession: Set<string>;
+  /** Affix to show in the first-encounter banner overlay. Set by
+   *  markAffixEncountered() the moment a new-this-session affix is
+   *  spotted; AffixBanner clears it after the 3.5s fade. */
+  pendingAffixBanner: string | null;
+
   // Gear
   equippedWeapon: GearDef | null;
   equippedArmor: GearDef | null;
@@ -174,6 +183,14 @@ export interface GameUIState {
   setBossState: (hp: number, maxHp: number, name: string, alive: boolean) => void;
   setBossSpecialWarn: (active: boolean) => void;
   setInspectedAffix: (info: { enemyType: string; affixes: string[] } | null) => void;
+  /** Records an affix encounter for the session. If this is the
+   *  FIRST sighting of this affix this session, also sets
+   *  pendingAffixBanner so the AffixBanner overlay shows. Returns
+   *  true on first sight (banner triggered), false on repeat. */
+  markAffixEncountered: (affix: string) => boolean;
+  /** Clears the pending banner — called by AffixBanner after its
+   *  3.5s fade-out completes. */
+  clearAffixBanner: () => void;
   setSelectedClass: (cls: CharacterClass) => void;
   setSelectedRace: (race: RaceType) => void;
   setDifficultyTier: (tier: DifficultyTier) => void;
@@ -247,13 +264,15 @@ const initialState = {
   extractedBonusShards: 0,
   activeBuffs: [] as ActiveBuff[],
   inspectedAffix: null as { enemyType: string; affixes: string[] } | null,
+  encounteredAffixesSession: new Set<string>(),
+  pendingAffixBanner: null as string | null,
   equippedWeapon: null as GearDef | null,
   equippedArmor: null as GearDef | null,
   equippedTrinket: null as GearDef | null,
   inventory: [] as GearDef[],
 };
 
-export const useGameStore = create<GameUIState>((set) => ({
+export const useGameStore = create<GameUIState>((set, get) => ({
   ...initialState,
 
   setPhase: (phase) => set({ phase }),
@@ -269,6 +288,17 @@ export const useGameStore = create<GameUIState>((set) => ({
   setBossState: (hp, maxHp, name, alive) => set({ bossHP: hp, bossMaxHP: maxHp, bossName: name, bossAlive: alive }),
   setBossSpecialWarn: (active) => set({ bossSpecialWarn: active }),
   setInspectedAffix: (info) => set({ inspectedAffix: info }),
+  markAffixEncountered: (affix) => {
+    const seen = get().encounteredAffixesSession;
+    if (seen.has(affix)) return false;
+    // Mutate the same Set instance + bump via a fresh wrapper so
+    // selectors that compare reference identity see the change.
+    const next = new Set(seen);
+    next.add(affix);
+    set({ encounteredAffixesSession: next, pendingAffixBanner: affix });
+    return true;
+  },
+  clearAffixBanner: () => set({ pendingAffixBanner: null }),
   setNemesisState: (alive, announce) => set({ nemesisAlive: alive, nemesisAnnounce: announce }),
   setHighestBossWaveCleared: (wave) => set({ highestBossWaveCleared: wave }),
   setRunExtracted: (extracted) => set({ runExtracted: extracted }),

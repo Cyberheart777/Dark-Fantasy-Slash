@@ -15,6 +15,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useGameStore } from "../../store/gameStore";
 import { AffixTooltip } from "../../ui/AffixTooltip";
+import { AffixBanner } from "../../ui/AffixBanner";
 import { InputManager3D } from "../InputManager3D";
 import {
   LABYRINTH_CONFIG,
@@ -631,6 +632,7 @@ export function LabyrinthScene() {
           shims keep affix="none" so this is dormant; will activate
           if affix-rolling is added to the labyrinth shim later. */}
       <AffixTooltip />
+      <AffixBanner />
       <LabyrinthDebug
         playerRef={playerRef}
         sharedRef={sharedRef}
