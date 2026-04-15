@@ -85,6 +85,11 @@ export function spawnLabGearDrop(
   gear: GearDef,
   x: number,
   z: number,
+  /** Override lifetime (seconds). Default = LAB_GEAR_LIFETIME.
+   *  Pass Number.POSITIVE_INFINITY for "permanent" drops (e.g.,
+   *  minor-reward-room gear that sits waiting for the player to
+   *  find it). */
+  lifetimeSec: number = LAB_GEAR_LIFETIME,
 ): void {
   list.push({
     id: `labgear${dropIdCounter++}`,
@@ -92,7 +97,7 @@ export function spawnLabGearDrop(
     z,
     gear,
     floatOffset: Math.random() * Math.PI * 2,
-    lifetime: LAB_GEAR_LIFETIME,
+    lifetime: lifetimeSec,
   });
 }
 

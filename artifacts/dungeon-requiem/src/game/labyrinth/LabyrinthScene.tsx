@@ -24,7 +24,10 @@ import {
   cellToWorld,
   worldToCell,
   extractWallSegments,
+  findOpenWallDir,
   type Maze,
+  type MazeCell,
+  type WallDir,
   WALL_N, WALL_E, WALL_S, WALL_W,
 } from "./LabyrinthMaze";
 import { LabyrinthMap3D } from "./LabyrinthMap3D";
@@ -222,6 +225,15 @@ interface LabSharedState {
    *  unlocks; the combat loop consumes it by rolling 3 epic gear
    *  drops inside the room and setting it back to false. */
   pendingLootSpawn: boolean;
+  /** Minor-room common-gear drops seeded at scene mount. Drained on
+   *  the first CombatEnemyLoop tick (spawn into the gearDrops list
+   *  with infinite lifetime so they persist until the player
+   *  actually visits the dead-end room). */
+  pendingMinorRoomGear: Array<{ x: number; z: number; gear: GearDef }>;
+  /** True while the player is within prompt radius of the locked
+   *  vault door AND doesn't hold a champion key. Drives the
+   *  "REQUIRES CHAMPION KEY" HUD prompt. */
+  nearLockedVault: boolean;
   /** Per-rival announcement data. Populated on each rival spawn;
    *  drives the "A RIVAL <CLASS> ENTERS THE LABYRINTH" HUD banner
    *  which fades over 3.5 s. Null between announcements. */
@@ -339,6 +351,8 @@ export function LabyrinthScene() {
     hasKey: false,
     lootRoomUnlocked: false,
     pendingLootSpawn: false,
+    pendingMinorRoomGear: [],
+    nearLockedVault: false,
     rivalAnnounce: null,
     outsideZone: false,
     safeDirX: 0, safeDirZ: 0,
@@ -393,20 +407,71 @@ export function LabyrinthScene() {
   // ring dead-end (Chebyshev distance ≥ 7 from maze center). This is
   // a visual placeholder this commit — the key + unlock mechanic
   // lands with items #4 and #7.
-  const lootRoomCell = useMemo(() => {
+  // Dead-end room layout (item 1 rework). Picks 3-4 distinct dead-
+  // end cells distributed across the outer + mid rings:
+  //   [0]   — the VAULT: outer-ring dead-end, locked door, guaranteed
+  //           rare gear behind it (spawned on unlock).
+  //   [1..] — MINOR reward rooms: mix of outer + mid ring dead-ends,
+  //           each hosting a treasure chest + common gear drop at
+  //           the cell centre. No lock, no gate — just a small but
+  //           real reward so any dead-end exploration feels earned.
+  //
+  // Also computes the vault's open-wall direction so the door mesh
+  // can be embedded in the corridor architecture rather than
+  // floating in open space.
+  const lootLayout = useMemo(() => {
     const center = maze.center;
-    const outerDeadEnds = maze.deadEnds.filter((c) => {
-      const dc = Math.abs(c.col - center.col);
-      const dr = Math.abs(c.row - center.row);
-      return Math.max(dc, dr) >= LABYRINTH_CONFIG.OUTER_RING_MIN;
-    });
-    // Degenerate fallback: any dead-end, then any cell. A 21x21 maze
-    // with LOOP_FACTOR=0.15 will always have plenty of outer dead-ends
-    // but this is free insurance.
-    const pool = outerDeadEnds.length > 0 ? outerDeadEnds : maze.deadEnds;
-    if (pool.length === 0) return maze.spawn;
-    return pool[Math.floor(Math.random() * pool.length)];
+    const cheb = (c: { col: number; row: number }) =>
+      Math.max(Math.abs(c.col - center.col), Math.abs(c.row - center.row));
+    const deadEndCells = maze.deadEnds
+      .map((c) => maze.cells[c.row * maze.size + c.col])
+      .filter((c) => c != null);
+    const outer = deadEndCells.filter((c) => cheb(c) >= LABYRINTH_CONFIG.OUTER_RING_MIN);
+    const mid = deadEndCells.filter((c) => cheb(c) >= 4 && cheb(c) < LABYRINTH_CONFIG.OUTER_RING_MIN);
+
+    // Shuffle helpers so each run picks different rooms.
+    const shuffle = <T,>(arr: T[]): T[] => {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    };
+    const outerShuf = shuffle(outer);
+    const midShuf = shuffle(mid);
+
+    // Vault = first outer-ring dead-end (falls back to any dead-end).
+    const vault = outerShuf[0] ?? deadEndCells[0] ?? null;
+    const vaultOpenDir = vault ? findOpenWallDir(vault) : null;
+
+    // Minor rooms: 2 outer (after vault) + 1 mid. If one ring is
+    // short-stocked, backfill from the other. Aim for 3 minor rooms
+    // so the total is 4 dead-end rooms per run.
+    const remainingOuter = outerShuf.slice(1);
+    const minorPool: MazeCell[] = [];
+    minorPool.push(...remainingOuter.slice(0, 2));
+    minorPool.push(...midShuf.slice(0, 3 - minorPool.length));
+    // Backfill if still short.
+    if (minorPool.length < 3) {
+      const used = new Set<string>([
+        ...(vault ? [`${vault.col},${vault.row}`] : []),
+        ...minorPool.map((c) => `${c.col},${c.row}`),
+      ]);
+      for (const c of deadEndCells) {
+        if (minorPool.length >= 3) break;
+        if (used.has(`${c.col},${c.row}`)) continue;
+        minorPool.push(c);
+      }
+    }
+
+    return {
+      vaultCell: vault ? { col: vault.col, row: vault.row } : maze.spawn,
+      vaultOpenDir: vaultOpenDir ?? "N",
+      minorCells: minorPool.map((c) => ({ col: c.col, row: c.row })),
+    };
   }, [maze]);
+  const lootRoomCell = lootLayout.vaultCell;
   // Wall-to-wall traps. Spawned once per run at scene mount (same as
   // enemies), kept in a ref (stationary state machines — no React
   // re-render needed for their phase changes; their emitter visuals
@@ -417,9 +482,38 @@ export function LabyrinthScene() {
   }
   // Loot chests — treasure (60%), trapped (25%), mimic (15%). Each
   // consumed chest is marked state="consumed" and evicted lazily.
+  // Additional guaranteed-treasure chests are placed at each minor
+  // reward room (item 1 redesign); those are appended after the
+  // random chest roll so their positions don't get shuffled.
   const chestsRef = useRef<LabChest[]>([]);
   if (chestsRef.current.length === 0) {
     chestsRef.current = spawnLabChests(maze, LABYRINTH_CONFIG.LOOT_CHEST_COUNT);
+    // Minor reward rooms: one guaranteed treasure chest + one
+    // common gear drop per room. Gear uses infinite lifetime so
+    // the reward is still there when the player eventually
+    // wanders into the dead-end — no time pressure for a small
+    // reward. Chest payload (heal + XP orbs) fires on proximity.
+    for (const cell of lootLayout.minorCells) {
+      const pos = cellToWorld(cell.col, cell.row);
+      chestsRef.current.push({
+        id: `minor-chest-${cell.col}-${cell.row}`,
+        x: pos.x,
+        z: pos.z,
+        kind: "treasure",
+        state: "live",
+        revealSec: 0,
+      });
+      const commonGear = rollGearDrop("common");
+      // Stash the drop in gearDropsRef once it's initialised. We
+      // can't reach it from the outer scene scope (it's scoped
+      // inside LabyrinthWorld) so we tuck the pending list on
+      // sharedRef and drain it on the first CombatEnemyLoop tick.
+      sharedRef.current.pendingMinorRoomGear.push({
+        x: pos.x,
+        z: pos.z,
+        gear: commonGear,
+      });
+    }
   }
   // Seed sharedRef with the progression's starting values so HUD reads
   // sensible defaults before the first tick runs.
@@ -496,6 +590,7 @@ export function LabyrinthScene() {
           gearDropsRef={gearDropsRef}
           ranSalvageRef={ranSalvageRef}
           lootRoomCell={lootRoomCell}
+          vaultOpenDir={lootLayout.vaultOpenDir}
           critChance={classDef.critChance}
           runStartMs={runStartMs}
         />
@@ -546,6 +641,7 @@ function LabyrinthWorld({
   gearDropsRef,
   ranSalvageRef,
   lootRoomCell,
+  vaultOpenDir,
   critChance,
   runStartMs,
 }: {
@@ -579,6 +675,7 @@ function LabyrinthWorld({
   gearDropsRef: React.MutableRefObject<LabGearDropRuntime[]>;
   ranSalvageRef: React.MutableRefObject<boolean>;
   lootRoomCell: { col: number; row: number };
+  vaultOpenDir: WallDir;
   critChance: number;
   runStartMs: React.MutableRefObject<number>;
 }) {
@@ -690,6 +787,7 @@ function LabyrinthWorld({
       <LabyrinthLootDoor3D
         x={cellToWorld(lootRoomCell.col, lootRoomCell.row).x}
         z={cellToWorld(lootRoomCell.col, lootRoomCell.row).z}
+        openDir={vaultOpenDir}
         unlocked={lootRoomUnlockedFlag}
       />
       {/* Active projectiles — wall-trap beams, enemy turret shots,
@@ -1203,9 +1301,14 @@ function MovementLoop({
     // spawn the gear payload on its next tick.
     if (!sharedRef.current.lootRoomUnlocked) {
       const LOCK_R = LABYRINTH_CONFIG.CELL_SIZE * 0.55;
+      const PROMPT_R = LABYRINTH_CONFIG.CELL_SIZE * 1.0;  // show prompt further out than the block radius
       const dx = p.x - lootCellWorld.x;
       const dz = p.z - lootCellWorld.z;
       const dsq = dx * dx + dz * dz;
+      // Prompt flag: true when player is near the door without a key.
+      // Cleared on unlock or when the player walks away.
+      sharedRef.current.nearLockedVault =
+        !sharedRef.current.hasKey && dsq < PROMPT_R * PROMPT_R;
       if (dsq < LOCK_R * LOCK_R) {
         if (sharedRef.current.hasKey) {
           // Unlock — key is consumed, gear spawn pending, door visual
@@ -1213,6 +1316,7 @@ function MovementLoop({
           sharedRef.current.lootRoomUnlocked = true;
           sharedRef.current.hasKey = false;
           sharedRef.current.pendingLootSpawn = true;
+          sharedRef.current.nearLockedVault = false;
           audioManager.play("wave_clear");
         } else {
           // Blocked. Push back onto the lock boundary.
@@ -1229,6 +1333,8 @@ function MovementLoop({
           }
         }
       }
+    } else {
+      sharedRef.current.nearLockedVault = false;
     }
 
     // Facing angle follows active movement direction (dash OR joystick).
@@ -1780,6 +1886,16 @@ function CombatEnemyLoop({
     //       a triangle around the room centre so the player can see
     //       all three at a glance. Also drops a ground-FX beacon for
     //       visual juice.
+    // Drain the minor-room pending gear on the first tick. Each
+    // entry spawns a permanent (infinite-lifetime) gear drop at the
+    // dead-end cell centre so it waits for the player to find it.
+    if (shared.pendingMinorRoomGear.length > 0) {
+      for (const entry of shared.pendingMinorRoomGear) {
+        spawnLabGearDrop(gearDropsRef.current, entry.gear, entry.x, entry.z, Number.POSITIVE_INFINITY);
+      }
+      shared.pendingMinorRoomGear.length = 0;
+    }
+
     if (shared.pendingLootSpawn) {
       shared.pendingLootSpawn = false;
       const { x: lx, z: lz } = cellToWorld(lootRoomCell.col, lootRoomCell.row);
@@ -2185,6 +2301,7 @@ function LabyrinthHUD({
     equipped: { weapon: null, armor: null, trinket: null } as LabSharedState["equipped"],
     wardenHud: null as LabSharedState["wardenHud"],
     hasKey: false,
+    nearLockedVault: false,
     rivalAnnounce: null as LabSharedState["rivalAnnounce"],
   });
 
@@ -2239,6 +2356,7 @@ function LabyrinthHUD({
         equipped: s.equipped,
         wardenHud: s.wardenHud,
         hasKey: s.hasKey,
+        nearLockedVault: s.nearLockedVault,
         rivalAnnounce: s.rivalAnnounce,
       });
     }, 100);
@@ -2372,6 +2490,16 @@ function LabyrinthHUD({
         <div style={styles.keyIndicator}>
           <span style={styles.keyIcon}>🗝</span>
           <span style={styles.keyLabel}>VAULT KEY</span>
+        </div>
+      )}
+
+      {/* "Requires Champion Key" prompt — appears only when the
+          player stands near the locked vault WITHOUT the key. Fades
+          via CSS transition when the player walks away. */}
+      {display.nearLockedVault && !display.defeated && !display.extracted && (
+        <div style={styles.lockedPrompt}>
+          <span style={styles.lockedPromptIcon}>🗝</span>
+          <span style={styles.lockedPromptText}>REQUIRES CHAMPION KEY</span>
         </div>
       )}
 
@@ -2992,6 +3120,37 @@ const styles: Record<string, React.CSSProperties> = {
   // Visible once shared.hasKey flips true (champion killed, item 4).
   // Item 7 will hide this when the key is consumed at the loot-room
   // door.
+  // Locked-vault prompt — appears centered above the player's HP bar
+  // when they're near the vault without a key. Gold/amber palette
+  // matches the lock visual on the door.
+  lockedPrompt: {
+    position: "absolute" as const,
+    top: "38%",
+    left: "50%",
+    transform: "translateX(-50%)",
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 20px",
+    background: "linear-gradient(135deg, rgba(50,30,10,0.92), rgba(30,15,0,0.85))",
+    border: "1px solid rgba(255,180,60,0.7)",
+    borderRadius: 8,
+    boxShadow: "0 0 22px rgba(255,170,60,0.45)",
+    pointerEvents: "none" as const,
+    fontFamily: "monospace",
+    transition: "opacity 0.2s",
+    zIndex: 20,
+  },
+  lockedPromptIcon: {
+    fontSize: 22,
+    textShadow: "0 0 8px rgba(255,200,80,0.8)",
+  },
+  lockedPromptText: {
+    color: "#ffdc8a",
+    fontSize: 13,
+    fontWeight: 700 as const,
+    letterSpacing: 3,
+  },
   keyIndicator: {
     position: "absolute" as const,
     top: 248,

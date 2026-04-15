@@ -240,6 +240,19 @@ export function cellToWorld(col: number, row: number): { x: number; z: number } 
   };
 }
 
+/** For a dead-end cell (exactly one open wall), returns the cardinal
+ *  direction of that single opening. Used by the vault-door placer
+ *  so the door sits ON the open-wall edge (embedded in the corridor
+ *  architecture) rather than floating at the cell centre. */
+export type WallDir = "N" | "S" | "E" | "W";
+export function findOpenWallDir(cell: MazeCell): WallDir | null {
+  if (!(cell.walls & WALL_N)) return "N";
+  if (!(cell.walls & WALL_S)) return "S";
+  if (!(cell.walls & WALL_E)) return "E";
+  if (!(cell.walls & WALL_W)) return "W";
+  return null;
+}
+
 /** Convert world (x, z) to grid (col, row). Clamps to bounds. */
 export function worldToCell(x: number, z: number): { col: number; row: number } {
   const cs = LABYRINTH_CONFIG.CELL_SIZE;
