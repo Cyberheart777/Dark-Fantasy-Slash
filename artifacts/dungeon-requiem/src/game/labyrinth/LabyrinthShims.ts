@@ -169,7 +169,11 @@ export function updatePlayerShim(
 
 // ─── Enemy shim ──────────────────────────────────────────────────────────────
 
-/** Mapping from Labyrinth enemy kind → main-game Enemy3D type key. */
+/** Mapping from Labyrinth enemy kind → main-game Enemy3D type key.
+ *  Rival kinds are NOT mapped here — they render via a dedicated
+ *  `LabyrinthRivalChampion3D` component that reuses the player-side
+ *  class meshes. The shim's consumers (LabyrinthEnemies3D) branch
+ *  on kind before calling this function. */
 export function enemyTypeForKind(kind: LabEnemy["kind"]): string {
   switch (kind) {
     case "corridor_guardian": return "elite";
@@ -177,18 +181,22 @@ export function enemyTypeForKind(kind: LabEnemy["kind"]): string {
     case "mimic": return "scuttler";
     case "shadow_stalker": return "wraith";
     case "warden": return "boss";
-    // Champions reuse the main-game's elite visual — same silhouette
-    // as a guardian but scaled up and recoloured in visualsForKind
-    // below so players read it as a mini-boss, not another guardian.
-    case "champion": return "elite";
+    // Heavy (ex-champion) — keeps the elite silhouette, but
+    // demoted to a standard heavy patrol per item 9. Scale/palette
+    // adjusted in visualsForKind below so it reads as a regular
+    // heavy rather than a boss.
+    case "heavy": return "elite";
+    case "rival_warrior":
+    case "rival_mage":
+    case "rival_rogue":
+      // These never pass through the Enemy3D shim. Kept here only
+      // so the exhaustive-switch TS check passes.
+      return "elite";
   }
 }
 
-/** Per-kind palette + scale. Elite's native visual scale is 1.6 — too
- *  large for corridor width. Use 1.0 for guardians so they read as
- *  "champions shrunk to fit the tight halls" rather than squeezing
- *  through gaps. Trap spawners are slightly smaller (0.85) so they
- *  feel like a stationary turret rather than a regular mob. */
+/** Per-kind palette + scale. Rival kinds are not rendered via this
+ *  shim — they use the labyrinth-local class-mesh renderer. */
 function visualsForKind(kind: LabEnemy["kind"]): {
   scale: number; color: string; emissive: string;
 } {
@@ -203,11 +211,18 @@ function visualsForKind(kind: LabEnemy["kind"]): {
       return { scale: 0.9, color: "#101018", emissive: "#3a2a5a" };
     case "warden":
       return { scale: 1.8, color: "#2a0a2a", emissive: "#a020ff" };
-    // Champion — scale 1.5 (between guardian 1.0 and warden 1.8),
-    // gold accents on a deep-red base so it reads as "elite warrior"
-    // silhouette. Distinguishable at a glance from a patrol guardian.
-    case "champion":
-      return { scale: 1.5, color: "#b84020", emissive: "#ffcc40" };
+    // Heavy — keeps the original orange/red champion palette but
+    // scaled down from the old 1.5 to 1.2 so it reads as a heavy
+    // patrol rather than a mini-boss.
+    case "heavy":
+      return { scale: 1.2, color: "#b84020", emissive: "#ffcc40" };
+    // Rivals bypass this renderer; fallback values keep the type
+    // system happy and harmlessly render a small red cube if the
+    // branch-based guard ever fails.
+    case "rival_warrior":
+    case "rival_mage":
+    case "rival_rogue":
+      return { scale: 1.0, color: "#402020", emissive: "#804040" };
   }
 }
 

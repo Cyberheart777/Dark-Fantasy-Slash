@@ -59,6 +59,9 @@ export const LABYRINTH_CONFIG = {
   CORRIDOR_GUARDIAN_COUNT: 20,
   /** Stationary turret enemies that fire projectiles with line-of-sight. */
   TRAP_SPAWNER_COUNT: 8,
+  /** Heavy enemies (ex-"champion" orange model, demoted to standard
+   *  heavy). Spawn at run start alongside guardians + trap spawners. */
+  HEAVY_COUNT: 3,
   SHADOW_STALKER_INTERVAL_SEC: 25,
   WARDEN_MIDPOINT_RADIUS: 3,  // cells from center where warden spawns
 

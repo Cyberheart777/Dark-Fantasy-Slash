@@ -67,14 +67,16 @@ import {
 import {
   spawnCorridorGuardians,
   spawnTrapSpawners,
+  spawnHeavies,
   updateEnemy,
   damageEnemy,
   isEnemyEvictable,
   makeShadowStalker,
   findStalkerSpawnCell,
   makeCorridorGuardianAt,
-  makeChampion,
-  findChampionSpawnCell,
+  makeRivalChampion,
+  findOuterRingSpawnCell,
+  findMidRingSpawnCell,
   type EnemyRuntime,
 } from "./LabyrinthEnemy";
 import {
@@ -198,11 +200,16 @@ interface LabSharedState {
   victory: boolean;
   /** true once a warden has been spawned this run (prevents re-spawn). */
   wardenSpawned: boolean;
-  /** true once the champion (Nemesis-style mini-boss) has spawned.
-   *  Only one per run. See item 4. */
-  championSpawned: boolean;
-  /** true once the champion has been killed AND dropped the key.
-   *  Flipped false when the key is consumed at the loot-door (item 7). */
+  /** true once the first rival champion has spawned (at ~2 min). */
+  firstRivalSpawned: boolean;
+  /** true once the second rival champion has spawned (at ~5 min). */
+  secondRivalSpawned: boolean;
+  /** Number of rival champions the player has killed this run.
+   *  First kill drops the vault key. Second kill drops a guaranteed
+   *  rare gear piece. */
+  rivalKillCount: number;
+  /** true once ANY rival has been killed AND dropped the key.
+   *  Flipped false when the key is consumed at the loot-door. */
   hasKey: boolean;
   /** true once the player has opened the loot-room door by walking
    *  into it with hasKey=true. Consumes the key (sets hasKey=false)
@@ -215,9 +222,10 @@ interface LabSharedState {
    *  unlocks; the combat loop consumes it by rolling 3 epic gear
    *  drops inside the room and setting it back to false. */
   pendingLootSpawn: boolean;
-  /** Elapsed-seconds timestamp of the most recent champion spawn.
-   *  Drives the "A CHAMPION HUNTS YOU" HUD banner (fades over 3.5s). */
-  championAnnouncedAt: number;
+  /** Per-rival announcement data. Populated on each rival spawn;
+   *  drives the "A RIVAL <CLASS> ENTERS THE LABYRINTH" HUD banner
+   *  which fades over 3.5 s. Null between announcements. */
+  rivalAnnounce: { kind: "rival_warrior" | "rival_mage" | "rival_rogue"; announcedAt: number } | null;
   /** HUD boss-bar snapshot. null while no warden exists; populated
    *  on spawn and mutated each frame by CombatEnemyLoop. alive flips
    *  false on warden kill — the HUD reads this to hide the bar. */
@@ -325,11 +333,13 @@ export function LabyrinthScene() {
     victory: false,
     wardenSpawned: false,
     wardenHud: null,
-    championSpawned: false,
+    firstRivalSpawned: false,
+    secondRivalSpawned: false,
+    rivalKillCount: 0,
     hasKey: false,
     lootRoomUnlocked: false,
     pendingLootSpawn: false,
-    championAnnouncedAt: -Infinity,
+    rivalAnnounce: null,
     outsideZone: false,
     safeDirX: 0, safeDirZ: 0,
     poisonStacks: 0,
@@ -432,7 +442,10 @@ export function LabyrinthScene() {
       LABYRINTH_CONFIG.OUTER_RING_ENEMY_BIAS * 0.8,  // slightly less biased for turrets — they're stationary
       LABYRINTH_CONFIG.OUTER_RING_MIN,
     );
-    enemiesRef.current = [...guardians, ...turrets];
+    // Heavies (ex-champion orange model, demoted to standard heavy
+    // enemy). Spread around the maze, no ring bias.
+    const heavies = spawnHeavies(maze, LABYRINTH_CONFIG.HEAVY_COUNT);
+    enemiesRef.current = [...guardians, ...turrets, ...heavies];
     sharedRef.current.enemyCount = enemiesRef.current.length;
   }
   const runStartMs = useRef(performance.now());
@@ -1471,13 +1484,8 @@ function CombatEnemyLoop({
                   clearWardenState(e.id);
                   audioManager.play("wave_clear");
                 }
-                if (e.kind === "champion") {
-                  // Drop the loot-room key. Item 7 will add a visible
-                  // key pickup + unlock interaction; for now we flag
-                  // the shared state directly so the HUD can show
-                  // "KEY" and the upcoming loot-room logic can read
-                  // it off sharedRef.
-                  shared.hasKey = true;
+                if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue") {
+                  onRivalChampionKill(e, shared, gearDropsRef.current);
                   audioManager.play("wave_clear");
                 }
               }
@@ -1501,8 +1509,11 @@ function CombatEnemyLoop({
     //    The Warden uses its own dedicated tick (3-phase state machine)
     //    since it needs starburst + minion-spawn scheduling.
     const dmgAccum = { value: 0 };
+    // Rival-rogue poison-stack accumulator — bumped per hit inside
+    // updateEnemy, applied to labPoisonRef after the enemy loop.
+    const rivalPoisonAccum = { value: 0 };
     for (const e of enemies) {
-      if (e.state === "dead") { updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum, projectilesRef.current); continue; }
+      if (e.state === "dead") { updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum, projectilesRef.current, rivalPoisonAccum); continue; }
       if (e.kind === "warden") {
         updateWarden(
           e, p.x, p.z, delta,
@@ -1511,8 +1522,13 @@ function CombatEnemyLoop({
           (mx, mz) => enemies.push(makeCorridorGuardianAt(mx, mz)),
         );
       } else {
-        updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum, projectilesRef.current);
+        updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum, projectilesRef.current, rivalPoisonAccum);
       }
+    }
+    // Apply rival-rogue-applied poison stacks to the labyrinth's
+    // poison state. Same pipeline as the shroud-applied stacks.
+    if (rivalPoisonAccum.value > 0) {
+      addLabPoisonStacks(labPoisonRef.current, rivalPoisonAccum.value, undefined);
     }
 
     // Sync the HUD boss-bar snapshot from the live warden each frame.
@@ -1582,8 +1598,8 @@ function CombatEnemyLoop({
           clearWardenState(e.id);
           audioManager.play("wave_clear");
         }
-        if (e.kind === "champion") {
-          shared.hasKey = true;
+        if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue") {
+          onRivalChampionKill(e, shared, gearDropsRef.current);
           audioManager.play("wave_clear");
         }
       },
@@ -1691,19 +1707,33 @@ function CombatEnemyLoop({
       stalkerSpawnTimer.current = LABYRINTH_CONFIG.SHADOW_STALKER_INTERVAL_SEC;
     }
 
-    // 7a-b) Champion (Nemesis) spawn. Exactly one per run, triggered
-    //       at elapsed >= 60 s so the player has time to explore and
-    //       equip some gear first. Spawns at a far-from-player outer-
-    //       ring dead-end. On spawn: set championSpawned flag + seed
-    //       the announcement timestamp + play boss_spawn SFX.
-    if (!shared.championSpawned && shared.zone.elapsedSec >= 60) {
-      const spawnPos = findChampionSpawnCell(maze, p.x, p.z);
+    // 7a-b) Rival champion spawns. Two rivals per run — the two
+    //       classes the player did NOT pick, each rendered with its
+    //       player-side class mesh + a corrupted dark tint.
+    //       First rival at ~2 min in the mid ring, second at ~5 min
+    //       in the outer ring. First kill drops the vault key,
+    //       second kill drops a guaranteed rare (see kill handler).
+    if (!shared.firstRivalSpawned && shared.zone.elapsedSec >= 120) {
+      const [firstKind] = rivalOrderForClass(charClass);
+      const spawnPos = findMidRingSpawnCell(maze, p.x, p.z);
       if (spawnPos) {
-        enemies.push(makeChampion(spawnPos.x, spawnPos.z));
+        enemies.push(makeRivalChampion(firstKind, spawnPos.x, spawnPos.z));
         onEnemiesChange(enemies.slice());
         shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
-        shared.championSpawned = true;
-        shared.championAnnouncedAt = shared.zone.elapsedSec;
+        shared.firstRivalSpawned = true;
+        shared.rivalAnnounce = { kind: firstKind, announcedAt: shared.zone.elapsedSec };
+        audioManager.play("boss_spawn");
+      }
+    }
+    if (!shared.secondRivalSpawned && shared.zone.elapsedSec >= 300) {
+      const [, secondKind] = rivalOrderForClass(charClass);
+      const spawnPos = findOuterRingSpawnCell(maze, p.x, p.z);
+      if (spawnPos) {
+        enemies.push(makeRivalChampion(secondKind, spawnPos.x, spawnPos.z));
+        onEnemiesChange(enemies.slice());
+        shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
+        shared.secondRivalSpawned = true;
+        shared.rivalAnnounce = { kind: secondKind, announcedAt: shared.zone.elapsedSec };
         audioManager.play("boss_spawn");
       }
     }
@@ -2155,7 +2185,7 @@ function LabyrinthHUD({
     equipped: { weapon: null, armor: null, trinket: null } as LabSharedState["equipped"],
     wardenHud: null as LabSharedState["wardenHud"],
     hasKey: false,
-    championAnnouncedAt: -Infinity,
+    rivalAnnounce: null as LabSharedState["rivalAnnounce"],
   });
 
   useEffect(() => {
@@ -2209,7 +2239,7 @@ function LabyrinthHUD({
         equipped: s.equipped,
         wardenHud: s.wardenHud,
         hasKey: s.hasKey,
-        championAnnouncedAt: s.championAnnouncedAt,
+        rivalAnnounce: s.rivalAnnounce,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -2347,9 +2377,9 @@ function LabyrinthHUD({
 
       {/* Champion arrival banner — fades in/out over 3.5 s from the
           spawn timestamp. Red-orange to match the champion palette. */}
-      <ChampionBanner
+      <RivalBanner
         elapsedSec={display.elapsedSec}
-        announcedAt={display.championAnnouncedAt}
+        announce={display.rivalAnnounce}
       />
 
       {/* Poison stack pip bar (only visible when stacks > 0) */}
@@ -2518,11 +2548,73 @@ function LabyrinthHUD({
 }
 
 /** Poison-stack pip bar shown under the HP bar while the shroud is active. */
-/** Fading "A CHAMPION HUNTS YOU" banner that appears on champion
- *  spawn and fades out over 3.5 s. Stateless — the HUD polls
- *  championAnnouncedAt from sharedRef and this component computes
- *  opacity from (elapsed - announcedAt). Hidden before the first
- *  announcement and after 3.5 s. */
+/** Decides which two rival kinds spawn (and in what order) based on
+ *  the player's selected class. First rival is the more ranged /
+ *  complex counter; second is the opposite style. Deterministic so
+ *  runs feel consistent. */
+function rivalOrderForClass(cls: CharacterClass): ["rival_warrior" | "rival_mage" | "rival_rogue", "rival_warrior" | "rival_mage" | "rival_rogue"] {
+  if (cls === "warrior") return ["rival_mage",    "rival_rogue"];
+  if (cls === "mage")    return ["rival_warrior", "rival_rogue"];
+  return                        ["rival_warrior", "rival_mage"];
+}
+
+/** Rival-kill reward handler. Centralised so both kill paths (melee
+ *  swing + ranged projectile) take the same branch:
+ *    rivalKillCount == 0 → first kill → drop vault key
+ *    rivalKillCount == 1 → second kill → guaranteed rare gear drop
+ *  `shared` is mutated in place. `gearDrops` is the current ground-
+ *  drop list (CombatEnemyLoop's gearDropsRef.current). */
+function onRivalChampionKill(
+  e: EnemyRuntime,
+  shared: LabSharedState,
+  gearDrops: LabGearDropRuntime[],
+): void {
+  if (shared.rivalKillCount === 0) {
+    // First kill: drop the vault key (flag — HUD pill renders it).
+    shared.hasKey = true;
+  } else if (shared.rivalKillCount === 1) {
+    // Second kill: guaranteed rare gear drop at the rival's body.
+    const gear = rollGearDrop("rare");
+    spawnLabGearDrop(gearDrops, gear, e.x, e.z);
+  }
+  shared.rivalKillCount += 1;
+}
+
+/** Per-rival banner display info. Class name + accent colour so the
+ *  player sees which rival just entered and reads the threat type. */
+const RIVAL_BANNER_INFO: Record<
+  "rival_warrior" | "rival_mage" | "rival_rogue",
+  { label: string; color: string; glow: string }
+> = {
+  rival_warrior: { label: "A RIVAL WARRIOR ENTERS THE LABYRINTH", color: "#ff6866", glow: "rgba(255,100,80,0.6)" },
+  rival_mage:    { label: "A RIVAL MAGE ENTERS THE LABYRINTH",    color: "#d080ff", glow: "rgba(200,120,255,0.6)" },
+  rival_rogue:   { label: "A RIVAL ROGUE ENTERS THE LABYRINTH",   color: "#60e8a0", glow: "rgba(60,220,140,0.6)" },
+};
+
+/** Rival-spawn banner. Shows for 3.5 s after each rival spawn.
+ *  Class-coloured so the player reads the threat type immediately. */
+function RivalBanner({ elapsedSec, announce }: {
+  elapsedSec: number;
+  announce: { kind: "rival_warrior" | "rival_mage" | "rival_rogue"; announcedAt: number } | null;
+}) {
+  if (!announce) return null;
+  const dt = elapsedSec - announce.announcedAt;
+  if (dt < 0 || dt > 3.5) return null;
+  let opacity = 1;
+  if (dt < 0.25) opacity = dt / 0.25;
+  else if (dt > 2.7) opacity = Math.max(0, 1 - (dt - 2.7) / 0.8);
+  const info = RIVAL_BANNER_INFO[announce.kind];
+  return (
+    <div style={{ ...styles.championBanner, opacity }}>
+      <div style={{ ...styles.championBannerTop, color: info.color, textShadow: `0 0 12px ${info.glow}` }}>⚔ {info.label} ⚔</div>
+      <div style={styles.championBannerSub}>{announce.kind === "rival_warrior" ? "SLAY FOR THE KEY" : ""}</div>
+    </div>
+  );
+}
+
+/** Fading "A CHAMPION HUNTS YOU" banner — kept for backward compat
+ *  with any existing callers. No longer used by the rival system,
+ *  which has its own RivalBanner above. */
 function ChampionBanner({ elapsedSec, announcedAt }: {
   elapsedSec: number;
   announcedAt: number;
@@ -2530,7 +2622,6 @@ function ChampionBanner({ elapsedSec, announcedAt }: {
   if (!isFinite(announcedAt)) return null;
   const dt = elapsedSec - announcedAt;
   if (dt < 0 || dt > 3.5) return null;
-  // Fade in over first 0.25s, hold, fade out over last 0.8s.
   let opacity = 1;
   if (dt < 0.25) opacity = dt / 0.25;
   else if (dt > 2.7) opacity = Math.max(0, 1 - (dt - 2.7) / 0.8);

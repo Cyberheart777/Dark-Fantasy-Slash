@@ -31,7 +31,24 @@ import {
 } from "./LabyrinthMaze";
 import { spawnLabProjectile, type LabProjectile } from "./LabyrinthProjectile";
 
-export type EnemyKind = "corridor_guardian" | "trap_spawner" | "mimic" | "shadow_stalker" | "warden" | "champion";
+export type EnemyKind =
+  | "corridor_guardian"
+  | "trap_spawner"
+  | "mimic"
+  | "shadow_stalker"
+  | "warden"
+  // Ex-"champion" (orange) — demoted to standard heavy enemy. Still
+  // spawns in the run but no longer gates the vault key. Tuning
+  // dropped from boss-tier to heavy-tier. See HEAVY_* constants.
+  | "heavy"
+  // Rival champions: dark-mirror versions of the two classes the
+  // player did NOT pick. Exactly two per run, one of each non-player
+  // class. First kill drops the vault key, second kill drops a
+  // guaranteed rare piece of gear. Render as tinted variants of the
+  // player class meshes (see LabyrinthRivalChampion3D.tsx).
+  | "rival_warrior"
+  | "rival_mage"
+  | "rival_rogue";
 
 export type EnemyAiState = "patrol" | "chase" | "attack" | "dead";
 
@@ -64,6 +81,40 @@ export interface EnemyRuntime {
   /** Trap-spawner turret fire timer (seconds until next shot). Unused
    *  by corridor guardians — they leave this at 0 indefinitely. */
   fireTimer: number;
+  /** Rival-champion-only ability bookkeeping. Allocated only for
+   *  rival_warrior / rival_mage / rival_rogue kinds; other kinds
+   *  leave this undefined so the runtime stays lean. All timers count
+   *  DOWN. */
+  rival?: RivalAbilityState;
+}
+
+export interface RivalAbilityState {
+  /** Generic ability cooldown (warrior War Cry, mage fire, rogue dash). */
+  abilityCooldown: number;
+  /** Active-effect timer (War Cry active window; dash active window). */
+  activeSec: number;
+  /** Dash velocity while activeSec > 0 (rogue + mage blink). */
+  dashVX: number;
+  dashVZ: number;
+  /** True while a buff is active (warrior War Cry damage multiplier). */
+  buffActive: boolean;
+  /** Secondary cooldown used by the mage (blink cooldown — separate
+   *  from fire cooldown stored in abilityCooldown). */
+  secondaryCooldown: number;
+  /** True if the rogue's next landed melee hit should apply poison
+   *  stacks. Set on dash trigger, cleared on hit. */
+  poisonArmed: boolean;
+}
+
+function makeRivalState(): RivalAbilityState {
+  return {
+    abilityCooldown: 0,
+    activeSec: 0,
+    dashVX: 0, dashVZ: 0,
+    buffActive: false,
+    secondaryCooldown: 0,
+    poisonArmed: false,
+  };
 }
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
@@ -127,26 +178,80 @@ const STALKER_COLLISION_RADIUS = 0.6;
 export const STALKER_REVEAL_DIST = LABYRINTH_CONFIG.CELL_SIZE * 1.5;
 
 // ─── Champion tuning ─────────────────────────────────────────────────────────
-// Labyrinth's Nemesis-style mini-boss. Exactly one spawns per run at
-// a distant outer-ring cell once the run has been going ~60s. Meant
-// to feel like the warden's little brother: tougher than any
-// standard enemy, easier than the boss, and always drops a key on
-// kill for loot-room access (wired in item #7).
-//
-// Tuning is scaled to labyrinth combat, not main game:
-//   Guardian HP 120, Warden HP 800 → Champion HP 400 (midway).
-//   Guardian dmg 10, Warden dmg 35 → Champion dmg 25.
-//   Stalker is the fastest at 5.5; champion matches that — it
-//   should feel like a Class-A threat that can't be kited.
+// ─── Heavy (ex-"champion" — demoted to standard heavy enemy) ────────────────
+// Visually the original orange-red model. Previously held the key and
+// announcement; now it's just a heavy-class patrol enemy that spawns
+// alongside guardians. Tuning sits between guardian and warden:
+//   Guardian HP 120, Heavy HP 200, Warden HP 800
+//   Guardian dmg 10, Heavy dmg 16, Warden dmg 35
+export const HEAVY_HP = 200;
+const HEAVY_SPEED = 4.0;                                  // slower than guardian (4.2) — tanky patroller
+const HEAVY_DETECTION = LABYRINTH_CONFIG.CELL_SIZE * 5;
+const HEAVY_LEASH = LABYRINTH_CONFIG.CELL_SIZE * 10;
+const HEAVY_ATTACK_RANGE = 2.0;
+const HEAVY_ATTACK_DAMAGE = 16;
+const HEAVY_ATTACK_COOLDOWN = 1.3;
+const HEAVY_COLLISION_RADIUS = 1.0;
 
-export const CHAMPION_HP = 400;
-const CHAMPION_SPEED = 5.5;
-const CHAMPION_DETECTION = LABYRINTH_CONFIG.CELL_SIZE * 8;  // huge — spots you anywhere
-const CHAMPION_LEASH = LABYRINTH_CONFIG.CELL_SIZE * 20;     // never disengages
-const CHAMPION_ATTACK_RANGE = 2.2;
-const CHAMPION_ATTACK_DAMAGE = 25;
-const CHAMPION_ATTACK_COOLDOWN = 1.1;
-const CHAMPION_COLLISION_RADIUS = 1.1;
+// ─── Rival Champions ────────────────────────────────────────────────────────
+// Two per run — the two classes the player did NOT pick, re-spawned
+// as hostile mirrors. Each uses its class's actual move set ported
+// labyrinth-local:
+//   rival_warrior: chase + melee swing + auto War Cry under 30% HP
+//   rival_mage:    keep-distance + fire arcane orbs + blink when close
+//   rival_rogue:   chase + poison-dash that applies stacks on hit
+// Tuning makes them the most dangerous enemies outside the warden:
+// roughly warden/2 HP, higher damage than guardian, faster movement.
+
+export const RIVAL_WARRIOR_HP = 380;
+const RIVAL_WARRIOR_SPEED = 5.2;
+const RIVAL_WARRIOR_ATTACK_RANGE = 2.4;
+const RIVAL_WARRIOR_ATTACK_DAMAGE = 28;
+const RIVAL_WARRIOR_ATTACK_COOLDOWN = 1.0;
+const RIVAL_WARRIOR_COLLISION_RADIUS = 1.0;
+/** HP fraction below which the rival warrior auto-triggers War Cry. */
+const RIVAL_WARRIOR_WARCRY_HP_THRESHOLD = 0.30;
+/** War Cry active duration (seconds). */
+const RIVAL_WARRIOR_WARCRY_SEC = 4.0;
+/** War Cry cooldown from trigger (seconds). */
+const RIVAL_WARRIOR_WARCRY_CD = 20.0;
+/** Damage multiplier while War Cry is active. */
+const RIVAL_WARRIOR_WARCRY_MULT = 1.4;
+
+export const RIVAL_MAGE_HP = 280;
+const RIVAL_MAGE_SPEED = 4.5;
+/** Ideal distance the mage wants to keep from the player — if closer,
+ *  it blinks backwards; if further, it closes to fire range. */
+const RIVAL_MAGE_PREFERRED_DIST = LABYRINTH_CONFIG.CELL_SIZE * 1.5;
+const RIVAL_MAGE_FIRE_RANGE = LABYRINTH_CONFIG.CELL_SIZE * 2.2;
+const RIVAL_MAGE_FIRE_COOLDOWN = 1.6;
+const RIVAL_MAGE_PROJECTILE_DAMAGE = 22;
+const RIVAL_MAGE_PROJECTILE_SPEED = 18;
+/** Min distance before blink triggers (player too close). */
+const RIVAL_MAGE_BLINK_THRESHOLD = 2.2;
+const RIVAL_MAGE_BLINK_CD = 3.0;
+const RIVAL_MAGE_BLINK_DISTANCE = 6.0;
+const RIVAL_MAGE_ATTACK_RANGE = 2.0;  // backup melee if close
+const RIVAL_MAGE_ATTACK_DAMAGE = 12;
+const RIVAL_MAGE_ATTACK_COOLDOWN = 1.3;
+const RIVAL_MAGE_COLLISION_RADIUS = 0.9;
+
+export const RIVAL_ROGUE_HP = 320;
+const RIVAL_ROGUE_SPEED = 6.0;
+const RIVAL_ROGUE_ATTACK_RANGE = 2.0;
+const RIVAL_ROGUE_ATTACK_DAMAGE = 18;
+const RIVAL_ROGUE_ATTACK_COOLDOWN = 0.9;
+const RIVAL_ROGUE_COLLISION_RADIUS = 0.9;
+/** Dash cooldown (seconds). */
+const RIVAL_ROGUE_DASH_CD = 4.0;
+/** Dash peak speed (world units / sec). */
+const RIVAL_ROGUE_DASH_SPEED = 16;
+/** Dash duration (seconds) — short burst then normal movement resumes. */
+const RIVAL_ROGUE_DASH_SEC = 0.22;
+/** Min distance from player at which the rogue triggers a dash-close. */
+const RIVAL_ROGUE_DASH_THRESHOLD = LABYRINTH_CONFIG.CELL_SIZE * 1.4;
+/** Poison stacks applied to the player on a successful rogue hit. */
+const RIVAL_ROGUE_POISON_STACKS_PER_HIT = 2;
 
 /** After death, how long the husk lingers before being evicted. */
 export const ENEMY_DEATH_FADE_SEC = 0.6;
@@ -327,19 +432,50 @@ export function findStalkerSpawnCell(
   return best;
 }
 
-let championIdCounter = 0;
+let heavyIdCounter = 0;
+let rivalIdCounter = 0;
 
-/** Create a champion (Nemesis-style mini-boss). Starts in `chase` so
- *  the player feels the pressure immediately. Spawn location is
- *  chosen by the caller via findChampionSpawnCell. */
-export function makeChampion(x: number, z: number): EnemyRuntime {
+/** Pick `count` cells for heavy enemies. Reuses guardian placement
+ *  logic (non-center, non-spawn-area) with no ring bias — heavies
+ *  can show up anywhere. Returns the runtime list. */
+export function spawnHeavies(
+  maze: Maze,
+  count: number,
+  rng: () => number = Math.random,
+): EnemyRuntime[] {
+  const cCol = maze.center.col;
+  const cRow = maze.center.row;
+  const pCol = maze.spawn.col;
+  const pRow = maze.spawn.row;
+  const candidates = maze.cells.filter((cell) => {
+    if (Math.abs(cell.col - cCol) <= CENTER_EXCLUSION && Math.abs(cell.row - cRow) <= CENTER_EXCLUSION) return false;
+    const dc = cell.col - pCol;
+    const dr = cell.row - pRow;
+    if (dc * dc + dr * dr < SPAWN_MIN_CELL_DIST_FROM_PLAYER * SPAWN_MIN_CELL_DIST_FROM_PLAYER) return false;
+    return true;
+  });
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+  const chosen = candidates.slice(0, count);
+  return chosen.map((cell) => {
+    const { x, z } = cellToWorld(cell.col, cell.row);
+    return makeHeavy(x, z);
+  });
+}
+
+/** Create a heavy enemy (the ex-"champion" orange model, demoted to
+ *  a standard patrol enemy). No rival ability state — just beefier
+ *  melee stats. */
+export function makeHeavy(x: number, z: number): EnemyRuntime {
   return {
-    id: `champion-${championIdCounter++}`,
-    kind: "champion",
+    id: `heavy-${heavyIdCounter++}`,
+    kind: "heavy",
     x, z,
     angle: 0,
-    hp: CHAMPION_HP,
-    maxHp: CHAMPION_HP,
+    hp: HEAVY_HP,
+    maxHp: HEAVY_HP,
     state: "chase",
     aiTimer: 0,
     attackCooldown: 0,
@@ -353,14 +489,49 @@ export function makeChampion(x: number, z: number): EnemyRuntime {
   };
 }
 
-/** Pick an outer-ring dead-end far from the player for the champion's
- *  arrival. Uses Chebyshev distance from maze center ≥ 6 to ensure
- *  the outer ring; falls back to any far-from-player dead-end if no
- *  outer-ring candidates exist. */
-export function findChampionSpawnCell(
+/** Create a rival champion. Kind selects which class's stats + AI
+ *  branch apply. Callers use the helpers below for per-class HP /
+ *  spawn location; this is the unified factory. */
+export function makeRivalChampion(
+  kind: "rival_warrior" | "rival_mage" | "rival_rogue",
+  x: number,
+  z: number,
+): EnemyRuntime {
+  const hp =
+    kind === "rival_warrior" ? RIVAL_WARRIOR_HP :
+    kind === "rival_mage"    ? RIVAL_MAGE_HP :
+                               RIVAL_ROGUE_HP;
+  return {
+    id: `${kind}-${rivalIdCounter++}`,
+    kind,
+    x, z,
+    angle: 0,
+    hp,
+    maxHp: hp,
+    state: "chase",
+    aiTimer: 0,
+    attackCooldown: 0,
+    deathFadeSec: 0,
+    hitFlashTimer: 0,
+    patrolTargetX: null,
+    patrolTargetZ: null,
+    lastMoveX: 0,
+    lastMoveZ: 0,
+    fireTimer: 0,
+    rival: makeRivalState(),
+  };
+}
+
+/** Pick an outer-ring dead-end far from the player. Uses Chebyshev
+ *  distance from maze center ≥ minRing to ensure the outer band;
+ *  falls back to any far-from-player dead-end if no outer-ring
+ *  candidates exist. Shared by rival spawns + anyone else wanting a
+ *  "far, outer ring" cell. */
+export function findOuterRingSpawnCell(
   maze: Maze,
   playerX: number,
   playerZ: number,
+  minRing = 6,
 ): { x: number; z: number } | null {
   const cs = LABYRINTH_CONFIG.CELL_SIZE;
   const minDistSq = (cs * 6) * (cs * 6);
@@ -368,9 +539,40 @@ export function findChampionSpawnCell(
   const outerDeadEnds = maze.deadEnds.filter((c) => {
     const dc = Math.abs(c.col - center.col);
     const dr = Math.abs(c.row - center.row);
-    return Math.max(dc, dr) >= 6;
+    return Math.max(dc, dr) >= minRing;
   });
   const pool = outerDeadEnds.length > 0 ? outerDeadEnds : maze.deadEnds;
+  let best: { x: number; z: number; d: number } | null = null;
+  for (const de of pool) {
+    const { x, z } = cellToWorld(de.col, de.row);
+    const dx = x - playerX;
+    const dz = z - playerZ;
+    const d = dx * dx + dz * dz;
+    if (d < minDistSq) continue;
+    if (!best || d > best.d) best = { x, z, d };
+  }
+  return best;
+}
+
+/** Pick a mid-ring dead-end for the first rival spawn. Mid ring is
+ *  defined as Chebyshev distance 4-7 from center — far enough to
+ *  feel like it closed in from elsewhere, close enough to reach in
+ *  under a minute. Falls back to any far-from-player dead-end. */
+export function findMidRingSpawnCell(
+  maze: Maze,
+  playerX: number,
+  playerZ: number,
+): { x: number; z: number } | null {
+  const cs = LABYRINTH_CONFIG.CELL_SIZE;
+  const minDistSq = (cs * 4) * (cs * 4);
+  const center = maze.center;
+  const midDeadEnds = maze.deadEnds.filter((c) => {
+    const dc = Math.abs(c.col - center.col);
+    const dr = Math.abs(c.row - center.row);
+    const cheb = Math.max(dc, dr);
+    return cheb >= 4 && cheb <= 7;
+  });
+  const pool = midDeadEnds.length > 0 ? midDeadEnds : maze.deadEnds;
   let best: { x: number; z: number; d: number } | null = null;
   for (const de of pool) {
     const { x, z } = cellToWorld(de.col, de.row);
@@ -470,9 +672,50 @@ export function updateEnemy(
   allEnemies: readonly EnemyRuntime[],
   playerDamage: { value: number },
   projectiles: LabProjectile[],
+  /** Rival-rogue poison-stack accumulator. Optional so non-rival
+   *  call sites don't have to construct it. When a rival_rogue lands
+   *  a dash-armed melee hit, it bumps .value by
+   *  RIVAL_ROGUE_POISON_STACKS_PER_HIT; the caller applies those
+   *  stacks to the labyrinth poison state at the end of the tick. */
+  poisonStacks: { value: number } = { value: 0 },
 ): void {
   if (enemy.state === "dead") {
     enemy.deathFadeSec += delta;
+    return;
+  }
+
+  // ─── Rival ability timers + transitions ────────────────────────────
+  // Tick every frame regardless of state (we want cooldowns to roll
+  // even while out-of-combat so a long-alive rival still gets its
+  // abilities back). Transitions that depend on current HP happen
+  // here too (warrior auto-war-cry at <30% HP).
+  if (enemy.rival) {
+    const r = enemy.rival;
+    if (r.abilityCooldown > 0) r.abilityCooldown = Math.max(0, r.abilityCooldown - delta);
+    if (r.secondaryCooldown > 0) r.secondaryCooldown = Math.max(0, r.secondaryCooldown - delta);
+    if (r.activeSec > 0) r.activeSec = Math.max(0, r.activeSec - delta);
+    if (r.activeSec <= 0 && r.buffActive) r.buffActive = false;
+
+    if (enemy.kind === "rival_warrior") {
+      const hpPct = enemy.hp / Math.max(1, enemy.maxHp);
+      if (
+        hpPct < RIVAL_WARRIOR_WARCRY_HP_THRESHOLD &&
+        r.abilityCooldown <= 0 &&
+        !r.buffActive
+      ) {
+        r.buffActive = true;
+        r.activeSec = RIVAL_WARRIOR_WARCRY_SEC;
+        r.abilityCooldown = RIVAL_WARRIOR_WARCRY_CD;
+      }
+    }
+  }
+
+  // ─── Rival Mage: fundamentally different AI ─────────────────────────
+  // Skip the shared chase/melee state machine and run the keep-distance +
+  // ranged-orb logic instead. Mage returns early so none of the later
+  // movement/melee code runs.
+  if (enemy.kind === "rival_mage") {
+    runRivalMageAI(enemy, playerX, playerZ, segments, delta, projectiles);
     return;
   }
 
@@ -499,8 +742,14 @@ export function updateEnemy(
       ? { speed: MIMIC_SPEED, detect: MIMIC_DETECTION, leash: MIMIC_LEASH, range: MIMIC_ATTACK_RANGE, damage: MIMIC_ATTACK_DAMAGE, cd: MIMIC_ATTACK_COOLDOWN, collR: MIMIC_COLLISION_RADIUS }
     : enemy.kind === "shadow_stalker"
       ? { speed: STALKER_SPEED, detect: STALKER_DETECTION, leash: STALKER_LEASH, range: STALKER_ATTACK_RANGE, damage: STALKER_ATTACK_DAMAGE, cd: STALKER_ATTACK_COOLDOWN, collR: STALKER_COLLISION_RADIUS }
-    : enemy.kind === "champion"
-      ? { speed: CHAMPION_SPEED, detect: CHAMPION_DETECTION, leash: CHAMPION_LEASH, range: CHAMPION_ATTACK_RANGE, damage: CHAMPION_ATTACK_DAMAGE, cd: CHAMPION_ATTACK_COOLDOWN, collR: CHAMPION_COLLISION_RADIUS }
+    : enemy.kind === "heavy"
+      ? { speed: HEAVY_SPEED, detect: HEAVY_DETECTION, leash: HEAVY_LEASH, range: HEAVY_ATTACK_RANGE, damage: HEAVY_ATTACK_DAMAGE, cd: HEAVY_ATTACK_COOLDOWN, collR: HEAVY_COLLISION_RADIUS }
+    : enemy.kind === "rival_warrior"
+      ? { speed: RIVAL_WARRIOR_SPEED, detect: LABYRINTH_CONFIG.CELL_SIZE * 10, leash: LABYRINTH_CONFIG.CELL_SIZE * 25, range: RIVAL_WARRIOR_ATTACK_RANGE, damage: RIVAL_WARRIOR_ATTACK_DAMAGE, cd: RIVAL_WARRIOR_ATTACK_COOLDOWN, collR: RIVAL_WARRIOR_COLLISION_RADIUS }
+    // rival_mage never reaches this dispatch — runRivalMageAI handles
+    // everything and returns early above.
+    : enemy.kind === "rival_rogue"
+      ? { speed: RIVAL_ROGUE_SPEED, detect: LABYRINTH_CONFIG.CELL_SIZE * 10, leash: LABYRINTH_CONFIG.CELL_SIZE * 25, range: RIVAL_ROGUE_ATTACK_RANGE, damage: RIVAL_ROGUE_ATTACK_DAMAGE, cd: RIVAL_ROGUE_ATTACK_COOLDOWN, collR: RIVAL_ROGUE_COLLISION_RADIUS }
     : { speed: GUARDIAN_SPEED, detect: GUARDIAN_DETECTION, leash: GUARDIAN_LEASH, range: GUARDIAN_ATTACK_RANGE, damage: GUARDIAN_ATTACK_DAMAGE, cd: GUARDIAN_ATTACK_COOLDOWN, collR: GUARDIAN_COLLISION_RADIUS };
 
   const dx = playerX - enemy.x;
@@ -559,10 +808,58 @@ export function updateEnemy(
       }
     }
   } else if (enemy.state === "attack") {
-    // Face the player and swing on cooldown
+    // Face the player and swing on cooldown. Rival-specific on-hit
+    // modifiers layer on here: warrior's War Cry damage multiplier +
+    // rogue's poison-on-hit stack application.
     if (enemy.attackCooldown <= 0) {
-      playerDamage.value += tuning.damage;
+      let dmg = tuning.damage;
+      if (enemy.kind === "rival_warrior" && enemy.rival?.buffActive) {
+        dmg *= RIVAL_WARRIOR_WARCRY_MULT;
+      }
+      playerDamage.value += dmg;
       enemy.attackCooldown = tuning.cd;
+      if (enemy.kind === "rival_rogue" && enemy.rival?.poisonArmed) {
+        poisonStacks.value += RIVAL_ROGUE_POISON_STACKS_PER_HIT;
+        enemy.rival.poisonArmed = false;
+      }
+    }
+  }
+
+  // ─── Rival Rogue dash trigger + active-dash velocity override ──────
+  // Trigger: if the player is just outside melee range and dash CD is
+  // ready, burst-close along the player vector and arm poison for
+  // the next landed hit. While the dash is active, position advances
+  // by the stored velocity instead of the shared movement code below
+  // (which runs at normal speed). Wall collision is respected.
+  if (enemy.kind === "rival_rogue" && enemy.rival) {
+    const r = enemy.rival;
+    if (r.activeSec <= 0 && r.abilityCooldown <= 0) {
+      const dxR = playerX - enemy.x;
+      const dzR = playerZ - enemy.z;
+      const distR = Math.sqrt(dxR * dxR + dzR * dzR);
+      if (distR > RIVAL_ROGUE_ATTACK_RANGE && distR < RIVAL_ROGUE_DASH_THRESHOLD) {
+        r.dashVX = (dxR / distR) * RIVAL_ROGUE_DASH_SPEED;
+        r.dashVZ = (dzR / distR) * RIVAL_ROGUE_DASH_SPEED;
+        r.activeSec = RIVAL_ROGUE_DASH_SEC;
+        r.abilityCooldown = RIVAL_ROGUE_DASH_CD;
+        r.poisonArmed = true;
+      }
+    }
+    if (r.activeSec > 0) {
+      // Dash velocity overrides normal movement this frame. Apply
+      // with axis-separated wall collision so the dash can't phase.
+      const stepX = r.dashVX * delta;
+      const stepZ = r.dashVZ * delta;
+      const nextX = enemy.x + stepX;
+      const nextZ = enemy.z + stepZ;
+      if (!collidesWithAnyWallLocal(nextX, enemy.z, tuning.collR, segments)) enemy.x = nextX;
+      if (!collidesWithAnyWallLocal(enemy.x, nextZ, tuning.collR, segments)) enemy.z = nextZ;
+      enemy.angle = Math.atan2(r.dashVX, -r.dashVZ);
+      // Zero desired movement for the normal movement block below
+      // so the dash doesn't double-apply. desiredDx/dz are locals
+      // defined earlier in this function.
+      desiredDx = 0;
+      desiredDz = 0;
     }
   }
 
@@ -620,6 +917,148 @@ export function damageEnemy(enemy: EnemyRuntime, dmg: number): boolean {
 
 export function isEnemyEvictable(enemy: EnemyRuntime): boolean {
   return enemy.state === "dead" && enemy.deathFadeSec >= ENEMY_DEATH_FADE_SEC;
+}
+
+// ─── Rival Mage AI ───────────────────────────────────────────────────────────
+// Keep-distance + arcane-orb behaviour. Ported from the player-side
+// LabyrinthRangedAttack / LabyrinthDash mechanics but inlined here so
+// we don't twist those modules to serve both sides.
+//
+// Outline per frame:
+//   1. If player is too close AND blink (secondary CD) is ready, blink
+//      directly away along the player vector.
+//   2. If player is further than preferred distance, close toward them
+//      at normal speed.
+//   3. Otherwise hold position and, if fire cooldown (abilityCooldown)
+//      is ready, spawn an enemy-owned orb projectile.
+//   4. If player is in melee range, fall back to a slow melee swing.
+//
+// Wall collision respected for all movement. Projectile is owner=
+// "enemy" so the shared tickLabProjectiles pipeline damages the
+// player instead of other enemies.
+function runRivalMageAI(
+  enemy: EnemyRuntime,
+  playerX: number,
+  playerZ: number,
+  segments: ReturnType<typeof extractWallSegments>,
+  delta: number,
+  projectiles: LabProjectile[],
+): void {
+  if (enemy.attackCooldown > 0) enemy.attackCooldown -= delta;
+  const r = enemy.rival;
+  if (!r) return;
+
+  const dx = playerX - enemy.x;
+  const dz = playerZ - enemy.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  const dirX = dist > 0.001 ? dx / dist : 0;
+  const dirZ = dist > 0.001 ? dz / dist : 0;
+
+  // Facing follows the player for both ranged + melee intent.
+  if (dist > 0.001) enemy.angle = Math.atan2(dirX, -dirZ);
+
+  // Blink retreat — triggers when the player closes inside the threshold.
+  // Uses r.secondaryCooldown so it's independent of the fire cooldown.
+  if (r.secondaryCooldown <= 0 && dist < RIVAL_MAGE_BLINK_THRESHOLD) {
+    const blinkX = enemy.x - dirX * RIVAL_MAGE_BLINK_DISTANCE;
+    const blinkZ = enemy.z - dirZ * RIVAL_MAGE_BLINK_DISTANCE;
+    // Try blink — if target is inside a wall, step back until clear or give up.
+    let bx = blinkX;
+    let bz = blinkZ;
+    const coll = RIVAL_MAGE_COLLISION_RADIUS;
+    for (let i = 0; i < 5; i++) {
+      if (!collidesWithAnyWallLocal(bx, bz, coll, segments)) {
+        enemy.x = bx;
+        enemy.z = bz;
+        r.secondaryCooldown = RIVAL_MAGE_BLINK_CD;
+        break;
+      }
+      // Step back halfway each iteration so a partial blink still
+      // puts us somewhere clear.
+      bx = (bx + enemy.x) * 0.5;
+      bz = (bz + enemy.z) * 0.5;
+    }
+  }
+
+  // Movement intent — close if too far, hold if in fire window.
+  let moveX = 0, moveZ = 0;
+  if (dist > RIVAL_MAGE_FIRE_RANGE) {
+    moveX = dirX;
+    moveZ = dirZ;
+  } else if (dist > RIVAL_MAGE_PREFERRED_DIST) {
+    // Small drift to maintain angle without mashing into the player.
+    moveX = dirX * 0.4;
+    moveZ = dirZ * 0.4;
+  } else if (dist < RIVAL_MAGE_PREFERRED_DIST * 0.85) {
+    // Too close but blink not ready — back-pedal.
+    moveX = -dirX * 0.6;
+    moveZ = -dirZ * 0.6;
+  }
+
+  if (moveX !== 0 || moveZ !== 0) {
+    const stepX = moveX * RIVAL_MAGE_SPEED * delta;
+    const stepZ = moveZ * RIVAL_MAGE_SPEED * delta;
+    const coll = RIVAL_MAGE_COLLISION_RADIUS;
+    const nextX = enemy.x + stepX;
+    const nextZ = enemy.z + stepZ;
+    if (!collidesWithAnyWallLocal(nextX, enemy.z, coll, segments)) enemy.x = nextX;
+    if (!collidesWithAnyWallLocal(enemy.x, nextZ, coll, segments)) enemy.z = nextZ;
+    enemy.lastMoveX = moveX;
+    enemy.lastMoveZ = moveZ;
+  }
+
+  // Ranged fire — only in the keep-distance band.
+  if (r.abilityCooldown <= 0 && dist <= RIVAL_MAGE_FIRE_RANGE && dist >= RIVAL_MAGE_ATTACK_RANGE) {
+    r.abilityCooldown = RIVAL_MAGE_FIRE_COOLDOWN;
+    projectiles.push({
+      id: `rivalproj${rivalIdCounter++}`,
+      owner: "enemy",
+      x: enemy.x,
+      z: enemy.z,
+      vx: dirX * RIVAL_MAGE_PROJECTILE_SPEED,
+      vz: dirZ * RIVAL_MAGE_PROJECTILE_SPEED,
+      damage: RIVAL_MAGE_PROJECTILE_DAMAGE,
+      radius: 0.35,
+      lifetime: 2.0,
+      piercing: false,
+      hitIds: new Set(),
+      color: "#b844ff",
+      glowColor: "#7020c0",
+      style: "orb",
+      dead: false,
+    });
+  }
+
+  // Melee fallback if the player is jammed up against us (blink
+  // might have been blocked by walls). Uses the mage's weaker melee
+  // damage/cooldown constants.
+  if (dist <= RIVAL_MAGE_ATTACK_RANGE && enemy.attackCooldown <= 0) {
+    // playerDamage accumulator is not in this helper's scope — the
+    // shared updateEnemy caller handles the damage accumulator for
+    // other enemies, but runRivalMageAI is a complete override. We
+    // fire a short-range zero-velocity projectile in place of a
+    // melee swing so the pipeline wires back through the same
+    // damage path. Lifetime 0.08s + speed 10 guarantees it hits
+    // the already-adjacent player before expiring.
+    enemy.attackCooldown = RIVAL_MAGE_ATTACK_COOLDOWN;
+    projectiles.push({
+      id: `rivalmeleeproj${rivalIdCounter++}`,
+      owner: "enemy",
+      x: enemy.x,
+      z: enemy.z,
+      vx: dirX * 10,
+      vz: dirZ * 10,
+      damage: RIVAL_MAGE_ATTACK_DAMAGE,
+      radius: 0.35,
+      lifetime: 0.25,
+      piercing: false,
+      hitIds: new Set(),
+      color: "#b844ff",
+      glowColor: "#7020c0",
+      style: "orb",
+      dead: false,
+    });
+  }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -714,7 +1153,10 @@ export function enemyCollisionRadius(kind: EnemyKind): number {
     case "mimic": return MIMIC_COLLISION_RADIUS;
     case "shadow_stalker": return STALKER_COLLISION_RADIUS;
     case "warden": return 1.8;
-    case "champion": return CHAMPION_COLLISION_RADIUS;
+    case "heavy": return HEAVY_COLLISION_RADIUS;
+    case "rival_warrior": return RIVAL_WARRIOR_COLLISION_RADIUS;
+    case "rival_mage": return RIVAL_MAGE_COLLISION_RADIUS;
+    case "rival_rogue": return RIVAL_ROGUE_COLLISION_RADIUS;
   }
 }
 
