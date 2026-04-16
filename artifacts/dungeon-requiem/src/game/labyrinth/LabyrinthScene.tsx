@@ -2838,6 +2838,14 @@ function evaluateLabRunAchievements(
   if (shared.killCount > 0) {
     meta.addLabyrinthKills(shared.killCount);
   }
+  // "The Long Game" — every run end (extract OR defeat OR warden
+  // slain) counts. Fires at 10 total.
+  meta.recordLabyrinthRunComplete();
+  // "Warden's Bane" — warden defeat recorded separately so the
+  // cross-run counter only bumps on victory runs. Fires at 3.
+  if (shared.victory) {
+    meta.recordLabyrinthWardenKill();
+  }
 
   // ─── Extraction-gated achievements ───────────────────────────────
   if (shared.extracted) {
@@ -2936,7 +2944,11 @@ function onRivalChampionKill(
 ): void {
   if (shared.rivalKillCount === 0) {
     // First kill: drop the vault key (flag — HUD pill renders it).
+    // Persist the cross-run key-obtained counter here so Skeleton
+    // Key (7 total) fires the instant the 7th key is handed out
+    // — not delayed to run-end.
     shared.hasKey = true;
+    useMetaStore.getState().recordLabyrinthKeyObtain();
   } else if (shared.rivalKillCount === 1) {
     // Second kill: guaranteed rare gear drop at the rival's body.
     const gear = rollGearDrop("rare");

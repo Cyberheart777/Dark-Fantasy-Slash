@@ -138,6 +138,16 @@ export interface MetaState {
    *  extracted. Boolean-true entries are never removed; the "All
    *  Roads" achievement fires when all three classes are present. */
   labyrinthExtractedClasses: Record<string, boolean>;
+  /** Total champion keys obtained across all runs (Skeleton Key). */
+  labyrinthChampionKeyCount: number;
+  /** Total labyrinth runs completed — extract OR defeat both count
+   *  (The Long Game). Incremented once per run on the run-end
+   *  salvage fire. */
+  labyrinthRunCount: number;
+  /** Total successful extractions across all runs (Extractor). */
+  labyrinthExtractionCount: number;
+  /** Total Warden defeats across all runs (Warden's Bane). */
+  labyrinthWardenKills: number;
 
   // User settings — persisted across runs
   settings: {
@@ -157,8 +167,17 @@ export interface MetaState {
    *  achievement when it crosses 100. */
   addLabyrinthKills: (n: number) => void;
   /** Mark `cls` as having extracted at least once. Fires the All
-   *  Roads Lead Out achievement when all 3 classes are present. */
+   *  Roads Lead Out achievement when all 3 classes are present.
+   *  Also increments labyrinthExtractionCount (cross-run counter
+   *  for the Extractor achievement). */
   recordLabyrinthExtraction: (cls: string) => void;
+  /** Increment the champion-key counter. Fires Skeleton Key at 7. */
+  recordLabyrinthKeyObtain: () => void;
+  /** Increment the run counter on run end (extract or defeat).
+   *  Fires The Long Game at 10. */
+  recordLabyrinthRunComplete: () => void;
+  /** Increment the Warden-kill counter. Fires Warden's Bane at 3. */
+  recordLabyrinthWardenKill: () => void;
   purchaseRank: (id: string, cost: number, maxRanks: number) => boolean;
   hardReset: () => void;
 
@@ -201,6 +220,10 @@ const DEFAULT_STATE = {
   discoveredAffixes: {} as Record<string, boolean>,
   labyrinthKillCount: 0,
   labyrinthExtractedClasses: {} as Record<string, boolean>,
+  labyrinthChampionKeyCount: 0,
+  labyrinthRunCount: 0,
+  labyrinthExtractionCount: 0,
+  labyrinthWardenKills: 0,
   settings: {
     screenShake: true,
     damageNumbers: true,
@@ -251,13 +274,40 @@ export const useMetaStore = create<MetaState>()(
       },
       recordLabyrinthExtraction: (cls) => {
         const s = get();
-        if (s.labyrinthExtractedClasses[cls]) return;   // already recorded
-        const next = { ...s.labyrinthExtractedClasses, [cls]: true };
-        set({ labyrinthExtractedClasses: next });
-        // All three classes extracted → All Roads Lead Out.
-        if (next["warrior"] && next["mage"] && next["rogue"]) {
-          useAchievementStore.getState().tryUnlock("lab_all_roads");
+        // Always bump the extraction counter — Extractor fires on
+        // total count (5+) regardless of class. Per-class map is
+        // the separate All Roads Lead Out tracker.
+        const newCount = s.labyrinthExtractionCount + 1;
+        const ach = useAchievementStore.getState();
+        if (s.labyrinthExtractedClasses[cls]) {
+          set({ labyrinthExtractionCount: newCount });
+        } else {
+          const nextClasses = { ...s.labyrinthExtractedClasses, [cls]: true };
+          set({ labyrinthExtractedClasses: nextClasses, labyrinthExtractionCount: newCount });
+          // All three classes extracted → All Roads Lead Out.
+          if (nextClasses["warrior"] && nextClasses["mage"] && nextClasses["rogue"]) {
+            ach.tryUnlock("lab_all_roads");
+          }
         }
+        if (newCount >= 5) ach.tryUnlock("lab_extractor");
+      },
+      recordLabyrinthKeyObtain: () => {
+        const s = get();
+        const newTotal = s.labyrinthChampionKeyCount + 1;
+        set({ labyrinthChampionKeyCount: newTotal });
+        if (newTotal >= 7) useAchievementStore.getState().tryUnlock("lab_skeleton_key");
+      },
+      recordLabyrinthRunComplete: () => {
+        const s = get();
+        const newTotal = s.labyrinthRunCount + 1;
+        set({ labyrinthRunCount: newTotal });
+        if (newTotal >= 10) useAchievementStore.getState().tryUnlock("lab_long_game");
+      },
+      recordLabyrinthWardenKill: () => {
+        const s = get();
+        const newTotal = s.labyrinthWardenKills + 1;
+        set({ labyrinthWardenKills: newTotal });
+        if (newTotal >= 3) useAchievementStore.getState().tryUnlock("lab_wardens_bane");
       },
 
       purchaseRank: (id, cost, maxRanks) => {

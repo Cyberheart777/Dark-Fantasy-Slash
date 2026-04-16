@@ -84,6 +84,11 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "lab_iron_will",       name: "Iron Will",             description: "Extract from the labyrinth without picking up any gear",        icon: "💪", category: "labyrinth" },
   { id: "lab_wrong_turn",      name: "Wrong Turn",            description: "Die in the poison shroud within the first minute of a run",     icon: "☠️", category: "labyrinth" },
   { id: "lab_so_close",        name: "So Close",              description: "Die within 10 units of an extraction portal",                   icon: "😩", category: "labyrinth" },
+  // Cross-run — counters persist across sessions via metaStore.
+  { id: "lab_skeleton_key",    name: "Skeleton Key",          description: "Obtain the champion key 7 times across all runs",              icon: "🗝️", category: "labyrinth" },
+  { id: "lab_long_game",       name: "The Long Game",         description: "Complete 10 Labyrinth runs (extract or die — both count)",     icon: "⏳", category: "labyrinth" },
+  { id: "lab_extractor",       name: "Extractor",             description: "Extract successfully 5 times across all runs",                  icon: "↑",  category: "labyrinth" },
+  { id: "lab_wardens_bane",    name: "Warden's Bane",         description: "Defeat the Warden 3 times across all runs",                    icon: "⚰️", category: "labyrinth" },
 ];
 
 /** Lookup map for O(1) access by id. */
