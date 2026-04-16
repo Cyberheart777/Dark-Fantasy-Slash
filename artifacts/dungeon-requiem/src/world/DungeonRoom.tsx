@@ -14,6 +14,7 @@
 import { useMemo, useState, useEffect } from "react";
 import * as THREE from "three";
 import { GAME_CONFIG } from "../data/GameConfig";
+import { DungeonFloor } from "./DungeonFloor";
 
 const H = GAME_CONFIG.ARENA_HALF;
 const W = GAME_CONFIG.WALL_THICKNESS;
@@ -21,7 +22,6 @@ const WH = GAME_CONFIG.WALL_HEIGHT;
 const FULL = H * 2;
 
 // Stone colors — used as tint on procedural textures
-const FLOOR_COLOR = "#4a3860";
 const WALL_COLOR = "#3a2c50";
 const PILLAR_COLOR = "#42305a";
 const ACCENT_COLOR = "#6a4888";
@@ -162,74 +162,12 @@ function generateNormalMap(size: number, tileW: number, tileH: number, groutWidt
   return tex;
 }
 
-function generateFloorTexture(): THREE.CanvasTexture {
-  const size = 512;
-  const tileW = 64, tileH = 64;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d")!;
+// Floor rendering moved to DungeonFloor.tsx — see <DungeonFloor /> below. The
+// floor is now procedural geometry (instanced stone tiles + merged rune
+// line-segments) instead of a single MeshStandardMaterial plane with a
+// canvas-based PBR texture. Kept the wall-side PBR helpers (generateNormalMap
+// + usePBRTextures) since Walls still uses them.
 
-  ctx.fillStyle = "#5a4470";
-  ctx.fillRect(0, 0, size, size);
-
-  for (let row = 0; row < size / tileH; row++) {
-    for (let col = 0; col < size / tileW; col++) {
-      const offset = row % 2 === 0 ? 0 : tileW / 2;
-      const x = col * tileW + offset;
-      const y = row * tileH;
-      const brightness = 0.85 + Math.random() * 0.15;
-      const r = Math.floor(80 * brightness);
-      const g = Math.floor(62 * brightness);
-      const b = Math.floor(100 * brightness);
-      ctx.fillStyle = `rgb(${r},${g},${b})`;
-      ctx.fillRect(x + 2, y + 2, tileW - 4, tileH - 4);
-      ctx.fillStyle = "#150f1a";
-      ctx.fillRect(x, y, tileW, 2);
-      ctx.fillRect(x, y, 2, tileH);
-    }
-  }
-  for (let i = 0; i < 3000; i++) {
-    const px = Math.random() * size;
-    const py = Math.random() * size;
-    const alpha = Math.random() * 0.15;
-    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
-    ctx.fillRect(px, py, 2, 2);
-  }
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(8, 8);
-  return tex;
-}
-
-// ─── Floor ──────────────────────────────────────────────────────────────────
-
-function FloorTile() {
-  const { proceduralAlbedo, proceduralNormal } = useMemo(() => {
-    const albedo = generateFloorTexture();
-    const normal = generateNormalMap(512, 64, 64, 2, true);
-    normal.repeat.set(8, 8);
-    return { proceduralAlbedo: albedo, proceduralNormal: normal };
-  }, []);
-
-  const pbr = usePBRTextures("floor", 8, 8, proceduralAlbedo, proceduralNormal);
-
-  return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <planeGeometry args={[FULL, FULL, 1, 1]} />
-      <meshStandardMaterial
-        map={pbr.albedo}
-        normalMap={pbr.normal}
-        normalScale={new THREE.Vector2(0.6, 0.6)}
-        roughnessMap={pbr.roughness ?? undefined}
-        color={pbr.isExternal ? "#ffffff" : FLOOR_COLOR}
-        roughness={pbr.roughness ? 1.0 : 0.9}
-        metalness={0.0}
-      />
-    </mesh>
-  );
-}
 
 // ─── Walls ──────────────────────────────────────────────────────────────────
 
@@ -411,7 +349,7 @@ function ArenaBorderGlow() {
 export function DungeonRoom() {
   return (
     <group>
-      <FloorTile />
+      <DungeonFloor />
       <Walls />
       <Pillars />
       <ArenaBorderGlow />
