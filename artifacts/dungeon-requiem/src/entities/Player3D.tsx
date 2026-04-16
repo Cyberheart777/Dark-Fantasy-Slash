@@ -300,7 +300,20 @@ function WarriorMeshAnimated({ gs }: PlayerProps) {
   );
 }
 
-// ─── Mage — low-poly geometry (placeholder until GLB arrives) ─────────────────
+// ─── Mage — robed arcane sorcerer (procedural, iOS-safe) ─────────────────────
+// All materials are meshBasicMaterial so no scene lights are required; the
+// glowing bits (eye slit, staff orb, sigil) rely on bright accent colors
+// rather than emissive — which MeshBasicMaterial doesn't support.
+//
+// Bounding box ≈ 0.65w × 2.25h × 0.45d, feet just above y=0 (Mage hovers).
+// Animation hooks preserved:
+//   groupRef   — position + yaw (+ dash tilt)
+//   bodyRef    — subtle torso bob
+//   leftArmRef / rightArmRef — walk/idle sway (rest pose baked into inner group)
+//   legsRef    — walk swing (children indexed 0=left, 1=right)
+//   weaponRef  — staff swing driven by p.attackTrigger
+//   capeRef    — cape sway
+//   playerLtRef — player point light (tint shifts on invulnerability)
 
 function MageMeshAnimated({ gs }: PlayerProps) {
   const groupRef    = useRef<THREE.Group>(null);
@@ -321,28 +334,31 @@ function MageMeshAnimated({ gs }: PlayerProps) {
     if (!gs.current || !groupRef.current) return;
     t.current += delta;
     const p = gs.current.player;
-    groupRef.current.position.set(p.x, 0, p.z);
+    // Hover: the Mage barely touches the ground — constant lift + slow sine.
+    const hover = 0.08 + Math.sin(t.current * 1.2) * 0.04;
+    groupRef.current.position.set(p.x, hover, p.z);
     groupRef.current.rotation.y = p.angle + Math.PI;
     applyRaceScale(gs, groupRef.current);
     const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
     lastX.current = p.x; lastZ.current = p.z;
     if (leftArmRef.current && rightArmRef.current && legsRef.current) {
       if (isMoving && !p.isDashing) {
-        const freq = 8, amp = 0.5;
+        const freq = 8, amp = 0.4;
         leftArmRef.current.rotation.x  =  Math.sin(t.current * freq) * amp;
         rightArmRef.current.rotation.x = -Math.sin(t.current * freq) * amp;
         const lg = legsRef.current.children;
         if (lg[0]) (lg[0] as THREE.Group).rotation.x =  Math.sin(t.current * freq) * amp;
         if (lg[1]) (lg[1] as THREE.Group).rotation.x = -Math.sin(t.current * freq) * amp;
       } else {
-        leftArmRef.current.rotation.x  = Math.sin(t.current * 1.5) * 0.05;
-        rightArmRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.05 + 0.1;
+        // Subtle idle drift on the arms; legs still (Mage is hovering).
+        leftArmRef.current.rotation.x  = Math.sin(t.current * 1.2) * 0.04;
+        rightArmRef.current.rotation.x = Math.sin(t.current * 1.2) * 0.04;
         const lg = legsRef.current.children;
         if (lg[0]) (lg[0] as THREE.Group).rotation.x = 0;
         if (lg[1]) (lg[1] as THREE.Group).rotation.x = 0;
       }
     }
-    if (bodyRef.current) bodyRef.current.position.y = 1.0 + Math.sin(t.current * 1.5) * 0.03;
+    if (bodyRef.current) bodyRef.current.position.y = 1.02 + Math.sin(t.current * 1.5) * 0.025;
     if (p.attackTrigger !== lastAttack.current) { lastAttack.current = p.attackTrigger; weaponSwing.current = 1; }
     if (weaponSwing.current > 0) weaponSwing.current = Math.max(0, weaponSwing.current - delta * 5);
     if (weaponRef.current) {
@@ -351,7 +367,7 @@ function MageMeshAnimated({ gs }: PlayerProps) {
       else { weaponRef.current.rotation.x = THREE.MathUtils.lerp(weaponRef.current.rotation.x, 0, 0.15); weaponRef.current.rotation.z = THREE.MathUtils.lerp(weaponRef.current.rotation.z, 0, 0.15); }
     }
     groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, p.isDashing ? -0.25 : 0, 0.2);
-    if (capeRef.current) capeRef.current.rotation.x = Math.sin(t.current * 3) * 0.1;
+    if (capeRef.current) capeRef.current.rotation.x = Math.sin(t.current * 2.5) * 0.08;
     if (playerLtRef.current) {
       playerLtRef.current.position.set(p.x, 2, p.z);
       const invPct = Math.max(0, p.invTimer / GAME_CONFIG_INV_TIME);
@@ -361,40 +377,177 @@ function MageMeshAnimated({ gs }: PlayerProps) {
     }
   });
 
-  const ROBE = "#5a2090"; const INNER = "#380a60"; const SKIN = "#dac8a8";
-  const STAFF = "#4a3060"; const ORB = "#cc66ff"; const TRIM = "#8030c0";
+  // Palette — MeshBasicMaterial doesn't support emissive, so "glow" comes
+  // from picking bright saturated colors for small accent meshes.
+  const ROBE_DARK  = "#140818";  // robes — very dark purple-black
+  const ROBE_TRIM  = "#25122e";  // hood edge, slightly lighter
+  const SKIN       = "#9a96a8";  // pale grey, barely visible
+  const EYE_CYAN   = "#5effff";  // bright cyan (glows via additive tone-mapping off)
+  const ORB_CORE   = "#c8a0ff";  // staff orb — soft purple
+  const ORB_HALO   = "#7a3dd8";  // orb glow shell
+  const SIGIL      = "#6a38a0";  // dim arcane purple
+  const STAFF_DARK = "#0a0612";  // obsidian staff
+  const STAFF_LINE = "#6b3fc4";  // faint purple energy binding
+
   return (
     <>
       <group ref={groupRef}>
+
+        {/* ── Legs (mostly hidden under robes — hints only) ──────────────── */}
         <group ref={legsRef}>
-          <group position={[-0.18, 0.45, 0]}><mesh castShadow><boxGeometry args={[0.24, 0.58, 0.28]} /><meshStandardMaterial color={ROBE} roughness={0.95} emissive={INNER} emissiveIntensity={0.3} /></mesh></group>
-          <group position={[0.18, 0.45, 0]}><mesh castShadow><boxGeometry args={[0.24, 0.58, 0.28]} /><meshStandardMaterial color={ROBE} roughness={0.95} emissive={INNER} emissiveIntensity={0.3} /></mesh></group>
-        </group>
-        <mesh ref={bodyRef} position={[0, 1.02, 0]} castShadow><boxGeometry args={[0.62, 0.72, 0.36]} /><meshStandardMaterial color={ROBE} roughness={0.9} emissive={INNER} emissiveIntensity={0.25} /></mesh>
-        <mesh position={[0, 1.02, 0.19]}><boxGeometry args={[0.18, 0.18, 0.01]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={2.5} /></mesh>
-        <mesh position={[-0.40, 1.25, 0]} castShadow><boxGeometry args={[0.18, 0.16, 0.34]} /><meshStandardMaterial color={TRIM} roughness={0.7} metalness={0.2} /></mesh>
-        <mesh position={[0.40, 1.25, 0]} castShadow><boxGeometry args={[0.18, 0.16, 0.34]} /><meshStandardMaterial color={TRIM} roughness={0.7} metalness={0.2} /></mesh>
-        <mesh ref={capeRef} position={[0, 1.0, -0.26]} castShadow><boxGeometry args={[0.58, 0.88, 0.06]} /><meshStandardMaterial color={INNER} roughness={0.95} emissive="#1a004a" emissiveIntensity={0.4} /></mesh>
-        <group ref={leftArmRef} position={[-0.42, 1.18, 0]}>
-          <mesh castShadow position={[0, -0.2, 0]}><boxGeometry args={[0.18, 0.44, 0.18]} /><meshStandardMaterial color={ROBE} roughness={0.9} /></mesh>
-          <mesh castShadow position={[0, -0.46, 0]}><boxGeometry args={[0.16, 0.18, 0.16]} /><meshStandardMaterial color={SKIN} roughness={0.85} /></mesh>
-        </group>
-        <group ref={rightArmRef} position={[0.42, 1.18, 0]}>
-          <mesh castShadow position={[0, -0.2, 0]}><boxGeometry args={[0.18, 0.44, 0.18]} /><meshStandardMaterial color={ROBE} roughness={0.9} /></mesh>
-          <mesh castShadow position={[0, -0.46, 0]}><boxGeometry args={[0.16, 0.18, 0.16]} /><meshStandardMaterial color={SKIN} roughness={0.85} /></mesh>
-          <group ref={weaponRef} position={[0.08, -0.4, 0]}>
-            <mesh castShadow position={[0, -0.55, 0]}><boxGeometry args={[0.07, 1.1, 0.07]} /><meshStandardMaterial color={STAFF} roughness={0.8} metalness={0.1} /></mesh>
-            <mesh position={[0, 0.08, 0]}><sphereGeometry args={[0.18, 8, 6]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={3} roughness={0.1} /></mesh>
-            <mesh position={[0, 0.08, 0]}><sphereGeometry args={[0.25, 6, 4]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={1.2} transparent opacity={0.25} /></mesh>
+          <group position={[-0.10, 0.30, 0]}>
+            <mesh>
+              <cylinderGeometry args={[0.07, 0.06, 0.55, 6]} />
+              <meshBasicMaterial color={ROBE_DARK} toneMapped={false} />
+            </mesh>
+          </group>
+          <group position={[0.10, 0.30, 0]}>
+            <mesh>
+              <cylinderGeometry args={[0.07, 0.06, 0.55, 6]} />
+              <meshBasicMaterial color={ROBE_DARK} toneMapped={false} />
+            </mesh>
           </group>
         </group>
-        <group position={[0, 1.66, 0]}>
-          <mesh castShadow><boxGeometry args={[0.40, 0.40, 0.36]} /><meshStandardMaterial color={SKIN} roughness={0.85} /></mesh>
-          <mesh castShadow position={[0, 0.28, 0]}><boxGeometry args={[0.44, 0.44, 0.40]} /><meshStandardMaterial color={ROBE} roughness={0.9} emissive={INNER} emissiveIntensity={0.2} /></mesh>
-          <mesh castShadow position={[0, 0.58, 0]}><boxGeometry args={[0.22, 0.36, 0.22]} /><meshStandardMaterial color={ROBE} roughness={0.9} /></mesh>
-          <mesh position={[-0.1, 0.05, 0.19]}><boxGeometry args={[0.07, 0.06, 0.02]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={4} /></mesh>
-          <mesh position={[0.1, 0.05, 0.19]}><boxGeometry args={[0.07, 0.06, 0.02]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={4} /></mesh>
+
+        {/* ── Flowing robes — wide flat planes around the lower body ────── */}
+        {/* Back cape — animated via capeRef */}
+        <mesh ref={capeRef} position={[0, 0.90, -0.19]} rotation={[0, 0, 0]}>
+          <planeGeometry args={[0.75, 1.30]} />
+          <meshBasicMaterial color={ROBE_DARK} side={THREE.DoubleSide} toneMapped={false} />
+        </mesh>
+        {/* Asymmetric side robe — left is LONGER */}
+        <mesh position={[-0.32, 0.75, 0]} rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[0.55, 1.45]} />
+          <meshBasicMaterial color={ROBE_DARK} side={THREE.DoubleSide} toneMapped={false} />
+        </mesh>
+        {/* Right side robe — shorter */}
+        <mesh position={[0.32, 0.82, 0]} rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[0.50, 1.30]} />
+          <meshBasicMaterial color={ROBE_DARK} side={THREE.DoubleSide} toneMapped={false} />
+        </mesh>
+        {/* Front robe wrap */}
+        <mesh position={[0, 0.80, 0.18]} rotation={[0, 0, 0]}>
+          <planeGeometry args={[0.50, 1.35]} />
+          <meshBasicMaterial color={ROBE_DARK} side={THREE.DoubleSide} toneMapped={false} />
+        </mesh>
+
+        {/* ── Torso — narrow top, flared bottom ──────────────────────────── */}
+        <mesh ref={bodyRef} position={[0, 1.02, 0]}>
+          <boxGeometry args={[0.40, 0.66, 0.28]} />
+          <meshBasicMaterial color={ROBE_DARK} toneMapped={false} />
+        </mesh>
+        {/* Robe flare skirt — wider than torso */}
+        <mesh position={[0, 0.62, 0]}>
+          <boxGeometry args={[0.58, 0.22, 0.38]} />
+          <meshBasicMaterial color={ROBE_DARK} toneMapped={false} />
+        </mesh>
+        {/* Layered fabric — a second thin panel offset in front of the torso */}
+        <mesh position={[0, 1.00, 0.15]}>
+          <planeGeometry args={[0.34, 0.56]} />
+          <meshBasicMaterial color={ROBE_TRIM} side={THREE.DoubleSide} toneMapped={false} />
+        </mesh>
+        {/* Arcane sigil — small torus ring on the chest, dim purple */}
+        <mesh position={[0, 1.08, 0.17]}>
+          <torusGeometry args={[0.058, 0.011, 6, 14]} />
+          <meshBasicMaterial color={SIGIL} toneMapped={false} />
+        </mesh>
+        {/* Sigil inner tick — a tiny crossbar across the ring */}
+        <mesh position={[0, 1.08, 0.17]}>
+          <boxGeometry args={[0.11, 0.010, 0.012]} />
+          <meshBasicMaterial color={SIGIL} toneMapped={false} />
+        </mesh>
+
+        {/* ── Left arm — relaxed down (inner group bakes the rest pose) ──── */}
+        <group ref={leftArmRef} position={[-0.27, 1.14, 0]}>
+          <group rotation={[0.12, 0, 0.05]}>
+            {/* Upper arm sleeve — narrow cylinder */}
+            <mesh position={[0, -0.22, 0]}>
+              <cylinderGeometry args={[0.065, 0.055, 0.46, 6]} />
+              <meshBasicMaterial color={ROBE_DARK} toneMapped={false} />
+            </mesh>
+            {/* Slightly oversized hand — pale grey sphere */}
+            <mesh position={[0, -0.50, 0.02]}>
+              <sphereGeometry args={[0.085, 8, 6]} />
+              <meshBasicMaterial color={SKIN} toneMapped={false} />
+            </mesh>
+          </group>
         </group>
+
+        {/* ── Right arm — raised as if casting (inner group −0.55 rad) ───── */}
+        <group ref={rightArmRef} position={[0.27, 1.14, 0]}>
+          <group rotation={[-0.55, 0, -0.1]}>
+            <mesh position={[0, -0.22, 0]}>
+              <cylinderGeometry args={[0.065, 0.055, 0.46, 6]} />
+              <meshBasicMaterial color={ROBE_DARK} toneMapped={false} />
+            </mesh>
+            <mesh position={[0, -0.50, 0]}>
+              <sphereGeometry args={[0.09, 8, 6]} />
+              <meshBasicMaterial color={SKIN} toneMapped={false} />
+            </mesh>
+
+            {/* ── Staff — held in the right hand, orb floats above tip ───── */}
+            <group ref={weaponRef} position={[0.02, -0.45, 0]}>
+              {/* Shaft — long slim obsidian cylinder */}
+              <mesh position={[0, -0.55, 0]}>
+                <cylinderGeometry args={[0.028, 0.028, 1.35, 8]} />
+                <meshBasicMaterial color={STAFF_DARK} toneMapped={false} />
+              </mesh>
+              {/* Energy lines — three thin glowing bands up the shaft */}
+              <mesh position={[0, -0.95, 0]}>
+                <cylinderGeometry args={[0.033, 0.033, 0.035, 8]} />
+                <meshBasicMaterial color={STAFF_LINE} toneMapped={false} />
+              </mesh>
+              <mesh position={[0, -0.60, 0]}>
+                <cylinderGeometry args={[0.033, 0.033, 0.035, 8]} />
+                <meshBasicMaterial color={STAFF_LINE} toneMapped={false} />
+              </mesh>
+              <mesh position={[0, -0.25, 0]}>
+                <cylinderGeometry args={[0.033, 0.033, 0.035, 8]} />
+                <meshBasicMaterial color={STAFF_LINE} toneMapped={false} />
+              </mesh>
+              {/* Staff crown — a small cap just below the floating orb */}
+              <mesh position={[0, 0.15, 0]}>
+                <coneGeometry args={[0.05, 0.10, 8]} />
+                <meshBasicMaterial color={STAFF_DARK} toneMapped={false} />
+              </mesh>
+              {/* Floating orb — gap between staff tip (0.20) and orb (0.33) */}
+              <mesh position={[0, 0.33, 0]}>
+                <sphereGeometry args={[0.09, 12, 10]} />
+                <meshBasicMaterial color={ORB_CORE} toneMapped={false} />
+              </mesh>
+              {/* Orb halo — semi-transparent bigger sphere for the glow */}
+              <mesh position={[0, 0.33, 0]}>
+                <sphereGeometry args={[0.15, 10, 8]} />
+                <meshBasicMaterial color={ORB_HALO} transparent opacity={0.35} depthWrite={false} toneMapped={false} />
+              </mesh>
+            </group>
+          </group>
+        </group>
+
+        {/* ── Head + hood ─────────────────────────────────────────────────── */}
+        <group position={[0, 1.52, 0]}>
+          {/* Narrow oval head — pale skin sphere, scaled taller than wide */}
+          <mesh position={[0, 0.14, 0.04]} scale={[0.85, 1.15, 0.95]}>
+            <sphereGeometry args={[0.16, 12, 10]} />
+            <meshBasicMaterial color={SKIN} toneMapped={false} />
+          </mesh>
+          {/* Tall pointed hood — cone, slightly tilted forward for menace */}
+          <mesh position={[0, 0.40, -0.04]} rotation={[0.14, 0, 0]}>
+            <coneGeometry args={[0.30, 0.95, 10]} />
+            <meshBasicMaterial color={ROBE_DARK} side={THREE.DoubleSide} toneMapped={false} />
+          </mesh>
+          {/* Hood outer edge — slightly larger & lighter, gives a trim hint */}
+          <mesh position={[0, 0.35, -0.09]} rotation={[0.14, 0, 0]}>
+            <coneGeometry args={[0.34, 0.80, 10, 1, true]} />
+            <meshBasicMaterial color={ROBE_TRIM} side={THREE.DoubleSide} toneMapped={false} />
+          </mesh>
+          {/* Glowing eye slit — thin horizontal cyan rectangle */}
+          <mesh position={[0, 0.14, 0.18]}>
+            <boxGeometry args={[0.18, 0.028, 0.012]} />
+            <meshBasicMaterial color={EYE_CYAN} toneMapped={false} />
+          </mesh>
+        </group>
+
       </group>
       <pointLight ref={playerLtRef} color="#a030ff" intensity={1.5} distance={10} decay={2} />
     </>
