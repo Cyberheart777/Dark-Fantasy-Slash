@@ -8,7 +8,6 @@ import { create } from "zustand";
 import type { UpgradeDef } from "../data/UpgradeData";
 import type { CharacterClass } from "../data/CharacterData";
 import type { RaceType } from "../data/RaceData";
-import { useMetaStore } from "./metaStore";
 import type { DifficultyTier } from "../data/DifficultyData";
 
 import type { GearDef } from "../data/GearData";
@@ -34,7 +33,6 @@ export type GamePhase =
   | "menu"
   | "charselect"
   | "soulforge"
-  | "bestiary"
   | "playing"
   | "paused"
   | "levelup"
@@ -298,10 +296,6 @@ export const useGameStore = create<GameUIState>((set, get) => ({
     const next = new Set(seen);
     next.add(affix);
     set({ encounteredAffixesSession: next, pendingAffixBanner: affix });
-    // Also persist the discovery so the bestiary entry stays
-    // unlocked across reloads. metaStore is the persistent layer;
-    // gameStore is per-session only.
-    useMetaStore.getState().discoverAffix(affix);
     return true;
   },
   clearAffixBanner: () => set({ pendingAffixBanner: null }),

@@ -122,10 +122,6 @@ export function MainMenu() {
               )}
             </button>
 
-            <button style={styles.btnBestiary} onClick={click(() => setPhase("bestiary"))}>
-              ✦ BESTIARY
-            </button>
-
             <button style={styles.btnAchievements} onClick={click(() => setView("achievements"))}>
               &#9733; ACHIEVEMENTS
             </button>
@@ -467,23 +463,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#c0a0e0",
     background: "rgba(40,10,70,0.7)",
     border: "1px solid rgba(120,60,160,0.5)",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontFamily: "inherit",
-    width: "100%",
-  },
-  // Bestiary button — same secondary tier as achievements/settings.
-  // Purple palette to echo the affix tooltip / banner styling so
-  // players associate the button with the affix system.
-  btnBestiary: {
-    marginTop: 10,
-    padding: "12px 32px",
-    fontSize: 14,
-    fontWeight: "bold" as const,
-    letterSpacing: 2,
-    color: "#d8b8ff",
-    background: "rgba(35,15,55,0.7)",
-    border: "1px solid rgba(140,80,200,0.45)",
     borderRadius: 8,
     cursor: "pointer",
     fontFamily: "inherit",

@@ -15,9 +15,8 @@
 import { useGameStore } from "../store/gameStore";
 import { AFFIX_DEFS, type EnemyAffix } from "../data/AffixData";
 
-/** Pretty-print enemy type for the tooltip header. Matches the
- *  bestiary-style ALL CAPS treatment so affix banners read
- *  consistent across surfaces. */
+/** Pretty-print enemy type for the tooltip header. ALL CAPS
+ *  treatment so affix banners read consistent across surfaces. */
 function formatEnemyType(type: string): string {
   return type
     .split("_")

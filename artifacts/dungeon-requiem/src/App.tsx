@@ -11,7 +11,6 @@ import { GameScene } from "./game/GameScene";
 import { MainMenu } from "./ui/MainMenu";
 import { CharacterSelect } from "./ui/CharacterSelect";
 import { SoulForge } from "./ui/SoulForge";
-import { Bestiary } from "./ui/Bestiary";
 import { GameOver } from "./ui/GameOver";
 import { TrialVictory } from "./ui/TrialVictory";
 import { LabyrinthScene } from "./game/labyrinth/LabyrinthScene";
@@ -112,7 +111,6 @@ export default function App() {
       {phase === "menu"                 && <MainMenu />}
       {phase === "charselect"           && <CharacterSelect />}
       {phase === "soulforge"            && <SoulForge />}
-      {phase === "bestiary"             && <Bestiary />}
       {phase === "labyrinth_charselect" && <LabyrinthCharSelect />}
       {phase === "labyrinth"            && <LabyrinthScene />}
 

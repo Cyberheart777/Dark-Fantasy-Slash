@@ -122,12 +122,6 @@ export interface MetaState {
   // First-run onboarding flag — set once the player has seen the HUD tutorial
   hasSeenTutorial: boolean;
 
-  /** Bestiary unlock tracking. Once an affix has been encountered
-   *  in ANY run (across reloads), its bestiary entry unlocks. The
-   *  Bestiary screen reads this map to gate locked entries.
-   *  Map key = AffixData EnemyAffix id. */
-  discoveredAffixes: Record<string, boolean>;
-
   // ─── Labyrinth cross-run counters ─────────────────────────────────
   // Persisted across sessions. Labyrinth achievements use these for
   // "X across all runs" goals. Incremented by actions below; read
@@ -160,8 +154,6 @@ export interface MetaState {
   addShards: (amount: number) => void;
   spendShards: (amount: number) => boolean;
   setUpgradeRank: (id: string, rank: number) => void;
-  /** Persistently mark an affix as discovered (unlocks bestiary entry). */
-  discoverAffix: (affix: string) => void;
 
   // ─── Labyrinth cross-run actions ──────────────────────────────────
   /** Increment the labyrinth kill counter by `n`. Fires the Nemesis
@@ -218,7 +210,6 @@ const DEFAULT_STATE = {
   gearStash: [] as StashItem[],
   equippedLoadout: { weapon: null, armor: null, trinket: null } as Record<string, StashItem | null>,
   hasSeenTutorial: false,
-  discoveredAffixes: {} as Record<string, boolean>,
   labyrinthKillCount: 0,
   labyrinthExtractedClasses: {} as Record<string, boolean>,
   labyrinthChampionKeyCount: 0,
@@ -254,13 +245,6 @@ export const useMetaStore = create<MetaState>()(
 
       setUpgradeRank: (id, rank) =>
         set((s) => ({ purchased: { ...s.purchased, [id]: rank } })),
-
-      discoverAffix: (affix) =>
-        set((s) =>
-          s.discoveredAffixes[affix]
-            ? s   // already discovered — no-op (no fresh state, no rerender)
-            : { discoveredAffixes: { ...s.discoveredAffixes, [affix]: true } },
-        ),
 
       // ─── Labyrinth cross-run counters ─────────────────────────────
       // Each mutator writes through to the persistence layer AND

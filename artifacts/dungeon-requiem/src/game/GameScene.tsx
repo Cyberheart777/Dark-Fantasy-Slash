@@ -931,7 +931,7 @@ function triggerSoulfire(deadEnemy: EnemyRuntime, g: GameState): void {
 // Affix data lives in src/data/AffixData.ts — single source of truth
 // for the type union, color palette, descriptions, and icon symbols.
 // Importing AFFIX_TYPES keeps the spawn-roll table in sync with the
-// rest of the affix UI (icon overlay, bestiary, tooltip, banner).
+// rest of the affix UI (icon overlay, tooltip, banner).
 // (See AffixData.ts for the full list.)
 //
 // const AFFIX_TYPES used to live here as ["shielded","vampiric","berserker"]

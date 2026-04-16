@@ -8,9 +8,8 @@
  *
  * Each affix has a name, a one-line description, an associated
  * color (the existing tint/circle hue), and a small symbol used by
- * the floating icon over enemies + the bestiary. Renderers / data
- * consumers should read from AFFIX_DEFS rather than re-declaring
- * the strings inline.
+ * the floating icon over enemies. Renderers / data consumers should
+ * read from AFFIX_DEFS rather than re-declaring the strings inline.
  *
  * "none" is intentionally listed for exhaustive switches, but with
  * empty visual data — consumers should skip it via the `isAffixed()`
@@ -20,8 +19,7 @@
 export type EnemyAffix = "none" | "shielded" | "vampiric" | "berserker";
 
 /** Ordered tuple of rollable affixes. Used by spawn logic to pick
- *  one at random; iterating in this order also gives a stable
- *  display order for the bestiary screen. */
+ *  one at random. */
 export const AFFIX_TYPES: readonly Exclude<EnemyAffix, "none">[] = [
   "shielded",
   "vampiric",
@@ -31,14 +29,13 @@ export const AFFIX_TYPES: readonly Exclude<EnemyAffix, "none">[] = [
 export interface AffixDef {
   /** Internal id, also the EnemyAffix string. */
   id: EnemyAffix;
-  /** Player-facing name (uppercase, used by banner + tooltip + bestiary). */
+  /** Player-facing name (uppercase, used by banner + tooltip). */
   name: string;
-  /** One-line description shown in the tooltip + bestiary + first-
-   *  encounter banner. */
+  /** One-line description shown in the tooltip + first-encounter banner. */
   description: string;
   /** Hex color associated with the affix — same color used for the
    *  existing aura ring + emissive tint. Drives icon background +
-   *  banner accent + bestiary entry. */
+   *  banner accent. */
   color: string;
   /** Single character / emoji shown inside the floating icon plate
    *  above the enemy. Renderers can either use this as a Text mesh
