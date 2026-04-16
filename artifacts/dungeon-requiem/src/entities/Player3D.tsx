@@ -361,20 +361,33 @@ function MageMeshAnimated({ gs }: PlayerProps) {
     }
   });
 
-  const ROBE = "#5a2090"; const INNER = "#380a60"; const SKIN = "#dac8a8";
-  const STAFF = "#4a3060"; const ORB = "#cc66ff"; const TRIM = "#8030c0";
+  // Palette — tuned for visibility against the dark stone floor.
+  // ROBE reads as deep violet (lighter than original near-black), with
+  // emissive accents pushed bright enough to punch through tone mapping.
+  const ROBE = "#4a1e80"; const INNER = "#2d1b4e"; const SKIN = "#dac8a8";
+  const STAFF = "#1a0a2e"; const ORB = "#cc44ff"; const TRIM = "#8833cc";
+  const EYE = "#00ffff"; const STAFF_LINE = "#9933ff";
+
+  // Visual-only scale bump so the Mage doesn't read as a tiny dot from the
+  // top-down camera. Wrapped in a static inner group so it compounds with
+  // the per-race scale on groupRef. Hitbox and collision are runtime-side
+  // and unaffected.
+  const MAGE_SCALE = 1.4;
+
   return (
     <>
       <group ref={groupRef}>
+       <group scale={[MAGE_SCALE, MAGE_SCALE, MAGE_SCALE]}>
         <group ref={legsRef}>
           <group position={[-0.18, 0.45, 0]}><mesh castShadow><boxGeometry args={[0.24, 0.58, 0.28]} /><meshStandardMaterial color={ROBE} roughness={0.95} emissive={INNER} emissiveIntensity={0.3} /></mesh></group>
           <group position={[0.18, 0.45, 0]}><mesh castShadow><boxGeometry args={[0.24, 0.58, 0.28]} /><meshStandardMaterial color={ROBE} roughness={0.95} emissive={INNER} emissiveIntensity={0.3} /></mesh></group>
         </group>
         <mesh ref={bodyRef} position={[0, 1.02, 0]} castShadow><boxGeometry args={[0.62, 0.72, 0.36]} /><meshStandardMaterial color={ROBE} roughness={0.9} emissive={INNER} emissiveIntensity={0.25} /></mesh>
-        <mesh position={[0, 1.02, 0.19]}><boxGeometry args={[0.18, 0.18, 0.01]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={2.5} /></mesh>
-        <mesh position={[-0.40, 1.25, 0]} castShadow><boxGeometry args={[0.18, 0.16, 0.34]} /><meshStandardMaterial color={TRIM} roughness={0.7} metalness={0.2} /></mesh>
-        <mesh position={[0.40, 1.25, 0]} castShadow><boxGeometry args={[0.18, 0.16, 0.34]} /><meshStandardMaterial color={TRIM} roughness={0.7} metalness={0.2} /></mesh>
-        <mesh ref={capeRef} position={[0, 1.0, -0.26]} castShadow><boxGeometry args={[0.58, 0.88, 0.06]} /><meshStandardMaterial color={INNER} roughness={0.95} emissive="#1a004a" emissiveIntensity={0.4} /></mesh>
+        {/* Chest sigil — brighter emissive so it reads at distance */}
+        <mesh position={[0, 1.02, 0.19]}><boxGeometry args={[0.18, 0.18, 0.01]} /><meshStandardMaterial color={TRIM} emissive={TRIM} emissiveIntensity={4.5} toneMapped={false} /></mesh>
+        <mesh position={[-0.40, 1.25, 0]} castShadow><boxGeometry args={[0.18, 0.16, 0.34]} /><meshStandardMaterial color={TRIM} roughness={0.7} metalness={0.2} emissive={TRIM} emissiveIntensity={0.6} /></mesh>
+        <mesh position={[0.40, 1.25, 0]} castShadow><boxGeometry args={[0.18, 0.16, 0.34]} /><meshStandardMaterial color={TRIM} roughness={0.7} metalness={0.2} emissive={TRIM} emissiveIntensity={0.6} /></mesh>
+        <mesh ref={capeRef} position={[0, 1.0, -0.26]} castShadow><boxGeometry args={[0.58, 0.88, 0.06]} /><meshStandardMaterial color={INNER} roughness={0.95} emissive="#1a004a" emissiveIntensity={0.6} /></mesh>
         <group ref={leftArmRef} position={[-0.42, 1.18, 0]}>
           <mesh castShadow position={[0, -0.2, 0]}><boxGeometry args={[0.18, 0.44, 0.18]} /><meshStandardMaterial color={ROBE} roughness={0.9} /></mesh>
           <mesh castShadow position={[0, -0.46, 0]}><boxGeometry args={[0.16, 0.18, 0.16]} /><meshStandardMaterial color={SKIN} roughness={0.85} /></mesh>
@@ -383,18 +396,24 @@ function MageMeshAnimated({ gs }: PlayerProps) {
           <mesh castShadow position={[0, -0.2, 0]}><boxGeometry args={[0.18, 0.44, 0.18]} /><meshStandardMaterial color={ROBE} roughness={0.9} /></mesh>
           <mesh castShadow position={[0, -0.46, 0]}><boxGeometry args={[0.16, 0.18, 0.16]} /><meshStandardMaterial color={SKIN} roughness={0.85} /></mesh>
           <group ref={weaponRef} position={[0.08, -0.4, 0]}>
-            <mesh castShadow position={[0, -0.55, 0]}><boxGeometry args={[0.07, 1.1, 0.07]} /><meshStandardMaterial color={STAFF} roughness={0.8} metalness={0.1} /></mesh>
-            <mesh position={[0, 0.08, 0]}><sphereGeometry args={[0.18, 8, 6]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={3} roughness={0.1} /></mesh>
-            <mesh position={[0, 0.08, 0]}><sphereGeometry args={[0.25, 6, 4]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={1.2} transparent opacity={0.25} /></mesh>
+            {/* Staff shaft — dark obsidian */}
+            <mesh castShadow position={[0, -0.55, 0]}><boxGeometry args={[0.07, 1.1, 0.07]} /><meshStandardMaterial color={STAFF} roughness={0.8} metalness={0.1} emissive={STAFF_LINE} emissiveIntensity={0.5} /></mesh>
+            {/* Staff energy line — thin bright strip up the shaft */}
+            <mesh position={[0, -0.55, 0.036]}><boxGeometry args={[0.012, 1.0, 0.003]} /><meshStandardMaterial color={STAFF_LINE} emissive={STAFF_LINE} emissiveIntensity={3.0} toneMapped={false} /></mesh>
+            {/* Staff orb — bright purple emissive, most visible element */}
+            <mesh position={[0, 0.08, 0]}><sphereGeometry args={[0.18, 10, 8]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={6.0} toneMapped={false} /></mesh>
+            <mesh position={[0, 0.08, 0]}><sphereGeometry args={[0.24, 8, 6]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={2.5} transparent opacity={0.35} depthWrite={false} /></mesh>
           </group>
         </group>
         <group position={[0, 1.66, 0]}>
           <mesh castShadow><boxGeometry args={[0.40, 0.40, 0.36]} /><meshStandardMaterial color={SKIN} roughness={0.85} /></mesh>
-          <mesh castShadow position={[0, 0.28, 0]}><boxGeometry args={[0.44, 0.44, 0.40]} /><meshStandardMaterial color={ROBE} roughness={0.9} emissive={INNER} emissiveIntensity={0.2} /></mesh>
-          <mesh castShadow position={[0, 0.58, 0]}><boxGeometry args={[0.22, 0.36, 0.22]} /><meshStandardMaterial color={ROBE} roughness={0.9} /></mesh>
-          <mesh position={[-0.1, 0.05, 0.19]}><boxGeometry args={[0.07, 0.06, 0.02]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={4} /></mesh>
-          <mesh position={[0.1, 0.05, 0.19]}><boxGeometry args={[0.07, 0.06, 0.02]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={4} /></mesh>
+          <mesh castShadow position={[0, 0.28, 0]}><boxGeometry args={[0.44, 0.44, 0.40]} /><meshStandardMaterial color={INNER} roughness={0.9} emissive={INNER} emissiveIntensity={0.35} /></mesh>
+          <mesh castShadow position={[0, 0.58, 0]}><boxGeometry args={[0.22, 0.36, 0.22]} /><meshStandardMaterial color={INNER} roughness={0.9} /></mesh>
+          {/* Eye slits — bright cyan emissive */}
+          <mesh position={[-0.1, 0.05, 0.19]}><boxGeometry args={[0.07, 0.06, 0.02]} /><meshStandardMaterial color={EYE} emissive={EYE} emissiveIntensity={7.0} toneMapped={false} /></mesh>
+          <mesh position={[0.1, 0.05, 0.19]}><boxGeometry args={[0.07, 0.06, 0.02]} /><meshStandardMaterial color={EYE} emissive={EYE} emissiveIntensity={7.0} toneMapped={false} /></mesh>
         </group>
+       </group>
       </group>
       <pointLight ref={playerLtRef} color="#a030ff" intensity={1.5} distance={10} decay={2} />
     </>
