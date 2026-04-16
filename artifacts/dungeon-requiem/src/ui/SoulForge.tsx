@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useMetaStore, TRIAL_BUFFS, getEarnedTrialBuffs, type StashItem } from "../store/metaStore";
 import { META_UPGRADES, buildMetaModifiers, buildTrialModifiers, nextRankCost, nextRankLine } from "../data/MetaUpgradeData";
 import { DIFFICULTIES, DIFFICULTY_DATA } from "../data/DifficultyData";
-import { ENHANCE_MULT, ENHANCE_COST, ENHANCE_COLORS, formatBonuses, type GearDef } from "../data/GearData";
+import { ENHANCE_MULT, ENHANCE_COST, ENHANCE_COLORS, PERCENTAGE_BONUS_KEYS, PERCENTAGE_ENHANCE_CAP, formatBonuses, type GearDef } from "../data/GearData";
 import { useGameStore } from "../store/gameStore";
 import { audioManager } from "../audio/AudioManager";
 import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
@@ -18,12 +18,18 @@ import { StatsPanel } from "./PauseMenu";
 
 const clickSfx = () => audioManager.play("menu_click");
 
-/** Scale bonuses by enhancement level for display purposes. */
+/**
+ * Scale bonuses by enhancement level for display purposes. Percentage-based
+ * stats are capped at 1.5× regardless of rarity so the preview matches runtime.
+ * Kept in sync with getEnhancedBonuses in GearData.ts.
+ */
 function scaleBonuses(bonuses: Record<string, number>, enhanceLevel: number): Record<string, number> {
   const mult = ENHANCE_MULT[enhanceLevel] ?? 1;
+  const cappedMult = Math.min(mult, PERCENTAGE_ENHANCE_CAP);
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(bonuses)) {
-    if (typeof v === "number") out[k] = v * mult;
+    if (typeof v !== "number") continue;
+    out[k] = v * (PERCENTAGE_BONUS_KEYS.has(k) ? cappedMult : mult);
   }
   return out;
 }
@@ -68,9 +74,12 @@ function computePreviewStats(
     if (!item || !item.bonuses) continue;
     const enh = item.enhanceLevel ?? 0;
     const mult = ENHANCE_MULT[enh] ?? 1;
+    const cappedMult = Math.min(mult, PERCENTAGE_ENHANCE_CAP);
     const scaled: Partial<Record<keyof PlayerStats, number>> = {};
     for (const [key, val] of Object.entries(item.bonuses)) {
-      if (typeof val === "number") (scaled as Record<string, number>)[key] = val * mult;
+      if (typeof val !== "number") continue;
+      const m = PERCENTAGE_BONUS_KEYS.has(key) ? cappedMult : mult;
+      (scaled as Record<string, number>)[key] = val * m;
     }
     gearMods.push(...flatModifiers(scaled, `gear:${item.id}`));
   }

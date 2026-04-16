@@ -87,6 +87,14 @@ export interface PlayerRuntime {
   cloakAndDaggerReady: boolean;  // rogue: next attack is empowered
   lastAttackTime: number;        // universal: time of last attack for cloak and dagger
   lastX: number; lastZ: number;  // track movement for leyline anchor
+  // ── Gear proc runtime fields ──────────────────────────────────────────────
+  arcSlashTimer: number;         // Arc Warblade: counts up to arcSlashInterval, then procs
+  phantomWrapCdTimer: number;    // Phantom Wrap: cooldown remaining (seconds)
+  glacialRobeCdTimer: number;    // Glacial Robe: cooldown remaining (seconds)
+  postDashSpeedCdTimer: number;  // Boots of Speed: cooldown remaining (seconds)
+  postDashSpeedActive: number;   // Boots of Speed: remaining buff duration (seconds)
+  orbitalOrbAngle: number;       // Orbital Staff: current orbit angle
+  orbitalHitIcd: Map<string, number>; // Orbital Staff: per-enemy hit ICD (seconds)
 }
 
 export interface EnemyRuntime {
@@ -165,6 +173,8 @@ export interface Projectile {
   style: "orb" | "dagger";
   dead: boolean;
   isFracture?: boolean; // prevents chain reaction from arcane fracture
+  bouncesLeft?: number; // Ricochet Orb: bounces remaining (3, 2, 1, 0)
+  baseDamage?: number;  // Ricochet Orb: base damage for per-bounce scaling
   spawnX?: number;      // overcharged orbs: spawn position for distance calc
   spawnZ?: number;
   maxRange?: number;    // overcharged orbs: max travel distance
@@ -539,6 +549,14 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     cloakAndDaggerReady: false,
     lastAttackTime: 0,
     lastX: 0, lastZ: 0,
+    // Gear proc runtime
+    arcSlashTimer: 0,
+    phantomWrapCdTimer: 0,
+    glacialRobeCdTimer: 0,
+    postDashSpeedCdTimer: 0,
+    postDashSpeedActive: 0,
+    orbitalOrbAngle: 0,
+    orbitalHitIcd: new Map<string, number>(),
   };
 }
 
@@ -611,7 +629,9 @@ function gearToStash(gear: GearDef) {
 
 /** Try to spawn a gear drop at the given position based on enemy type. */
 function trySpawnGear(enemyType: string, x: number, z: number, g: GameState): void {
-  const gear = tryRollGear(enemyType, g.difficultyGearMult);
+  // Plague Dagger runs on every kill regardless of whether a gear item drops.
+  spawnPlaguePuddle(x, z, g, g.progression.stats);
+  const gear = tryRollGear(enemyType, g.difficultyGearMult, g.charClass);
   if (!gear) return;
   const dropX = x + (Math.random() - 0.5) * 1.5;
   const dropZ = z + (Math.random() - 0.5) * 1.5;
@@ -634,6 +654,235 @@ function trySpawnGear(enemyType: string, x: number, z: number, g: GameState): vo
   spawnTextPopup(dropX, dropZ, label, rarityColor, 2.5);
 }
 
+/**
+ * Per-frame tick for gear procs that run every frame:
+ *  - Arc Warblade: arc-slash around the player every 3s at 25% damage
+ *  - Orbital Staff: two orbs orbit the player, damaging enemies on contact
+ * Bookkeeping timers (postDashSpeedActive, phantomWrapCdTimer, glacialRobeCdTimer,
+ * postDashSpeedCdTimer) are decremented in the main player loop, not here.
+ */
+function tickGearProcs(p: PlayerRuntime, stats: PlayerStats, g: GameState, delta: number): void {
+  // ── Arc Warblade: periodic AoE arc slash ─────────────────────────────────
+  if (stats.arcSlashInterval > 0 && stats.arcSlashDamagePct > 0 && !p.dead) {
+    p.arcSlashTimer += delta;
+    if (p.arcSlashTimer >= stats.arcSlashInterval) {
+      p.arcSlashTimer = 0;
+      const slashDmg = Math.max(1, Math.round(stats.damage * stats.arcSlashDamagePct));
+      const slashRadius = Math.max(stats.attackRange, 4);
+      for (const e of g.enemies) {
+        if (e.dead) continue;
+        const ex = e.x - p.x, ez = e.z - p.z;
+        if (Math.sqrt(ex * ex + ez * ez) <= slashRadius) {
+          e.hp -= slashDmg;
+          e.hitFlashTimer = 0.18;
+          spawnDmgPopup(e.x, e.z, slashDmg, false, false);
+          if (e.hp <= 0 && !e.dead) {
+            e.dead = true; g.kills++; g.score += e.scoreValue;
+            if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
+            applyBloodforge(p, stats);
+            handleBossKillCleanup(e, g);
+            trySpawnGear(e.type, e.x, e.z, g);
+          }
+        }
+      }
+    }
+  }
+
+  // ── Orbital Staff: two orbs orbit the player and damage nearby enemies ──
+  if (stats.orbitalStaffEnabled && !p.dead) {
+    const orbitRadius = 2.5;
+    const orbitSpeed = 2.5; // rad/s
+    p.orbitalOrbAngle = (p.orbitalOrbAngle + orbitSpeed * delta) % (Math.PI * 2);
+    const orbDmg = Math.max(1, Math.round(stats.damage * 0.50));
+    // decay per-enemy ICDs
+    for (const [id, t] of p.orbitalHitIcd) {
+      const nt = t - delta;
+      if (nt <= 0) p.orbitalHitIcd.delete(id);
+      else p.orbitalHitIcd.set(id, nt);
+    }
+    const positions: Array<[number, number]> = [
+      [p.x + Math.sin(p.orbitalOrbAngle) * orbitRadius, p.z + Math.cos(p.orbitalOrbAngle) * orbitRadius],
+      [p.x + Math.sin(p.orbitalOrbAngle + Math.PI) * orbitRadius, p.z + Math.cos(p.orbitalOrbAngle + Math.PI) * orbitRadius],
+    ];
+    for (const [ox, oz] of positions) {
+      for (const e of g.enemies) {
+        if (e.dead) continue;
+        if (p.orbitalHitIcd.has(e.id)) continue;
+        const dx = e.x - ox, dz = e.z - oz;
+        if (Math.sqrt(dx * dx + dz * dz) <= e.collisionRadius + 0.6) {
+          e.hp -= orbDmg;
+          e.hitFlashTimer = 0.12;
+          spawnDmgPopup(e.x, e.z, orbDmg, false, false);
+          p.orbitalHitIcd.set(e.id, 0.6); // 0.6s ICD per enemy per orb pass
+          if (e.hp <= 0 && !e.dead) {
+            e.dead = true; g.kills++; g.score += e.scoreValue;
+            if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
+            applyBloodforge(p, stats);
+            handleBossKillCleanup(e, g);
+            trySpawnGear(e.type, e.x, e.z, g);
+          }
+        }
+      }
+    }
+  } else if (p.orbitalHitIcd.size > 0) {
+    p.orbitalHitIcd.clear();
+  }
+}
+
+/**
+ * Plague Dagger: spawn a 5s poison puddle at the kill location if equipped.
+ * Reuses the `groundEffects` system — `appliesPoison` is already supported by
+ * the ground-effect damage path (enemies walking through get poison stacks).
+ */
+function spawnPlaguePuddle(x: number, z: number, g: GameState, stats: PlayerStats): void {
+  if (!stats.plagueDaggerEnabled) return;
+  g.groundEffects.push({
+    id: `plague_${_fxid++}`,
+    x, z,
+    radius: 2.0,
+    dps: 0,
+    lifetime: 5.0,
+    color: "#88ff66",
+    appliesPoison: true,
+  });
+  if (g.groundEffects.length > 60) g.groundEffects.splice(0, g.groundEffects.length - 60);
+}
+
+/** Boots of Speed: trigger the post-dash speed buff if off cooldown. */
+function triggerBootsOfSpeed(p: PlayerRuntime, stats: PlayerStats): void {
+  if (stats.postDashSpeedBonus <= 0) return;
+  if (p.postDashSpeedCdTimer > 0) return;
+  p.postDashSpeedActive = stats.postDashSpeedDuration;
+  p.postDashSpeedCdTimer = stats.postDashSpeedCd;
+}
+
+/** Compute the Boots-of-Speed move-speed multiplier for the current frame. */
+function getPostDashSpeedMult(p: PlayerRuntime, stats: PlayerStats): number {
+  return p.postDashSpeedActive > 0 ? 1 + stats.postDashSpeedBonus : 1;
+}
+
+/** Berserker Sigil: return the damage multiplier for the current HP state. */
+function getLowHpDamageMult(p: PlayerRuntime, stats: PlayerStats): number {
+  if (stats.lowHpDamageBonus <= 0) return 1;
+  const hpFrac = p.maxHp > 0 ? p.hp / p.maxHp : 1;
+  return hpFrac < 0.5 ? 1 + stats.lowHpDamageBonus : 1;
+}
+
+/** Compute the effective max poison stack cap including gear bonuses. Baseline 3. */
+function getMaxPoisonStacks(stats: PlayerStats): number {
+  return 3 + (stats.maxPoisonStacksBonus | 0);
+}
+
+/** Roll Serpent's Fang: if equipped, 15% chance to apply one extra poison stack. */
+function maybeApplySerpentsFang(e: EnemyRuntime, stats: PlayerStats): void {
+  if (stats.serpentsFangChance <= 0) return;
+  if (Math.random() >= stats.serpentsFangChance) return;
+  const cap = getMaxPoisonStacks(stats);
+  e.poisonStacks = Math.min(e.poisonStacks + 1, cap);
+  // Ensure poison tick damage is set if not already (in case of clean-hit apply)
+  if (e.poisonDps <= 0) {
+    const per = stats.venomStackDps > 0 ? stats.venomStackDps : 3;
+    e.poisonDps = per * (stats.deepWoundsMultiplier || 1) * (1 + stats.poisonDamageBonus);
+  }
+}
+
+/**
+ * Damage-taken proc hook. Called after a hit lands on the player. Handles
+ * Phantom Wrap (intangibility below 30% HP) and Glacial Robe (slow + amp).
+ * Safe to call every damage site — gated by per-proc enabled flags.
+ */
+function handlePlayerDamageTakenProcs(p: PlayerRuntime, stats: PlayerStats, g: GameState): void {
+  // Phantom Wrap: intangible when hit below 30% HP
+  if (stats.phantomWrapEnabled && p.phantomWrapCdTimer <= 0) {
+    const hpFrac = p.maxHp > 0 ? p.hp / p.maxHp : 1;
+    if (hpFrac < 0.30 && p.hp > 0) {
+      p.invTimer = Math.max(p.invTimer, stats.phantomWrapDuration);
+      p.phantomWrapCdTimer = stats.phantomWrapCd;
+    }
+  }
+  // Glacial Robe: slow nearby enemies 70% for 2s, flag them as slowed (taking +20% dmg)
+  if (stats.glacialRobeEnabled && p.glacialRobeCdTimer <= 0 && p.hp > 0) {
+    for (const e of g.enemies) {
+      if (e.dead) continue;
+      const dx = e.x - p.x;
+      const dz = e.z - p.z;
+      if (dx * dx + dz * dz <= 25) { // 5u radius
+        e.slowPct = Math.max(e.slowPct, 0.70);
+        e.slowTimer = Math.max(e.slowTimer, 2.0);
+      }
+    }
+    p.glacialRobeCdTimer = stats.glacialRobeCd;
+  }
+}
+
+/**
+ * Damage amplification on enemies that are currently slowed AND the player has
+ * Glacial Robe equipped. Applied as a damage multiplier for any outgoing hit.
+ */
+function getGlacialAmp(stats: PlayerStats, e: EnemyRuntime): number {
+  if (!stats.glacialRobeEnabled) return 1;
+  return e.slowPct > 0 ? 1.20 : 1;
+}
+
+/**
+ * Install or uninstall the proc fields for a gear piece. Mirror image of
+ * itself: call with install=true on equip, install=false on unequip. Keeps
+ * the proc-state on stats honest across gear swaps.
+ */
+function applyGearProc(gear: GearDef, stats: PlayerStats, install: boolean): void {
+  if (!gear.proc) return;
+  const sign = install ? 1 : -1;
+  switch (gear.proc) {
+    case "serpents_fang_poison":
+      // +15% chance per hit for extra poison stack, +1 to max poison stack cap (3→4)
+      stats.serpentsFangChance += 0.15 * sign;
+      stats.maxPoisonStacksBonus += 1 * sign;
+      break;
+    case "voidstaff_blink":
+      // -20% blink/dash cooldown
+      stats.blinkCdrPct += 0.20 * sign;
+      break;
+    case "bloodfury_momentum":
+      // 2x momentum stack gain. Install sets the mult to 2; uninstall restores to 1.
+      stats.bloodMomentumGainMult = install ? 2 : 1;
+      break;
+    case "boots_of_speed_postdash":
+      // Post-dash buff: +25% move speed for 3s, 10s CD
+      stats.postDashSpeedBonus += 0.25 * sign;
+      stats.postDashSpeedDuration = install ? 3 : 0;
+      stats.postDashSpeedCd = install ? 10 : 0;
+      break;
+    case "arc_warblade_slash":
+      // Arc slash at 25% damage every 3s
+      stats.arcSlashDamagePct += 0.25 * sign;
+      stats.arcSlashInterval = install ? 3 : 0;
+      break;
+    case "phantom_wrap_intangible":
+      stats.phantomWrapEnabled = install;
+      stats.phantomWrapCd = install ? 10 : 0;
+      stats.phantomWrapDuration = install ? 1.5 : 0;
+      break;
+    case "glacial_robe_slow":
+      stats.glacialRobeEnabled = install;
+      stats.glacialRobeCd = install ? 20 : 0;
+      break;
+    case "plague_dagger_puddle":
+      stats.plagueDaggerEnabled = install;
+      break;
+    case "orbital_staff_orbs":
+      stats.orbitalStaffEnabled = install;
+      break;
+    case "ricochet_orb_bounce":
+      stats.ricochetOrbEnabled = install;
+      break;
+    case "berserker_sigil_lowhp":
+    case "crown_of_thorns_bundle":
+    case "venom_shroud_poison":
+      // Pure stat-bonus procs — their effects flow via the `bonuses` block.
+      break;
+  }
+}
+
 /** Equip a gear piece: apply bonuses to stats, replace any existing gear in that slot. */
 function equipGear(gear: GearDef, g: GameState): void {
   const stats = g.progression.stats;
@@ -646,6 +895,7 @@ function equipGear(gear: GearDef, g: GameState): void {
         (stats as any)[key] -= val;
       }
     }
+    applyGearProc(old, stats, false);
   }
   // Apply new gear bonuses (enhanced)
   const newBonuses = getEnhancedBonuses(gear);
@@ -654,6 +904,7 @@ function equipGear(gear: GearDef, g: GameState): void {
       (stats as any)[key] += val;
     }
   }
+  applyGearProc(gear, stats, true);
   // Update max HP if it changed
   if (newBonuses.maxHealth) {
     g.player.maxHp = stats.maxHealth;
@@ -958,6 +1209,12 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (p.invTimer > 0) p.invTimer -= delta;
       if (p.dashCooldown > 0) p.dashCooldown -= delta;
       if (p.attackTimer > 0) p.attackTimer -= delta;
+      // Gear proc timers
+      if (p.phantomWrapCdTimer > 0) p.phantomWrapCdTimer -= delta;
+      if (p.glacialRobeCdTimer > 0) p.glacialRobeCdTimer -= delta;
+      if (p.postDashSpeedCdTimer > 0) p.postDashSpeedCdTimer -= delta;
+      if (p.postDashSpeedActive > 0) p.postDashSpeedActive -= delta;
+      tickGearProcs(p, stats, g, delta);
 
       // Aim — desktop uses mouse cursor, mobile uses right-side aim stick
       // Both write to worldAimX/Z: desktop via AimResolver raycaster,
@@ -975,7 +1232,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         p.z += p.dashVZ * delta;
         if (p.dashTimer <= 0) {
           p.isDashing = false;
-          p.dashCooldown = stats.dashCooldown;
+          p.dashCooldown = stats.dashCooldown * (1 - stats.blinkCdrPct);
+          triggerBootsOfSpeed(p, stats);
         }
       } else {
         // Normal movement
@@ -987,7 +1245,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         const len = Math.sqrt(mx * mx + mz * mz);
         if (len > 0) {
           mx /= len; mz /= len;
-          const effectiveMoveSpeed = stats.moveSpeed * (1 + p.momentumShiftStacks * 0.04);
+          const effectiveMoveSpeed = stats.moveSpeed * (1 + p.momentumShiftStacks * 0.04) * getPostDashSpeedMult(p, stats);
           p.x += mx * effectiveMoveSpeed * delta;
           p.z += mz * effectiveMoveSpeed * delta;
         }
@@ -1023,7 +1281,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             // Unstable Core: empower next orb after blink
             if (stats.unstableCoreEnabled) p.unstableCoreTimer = 2.0;
             p.isDashing = false; // instant, no travel
-            p.dashCooldown = stats.dashCooldown;
+            p.dashCooldown = stats.dashCooldown * (1 - stats.blinkCdrPct);
+            triggerBootsOfSpeed(p, stats);
 
           } else if (g.charClass === "rogue") {
             // ── Rogue: Poison Dash — pass through enemies, apply venom ──
@@ -1051,8 +1310,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               if (Math.sqrt(ex * ex + ez * ez) <= stats.attackRange * 0.8) {
                 e.hp -= dashDmg; e.hitFlashTimer = 0.15;
                 // Apply poison stacks (baseline 1, upgradeable to 3 with Toxic Dash)
-                e.poisonStacks = Math.min(e.poisonStacks + stats.toxicDashStacks, 5);
-                e.poisonDps = poisonPerStack * stats.deepWoundsMultiplier;
+                e.poisonStacks = Math.min(e.poisonStacks + stats.toxicDashStacks, getMaxPoisonStacks(stats));
+                e.poisonDps = poisonPerStack * stats.deepWoundsMultiplier * (1 + stats.poisonDamageBonus);
                 if (e.hp <= 0 && !e.dead) {
                   e.dead = true; g.kills++; g.score += e.scoreValue;
                   if (stats.dashResetOnKill) p.dashCooldown = Math.min(p.dashCooldown, 0.3);
@@ -1114,6 +1373,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const momentumMult = stats.bloodMomentumPerHit > 0
             ? 1 + Math.min(p.momentumStacks * stats.bloodMomentumPerHit, 0.30)
             : 1;
+          // Berserker Sigil: +% damage below 50% HP
+          const lowHpMult = getLowHpDamageMult(p, stats);
 
           let meleeHitsThisSwing = 0;
           for (const e of g.enemies) {
@@ -1130,12 +1391,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (cleaved.current.has(e.id) && Math.random() > stats.cleaveChance) continue;
             cleaved.current.add(e.id);
 
-            let dmg = Math.round(stats.damage * warCryMult * momentumMult);
+            let dmg = Math.round(stats.damage * warCryMult * momentumMult * lowHpMult * getGlacialAmp(stats, e));
             const isCrit = Math.random() < stats.critChance;
             if (isCrit) {
-              dmg = Math.floor(dmg * (stats.critDamageMultiplier + berserkCritBonus));
+              dmg = Math.floor(dmg * (stats.critDamageMultiplier + stats.critDamageBonus + berserkCritBonus));
               if (stats.momentumShiftEnabled) { p.momentumShiftStacks = Math.min(p.momentumShiftStacks + 1, 5); p.momentumShiftTimer = 2.0; }
             }
+            maybeApplySerpentsFang(e, stats);
             const dealt = applyEnemyDamage(e, dmg);
             e.hitFlashTimer = 0.15;
             spawnDmgPopup(e.x, e.z, dealt > 0 ? dmg : 0, isCrit, false);
@@ -1195,7 +1457,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           }
           // ── Blood Momentum: update stacks after melee swing ──
           if (stats.bloodMomentumPerHit > 0 && meleeHitsThisSwing > 0) {
-            p.momentumStacks = Math.min(p.momentumStacks + meleeHitsThisSwing, 20);
+            // Bloodfury Axe (bloodMomentumGainMult) doubles the stack gain rate.
+            const gain = Math.round(meleeHitsThisSwing * (stats.bloodMomentumGainMult || 1));
+            p.momentumStacks = Math.min(p.momentumStacks + gain, 20);
             p.momentumTimer = 3.0; // reset 3s decay
           }
           p.meleeHitCounter += meleeHitsThisSwing;
@@ -1296,6 +1560,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               if (projStyle === "orb") {
                 if (stats.overchargedOrbBonus > 0) { proj.spawnX = p.x; proj.spawnZ = p.z; proj.maxRange = projSpeed * def.projectileLifetime; }
                 if (stats.residualFieldEnabled) { proj.trailTimer = 0; }
+                if (stats.ricochetOrbEnabled) { proj.bouncesLeft = 3; proj.baseDamage = projDmg; }
               }
               g.projectiles.push(proj);
               // Split Bolt: each orb spawns 2 extra mini-orbs (3 total) at 35% damage in cone
@@ -1573,8 +1838,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               if (nearby.dead || nearby.id === e.id) continue;
               const nx = nearby.x - e.x, nz = nearby.z - e.z;
               if (Math.sqrt(nx * nx + nz * nz) <= 3.5) {
-                nearby.poisonStacks = Math.min(nearby.poisonStacks + 1, 5);
-                nearby.poisonDps = stats.venomStackDps;
+                nearby.poisonStacks = Math.min(nearby.poisonStacks + 1, getMaxPoisonStacks(stats));
+                nearby.poisonDps = stats.venomStackDps * (stats.deepWoundsMultiplier || 1) * (1 + stats.poisonDamageBonus);
               }
             }
           }
@@ -1649,6 +1914,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.8;
+              handlePlayerDamageTakenProcs(p, stats, g);
               // Iron Reprisal
               if (stats.ironReprisalEnabled) {
                 const repDmg = Math.round(p.maxHp * 0.15);
@@ -1699,6 +1965,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+              handlePlayerDamageTakenProcs(p, stats, g);
               // Vampiric affix: heal 20% of damage dealt + pulse
               // the icon so the player learns the heal-on-hit
               // mechanic from visual feedback (item 2 spec).
@@ -1779,8 +2046,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (ge.appliesPoison) {
               // Apply 1 poison stack per second (via delta accumulation)
               const poisonPerStack = stats.venomStackDps > 0 ? stats.venomStackDps : 3;
-              e.poisonStacks = Math.min(e.poisonStacks + delta, 5);
-              e.poisonDps = poisonPerStack * stats.deepWoundsMultiplier;
+              e.poisonStacks = Math.min(e.poisonStacks + delta, getMaxPoisonStacks(stats));
+              e.poisonDps = poisonPerStack * stats.deepWoundsMultiplier * (1 + stats.poisonDamageBonus);
             } else {
               e.hp -= tickDmg;
             }
@@ -1807,6 +2074,28 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       proj.x += proj.vx * delta;
       proj.z += proj.vz * delta;
       proj.lifetime -= delta;
+
+      // ── Ricochet Orb: bounce off arena walls up to 3 times ──────────────
+      // Damage scales 80/90/100/110% per bounce (base 3 bounces remaining → 100%,
+      // after first bounce damage becomes 90% of the per-bounce base, etc.).
+      if (proj.bouncesLeft !== undefined && proj.bouncesLeft > 0 && proj.baseDamage !== undefined) {
+        let bounced = false;
+        if (proj.x >= ARENA) { proj.x = ARENA; proj.vx = -Math.abs(proj.vx); bounced = true; }
+        else if (proj.x <= -ARENA) { proj.x = -ARENA; proj.vx = Math.abs(proj.vx); bounced = true; }
+        if (proj.z >= ARENA) { proj.z = ARENA; proj.vz = -Math.abs(proj.vz); bounced = true; }
+        else if (proj.z <= -ARENA) { proj.z = -ARENA; proj.vz = Math.abs(proj.vz); bounced = true; }
+        if (bounced) {
+          proj.bouncesLeft -= 1;
+          // Per-bounce damage scalar: bounces_used=0 → 0.80, 1 → 0.90, 2 → 1.00, 3 → 1.10
+          const bouncesUsed = 3 - proj.bouncesLeft; // 1..3 after this bounce
+          const scalar = [0.80, 0.90, 1.00, 1.10][Math.min(bouncesUsed, 3)];
+          proj.damage = Math.round(proj.baseDamage * scalar);
+          // Fresh hitIds so the orb can hit enemies it has already passed
+          proj.hitIds.clear();
+          // Refresh lifetime a touch so the orb actually has time to travel after bouncing
+          proj.lifetime = Math.max(proj.lifetime, 0.8);
+        }
+      }
 
       // ── Mage: Gravity Orbs — pull nearby enemies toward orb ──
       if (proj.style === "orb" && stats.gravityOrbPull > 0) {
@@ -1873,9 +2162,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (proj.spawnX !== undefined && proj.maxRange && stats.overchargedOrbBonus > 0) {
           const dx = proj.x - proj.spawnX, dz = proj.z - (proj.spawnZ ?? 0);
           const traveled = Math.sqrt(dx * dx + dz * dz);
-          const ratio = Math.min(traveled / proj.maxRange, 1);
-          dmg = Math.round(dmg * (1 + stats.overchargedOrbBonus * ratio));
+          dmg = Math.round(dmg * (1 + stats.overchargedOrbBonus * Math.min(traveled / proj.maxRange, 1)));
         }
+        // Gear: Berserker Sigil low-HP bonus + Glacial Robe amp
+        dmg = Math.round(dmg * getLowHpDamageMult(p, stats) * getGlacialAmp(stats, e));
         // Crit: guaranteed crit from evasion matrix, or normal roll
         const isCrit = p.guaranteedCrit || Math.random() < (stats.critChance + (p.critCascadeTimer > 0 ? 0.12 : 0));
         if (p.guaranteedCrit) p.guaranteedCrit = false;
@@ -1916,7 +2206,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           p.cloakAndDaggerCooldown = 3.0;
         }
         if (isCrit) {
-          const totalCritMult = stats.critDamageMultiplier + predatorBonus + deathsMomBonus
+          const totalCritMult = stats.critDamageMultiplier + stats.critDamageBonus
+            + predatorBonus + deathsMomBonus
             + convergenceBonus + markCritBonus + cloakCritBonus
             + (inLeyline ? 0.25 : 0)
             + (p.unstableCoreTimer > 0 ? 0.40 : 0);
@@ -1924,6 +2215,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           if (stats.momentumShiftEnabled) { p.momentumShiftStacks = Math.min(p.momentumShiftStacks + 1, 5); p.momentumShiftTimer = 2.0; }
           if (stats.arcaneSurgeBlinkCdr > 0) p.dashCooldown = Math.max(0, p.dashCooldown - stats.arcaneSurgeBlinkCdr);
         }
+        maybeApplySerpentsFang(e, stats);
         e.hp -= dmg;
         e.hitFlashTimer = 0.15;
         spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
@@ -1935,8 +2227,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
 
         // ── Rogue: Venom Stack — apply poison on hit ──
         if (stats.venomStackDps > 0) {
-          e.poisonStacks = Math.min(e.poisonStacks + 1, 5);
-          e.poisonDps = stats.venomStackDps;
+          e.poisonStacks = Math.min(e.poisonStacks + 1, getMaxPoisonStacks(stats));
+          e.poisonDps = stats.venomStackDps * (stats.deepWoundsMultiplier || 1) * (1 + stats.poisonDamageBonus);
         }
         // ── Rogue: Crit Cascade — crits boost crit chance ──
         if (isCrit && stats.critCascadeEnabled && p.critCascadeTimer <= 0) {
@@ -2072,6 +2364,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
             p.hp -= effective; spawnPlayerDmgPopup(p, effective);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.6;
+            handlePlayerDamageTakenProcs(p, stats, g);
             if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
             else { audioManager.play("player_hurt"); }
           }
@@ -2171,6 +2464,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult, 100);
             p.hp -= effective; spawnPlayerDmgPopup(p, effective);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+            handlePlayerDamageTakenProcs(p, stats, g);
             if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
             else { audioManager.play("player_hurt"); }
           }
@@ -2341,6 +2635,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+              handlePlayerDamageTakenProcs(p, stats, g);
               if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
             }
             audioManager.play("boss_special");
@@ -2516,7 +2811,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         // Guaranteed common gear + low odds rare (8%) / epic (1.5%)
         const nemRoll = Math.random();
         const nemRarity = nemRoll < 0.015 ? "epic" as const : nemRoll < 0.095 ? "rare" as const : "common" as const;
-        const nemGear = rollGearDrop(nemRarity);
+        const nemGear = rollGearDrop(nemRarity, undefined, g.charClass);
         const dropX = nem.x + (Math.random() - 0.5) * 1.5;
         const dropZ = nem.z + (Math.random() - 0.5) * 1.5;
         g.gearDrops.push({

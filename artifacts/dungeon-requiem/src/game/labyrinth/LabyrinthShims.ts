@@ -88,6 +88,15 @@ export function createPlayerShim(charClass: CharacterClass, race: RaceType = "hu
     cloakAndDaggerReady: false,
     lastAttackTime: 0,
     lastX: 0, lastZ: 0,
+    // Gear proc runtime (neutral defaults — labyrinth shim; main game's
+    // factory in GameScene.tsx sets the same values).
+    arcSlashTimer: 0,
+    phantomWrapCdTimer: 0,
+    glacialRobeCdTimer: 0,
+    postDashSpeedCdTimer: 0,
+    postDashSpeedActive: 0,
+    orbitalOrbAngle: 0,
+    orbitalHitIcd: new Map<string, number>(),
   };
   // Fully-populated GameState-shaped shim. Player3D today only reads
   // `gs.current.charClass` and `gs.current.player`, but populating every
