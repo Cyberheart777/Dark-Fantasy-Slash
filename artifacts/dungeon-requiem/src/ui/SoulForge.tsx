@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useMetaStore, TRIAL_BUFFS, getEarnedTrialBuffs, type StashItem } from "../store/metaStore";
 import { META_UPGRADES, buildMetaModifiers, buildTrialModifiers, nextRankCost, nextRankLine } from "../data/MetaUpgradeData";
 import { DIFFICULTIES, DIFFICULTY_DATA } from "../data/DifficultyData";
-import { ENHANCE_MULT, ENHANCE_COST, ENHANCE_COLORS, PERCENTAGE_BONUS_KEYS, PERCENTAGE_ENHANCE_CAP, formatBonuses, type GearDef } from "../data/GearData";
+import { ENHANCE_MULT, ENHANCE_COST, ENHANCE_MAX, ENHANCE_COLORS, PERCENTAGE_BONUS_KEYS, PERCENTAGE_ENHANCE_CAP, formatBonuses, type GearDef } from "../data/GearData";
 import { useGameStore } from "../store/gameStore";
 import { audioManager } from "../audio/AudioManager";
 import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
@@ -406,9 +406,9 @@ export function SoulForge() {
                     const enhColor = ENHANCE_COLORS[enh] ?? ENHANCE_COLORS[0];
                     const rarityColor = item.rarity === "epic" ? "#aa44ff" : item.rarity === "rare" ? "#4488dd" : enhColor.border;
                     const sellVal = item.rarity === "epic" ? 35 : item.rarity === "rare" ? 15 : 5;
-                    const enhMax = item.rarity === "epic" ? 7 : item.rarity === "rare" ? 5 : 3;
+                    const enhMax = ENHANCE_MAX[item.rarity as keyof typeof ENHANCE_MAX] ?? 3;
                     const canEnhance = enh < enhMax;
-                    const enhanceCost = canEnhance ? (ENHANCE_COST[enh + 1] ?? 400) : 0;
+                    const enhanceCost = canEnhance ? (ENHANCE_COST[enh + 1] ?? ENHANCE_COST[ENHANCE_COST.length - 1]) : 0;
                     const canAffordEnhance = shards >= enhanceCost;
                     return (
                       <div
