@@ -186,6 +186,27 @@ export interface PlayerStats {
   ricochetBounces: number;        // daggers bounce to N enemies for 50% dmg
   predatorsInstinctEnabled: boolean; // +40% crit dmg vs enemies below 30% HP
   convergenceBladeEnabled: boolean;  // merge all daggers into single mega-projectile
+  // ── Gear proc stat fields ──────────────────────────────────────────────────
+  critDamageBonus: number;        // gear (+% crit damage), additive to critDamageMultiplier
+  poisonDamageBonus: number;      // gear (+% poison damage), additive bonus to poison DPS
+  lowHpDamageBonus: number;       // gear (Berserker Sigil), damage bonus when <50% HP
+  maxPoisonStacksBonus: number;   // gear (Serpent's Fang) increases poison stack cap by N
+  serpentsFangChance: number;     // gear (Serpent's Fang) extra-poison-stack chance per hit
+  blinkCdrPct: number;            // gear (Voidstaff) dash/blink cooldown reduction 0..1
+  bloodMomentumGainMult: number;  // gear (Bloodfury Axe) multiplies momentum stack gain rate
+  postDashSpeedBonus: number;     // gear (Boots of Speed) post-dash move speed bonus (fraction)
+  postDashSpeedDuration: number;  // gear (Boots of Speed) duration of the buff
+  postDashSpeedCd: number;        // gear (Boots of Speed) cooldown between triggers
+  arcSlashDamagePct: number;      // gear (Arc Warblade) arc slash damage as fraction of base
+  arcSlashInterval: number;       // gear (Arc Warblade) seconds between arc slashes
+  phantomWrapEnabled: boolean;    // gear (Phantom Wrap) on-damage intangible proc
+  phantomWrapCd: number;          // gear (Phantom Wrap) cooldown
+  phantomWrapDuration: number;    // gear (Phantom Wrap) i-frame duration
+  glacialRobeEnabled: boolean;    // gear (Glacial Robe) on-damage slow + amp
+  glacialRobeCd: number;          // gear (Glacial Robe) cooldown
+  plagueDaggerEnabled: boolean;   // gear (Plague Dagger) kill spawns poison puddle
+  orbitalStaffEnabled: boolean;   // gear (Orbital Staff) adds orbiting damage orbs
+  ricochetOrbEnabled: boolean;    // gear (Ricochet Orb) mage orbs ricochet off walls
 }
 
 export function createDefaultStats(): PlayerStats {
@@ -263,6 +284,27 @@ export function createDefaultStats(): PlayerStats {
     ricochetBounces: 0,
     predatorsInstinctEnabled: false,
     convergenceBladeEnabled: false,
+    // Gear proc defaults (neutral — no equipped gear)
+    critDamageBonus: 0,
+    poisonDamageBonus: 0,
+    lowHpDamageBonus: 0,
+    maxPoisonStacksBonus: 0,
+    serpentsFangChance: 0,
+    blinkCdrPct: 0,
+    bloodMomentumGainMult: 1,
+    postDashSpeedBonus: 0,
+    postDashSpeedDuration: 0,
+    postDashSpeedCd: 0,
+    arcSlashDamagePct: 0,
+    arcSlashInterval: 0,
+    phantomWrapEnabled: false,
+    phantomWrapCd: 0,
+    phantomWrapDuration: 0,
+    glacialRobeEnabled: false,
+    glacialRobeCd: 0,
+    plagueDaggerEnabled: false,
+    orbitalStaffEnabled: false,
+    ricochetOrbEnabled: false,
   };
 }
 
