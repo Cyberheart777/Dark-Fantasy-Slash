@@ -333,16 +333,22 @@ function WraithMesh({ color, emissive, flash, attackTimer, attackInterval }: { c
   );
 }
 
-// ─── Elite (NEW: walk cycle + weapon sway + breathing) ──────────────────────
+// ─── Elite: Voidclaw Champion ───────────────────────────────────────────────
+//
+// Armored crimson champion. Signature: clawed gauntlet on the off-hand
+// (the "Voidclaw") + a curved glowing blade in the main hand. Skull-faced
+// helm with bright red eye-slits; chest rune pulses through the plate.
+// Walk cycle + diagonal slash on strike preserved from prior revision.
 
 function EliteMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
   const leftLegRef = useRef<THREE.Mesh>(null);
   const rightLegRef = useRef<THREE.Mesh>(null);
-  const leftArmRef = useRef<THREE.Mesh>(null);
-  const rightArmRef = useRef<THREE.Mesh>(null);
-  const torsoRef = useRef<THREE.Mesh>(null);
-  const weaponRef = useRef<THREE.Mesh>(null);
+  const leftArmRef = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const torsoRef = useRef<THREE.Group>(null);
+  const weaponRef = useRef<THREE.Group>(null);
+  const runeRef = useRef<THREE.Mesh>(null);
   const prevAttackRef = useRef(attackTimer);
   const windupRef = useRef(0);
   const strikeRef = useRef(0);
@@ -372,72 +378,207 @@ function EliteMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInter
       weaponRef.current.rotation.z = 0.3 + Math.sin(t.current * 2) * 0.08 + windup * 1.1 - strike * 2.0;
       weaponRef.current.rotation.x = 0.2 - windup * 0.4 + strike * 0.8;
     }
+    // Chest rune pulses with heartbeat; flares on strike
+    if (runeRef.current) {
+      const m = runeRef.current.material as THREE.MeshStandardMaterial;
+      m.emissiveIntensity = 3 + Math.sin(t.current * 2.5) * 1.2 + strike * 5;
+    }
   });
 
-  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 3 : 0.8, roughness: 0.4, metalness: 0.5 };
+  const PLATE  = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 3 : 0.8, roughness: 0.35, metalness: 0.75 };
+  const DARK   = { color: flash ? "#ffffff" : "#2a0000", emissive: "#400000", emissiveIntensity: flash ? 3 : 0.5, roughness: 0.55, metalness: 0.4 };
+  const TRIM   = { color: flash ? "#ffffff" : "#8b0000", emissive: "#aa0000", emissiveIntensity: flash ? 4 : 1.5, roughness: 0.3, metalness: 0.7 };
+  const CLAW   = { color: "#1a0000", emissive: "#5a0000", emissiveIntensity: 1.0, roughness: 0.25, metalness: 0.9 };
+  const BONE   = { color: "#d8c8a8", roughness: 0.6, metalness: 0.1 };
 
   return (
     <group>
-      <mesh ref={leftLegRef} castShadow position={[-0.28, 0.55, 0]}>
-        <boxGeometry args={[0.3, 1.1, 0.3]} />
-        <meshStandardMaterial {...mat} />
+      {/* Legs — tapered greaves */}
+      <mesh ref={leftLegRef} castShadow position={[-0.3, 0.55, 0]}>
+        <cylinderGeometry args={[0.18, 0.28, 1.05, 6]} />
+        <meshStandardMaterial {...PLATE} />
       </mesh>
-      <mesh ref={rightLegRef} castShadow position={[0.28, 0.55, 0]}>
-        <boxGeometry args={[0.3, 1.1, 0.3]} />
-        <meshStandardMaterial {...mat} />
+      <mesh ref={rightLegRef} castShadow position={[0.3, 0.55, 0]}>
+        <cylinderGeometry args={[0.18, 0.28, 1.05, 6]} />
+        <meshStandardMaterial {...PLATE} />
       </mesh>
-      <mesh ref={torsoRef} castShadow position={[0, 1.4, 0]}>
-        <boxGeometry args={[0.85, 0.85, 0.55]} />
-        <meshStandardMaterial {...mat} />
+      {/* Boots */}
+      <mesh castShadow position={[-0.3, 0.08, 0.08]}>
+        <boxGeometry args={[0.36, 0.16, 0.44]} />
+        <meshStandardMaterial {...DARK} />
       </mesh>
-      <mesh castShadow position={[-0.65, 1.55, 0]}>
-        <boxGeometry args={[0.3, 0.25, 0.45]} />
-        <meshStandardMaterial color="#6a0000" roughness={0.4} metalness={0.6} />
+      <mesh castShadow position={[0.3, 0.08, 0.08]}>
+        <boxGeometry args={[0.36, 0.16, 0.44]} />
+        <meshStandardMaterial {...DARK} />
       </mesh>
-      <mesh castShadow position={[0.65, 1.55, 0]}>
-        <boxGeometry args={[0.3, 0.25, 0.45]} />
-        <meshStandardMaterial color="#6a0000" roughness={0.4} metalness={0.6} />
+      {/* Belt / hip plate */}
+      <mesh castShadow position={[0, 1.0, 0]}>
+        <boxGeometry args={[0.92, 0.2, 0.55]} />
+        <meshStandardMaterial {...DARK} />
       </mesh>
-      <mesh ref={leftArmRef} castShadow position={[-0.62, 1.2, 0]}>
-        <boxGeometry args={[0.28, 0.8, 0.28]} />
-        <meshStandardMaterial {...mat} />
+      <mesh position={[0, 1.0, 0.29]}>
+        <boxGeometry args={[0.3, 0.16, 0.02]} />
+        <meshStandardMaterial {...TRIM} />
       </mesh>
-      <mesh ref={rightArmRef} castShadow position={[0.62, 1.2, 0]}>
-        <boxGeometry args={[0.28, 0.8, 0.28]} />
-        <meshStandardMaterial {...mat} />
+
+      {/* Torso — breath-group; chestplate + rune + V-trim inside */}
+      <group ref={torsoRef} position={[0, 1.4, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.95, 0.95, 0.6]} />
+          <meshStandardMaterial {...PLATE} />
+        </mesh>
+        {/* Chest rune */}
+        <mesh ref={runeRef} position={[0, 0, 0.31]}>
+          <cylinderGeometry args={[0.15, 0.15, 0.04, 6]} />
+          <meshStandardMaterial color="#ff40ff" emissive="#ff00ff" emissiveIntensity={3} roughness={0.2} metalness={0.3} />
+        </mesh>
+        {/* V-trim above rune */}
+        <mesh position={[0, 0.25, 0.31]}>
+          <boxGeometry args={[0.48, 0.05, 0.02]} />
+          <meshStandardMaterial {...TRIM} />
+        </mesh>
+        {/* Back plate accent */}
+        <mesh position={[0, 0.15, -0.31]}>
+          <boxGeometry args={[0.85, 0.08, 0.02]} />
+          <meshStandardMaterial {...TRIM} />
+        </mesh>
+      </group>
+
+      {/* Pauldrons — domed shoulders with upward spikes */}
+      <mesh castShadow position={[-0.65, 1.7, 0]}>
+        <sphereGeometry args={[0.32, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial {...PLATE} />
       </mesh>
-      {[-0.62, 0.62].map((x, i) => (
-        [-0.1, 0.0, 0.1].map((ox, j) => (
-          <mesh key={`${i}-${j}`} castShadow position={[x + ox * 0.5, 0.75, 0.15]}>
-            <boxGeometry args={[0.06, 0.2, 0.06]} />
-            <meshStandardMaterial color="#aa0000" roughness={0.4} metalness={0.4} />
+      <mesh castShadow position={[0.65, 1.7, 0]}>
+        <sphereGeometry args={[0.32, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial {...PLATE} />
+      </mesh>
+      <mesh castShadow position={[-0.72, 2.0, 0]} rotation={[0, 0, 0.25]}>
+        <coneGeometry args={[0.08, 0.38, 5]} />
+        <meshStandardMaterial {...CLAW} />
+      </mesh>
+      <mesh castShadow position={[0.72, 2.0, 0]} rotation={[0, 0, -0.25]}>
+        <coneGeometry args={[0.08, 0.38, 5]} />
+        <meshStandardMaterial {...CLAW} />
+      </mesh>
+
+      {/* Left arm — the "Voidclaw". Group so claws travel with walk sway. */}
+      <group ref={leftArmRef} position={[-0.62, 1.2, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.28, 0.85, 0.28]} />
+          <meshStandardMaterial {...PLATE} />
+        </mesh>
+        {/* Gauntlet — widens at wrist */}
+        <mesh castShadow position={[0, -0.5, 0.04]}>
+          <boxGeometry args={[0.34, 0.22, 0.36]} />
+          <meshStandardMaterial {...DARK} />
+        </mesh>
+        {/* Three forward-curving claws */}
+        {[-0.11, 0, 0.11].map((dx, i) => (
+          <mesh key={`c${i}`} castShadow position={[dx, -0.62, 0.24]} rotation={[0.45, 0, 0]}>
+            <coneGeometry args={[0.035, 0.32, 5]} />
+            <meshStandardMaterial {...CLAW} />
           </mesh>
-        ))
+        ))}
+      </group>
+
+      {/* Right arm — weapon hand. Group so arm swings with gauntlet. */}
+      <group ref={rightArmRef} position={[0.62, 1.2, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.28, 0.85, 0.28]} />
+          <meshStandardMaterial {...PLATE} />
+        </mesh>
+        {/* Gauntlet */}
+        <mesh castShadow position={[0, -0.5, 0.04]}>
+          <boxGeometry args={[0.32, 0.2, 0.34]} />
+          <meshStandardMaterial {...DARK} />
+        </mesh>
+      </group>
+
+      {/* Weapon — curved crimson-void blade. Group so slash animation
+          rotates the whole blade + guard + pommel as one piece. */}
+      <group ref={weaponRef} position={[0.88, 1.0, 0.22]} rotation={[0.2, 0, 0.3]}>
+        {/* Grip */}
+        <mesh castShadow position={[0, -0.2, 0]}>
+          <cylinderGeometry args={[0.045, 0.045, 0.34, 6]} />
+          <meshStandardMaterial color="#1a0000" roughness={0.85} />
+        </mesh>
+        {/* Crossguard */}
+        <mesh position={[0, 0.0, 0]}>
+          <boxGeometry args={[0.26, 0.06, 0.1]} />
+          <meshStandardMaterial {...TRIM} />
+        </mesh>
+        {/* Curved blade — canted so it reads as a scimitar edge */}
+        <mesh castShadow position={[0.08, 0.7, 0]} rotation={[0, 0, -0.14]}>
+          <boxGeometry args={[0.09, 1.4, 0.04]} />
+          <meshStandardMaterial color="#c0c0e0" roughness={0.15} metalness={0.95} emissive="#ff4488" emissiveIntensity={1.4} />
+        </mesh>
+        {/* Blade edge — thinner, hotter glow */}
+        <mesh position={[0.14, 0.7, 0]} rotation={[0, 0, -0.14]}>
+          <boxGeometry args={[0.02, 1.44, 0.02]} />
+          <meshStandardMaterial color="#ff88aa" emissive="#ff2266" emissiveIntensity={6} />
+        </mesh>
+        {/* Pommel */}
+        <mesh position={[0, -0.42, 0]}>
+          <sphereGeometry args={[0.07, 8, 6]} />
+          <meshStandardMaterial {...TRIM} />
+        </mesh>
+      </group>
+
+      {/* Neck */}
+      <mesh position={[0, 1.92, 0]}>
+        <boxGeometry args={[0.28, 0.14, 0.3]} />
+        <meshStandardMaterial {...DARK} />
+      </mesh>
+
+      {/* Head — skull-faced helm */}
+      <mesh castShadow position={[0, 2.1, 0]}>
+        <boxGeometry args={[0.58, 0.58, 0.54]} />
+        <meshStandardMaterial {...PLATE} />
+      </mesh>
+      {/* Exposed bone jaw + teeth */}
+      <mesh position={[0, 1.97, 0.24]}>
+        <boxGeometry args={[0.38, 0.22, 0.1]} />
+        <meshStandardMaterial {...BONE} />
+      </mesh>
+      {[-0.12, -0.04, 0.04, 0.12].map((dx, i) => (
+        <mesh key={`tooth${i}`} position={[dx, 1.92, 0.3]}>
+          <boxGeometry args={[0.04, 0.08, 0.02]} />
+          <meshStandardMaterial color="#f0e8c8" />
+        </mesh>
       ))}
-      <mesh castShadow position={[0, 2.05, 0]}>
-        <boxGeometry args={[0.55, 0.55, 0.5]} />
-        <meshStandardMaterial {...mat} />
+      {/* Forehead band */}
+      <mesh position={[0, 2.3, 0.18]}>
+        <boxGeometry args={[0.62, 0.1, 0.3]} />
+        <meshStandardMaterial {...TRIM} />
       </mesh>
-      <mesh castShadow position={[-0.22, 2.38, 0]} rotation={[0, 0, -0.4]}>
-        <coneGeometry args={[0.07, 0.4, 6]} />
-        <meshStandardMaterial color="#3a0000" roughness={0.5} metalness={0.3} />
+      {/* Horns — swept back */}
+      <mesh castShadow position={[-0.28, 2.52, -0.04]} rotation={[0.3, 0, -0.55]}>
+        <coneGeometry args={[0.08, 0.52, 5]} />
+        <meshStandardMaterial {...DARK} />
       </mesh>
-      <mesh castShadow position={[0.22, 2.38, 0]} rotation={[0, 0, 0.4]}>
-        <coneGeometry args={[0.07, 0.4, 6]} />
-        <meshStandardMaterial color="#3a0000" roughness={0.5} metalness={0.3} />
+      <mesh castShadow position={[0.28, 2.52, -0.04]} rotation={[0.3, 0, 0.55]}>
+        <coneGeometry args={[0.08, 0.52, 5]} />
+        <meshStandardMaterial {...DARK} />
       </mesh>
-      <mesh position={[-0.14, 2.1, 0.26]}>
-        <boxGeometry args={[0.1, 0.06, 0.02]} />
-        <meshStandardMaterial color="#ffff00" emissive="#ffcc00" emissiveIntensity={5} />
+      {/* Eye slits — bright red glow */}
+      <mesh position={[-0.13, 2.16, 0.28]}>
+        <boxGeometry args={[0.11, 0.05, 0.02]} />
+        <meshStandardMaterial color="#ff6600" emissive="#ff3300" emissiveIntensity={7} />
       </mesh>
-      <mesh position={[0.14, 2.1, 0.26]}>
-        <boxGeometry args={[0.1, 0.06, 0.02]} />
-        <meshStandardMaterial color="#ffff00" emissive="#ffcc00" emissiveIntensity={5} />
+      <mesh position={[0.13, 2.16, 0.28]}>
+        <boxGeometry args={[0.11, 0.05, 0.02]} />
+        <meshStandardMaterial color="#ff6600" emissive="#ff3300" emissiveIntensity={7} />
       </mesh>
-      <mesh ref={weaponRef} castShadow position={[0.85, 1.0, 0.2]} rotation={[0.2, 0, 0.3]}>
-        <boxGeometry args={[0.1, 1.6, 0.06]} />
-        <meshStandardMaterial color="#c0c0e0" roughness={0.15} metalness={0.95} emissive="#8080ff" emissiveIntensity={0.5} />
+
+      {/* Tattered waist drape — back */}
+      <mesh castShadow position={[0, 0.7, -0.3]}>
+        <boxGeometry args={[0.72, 0.7, 0.04]} />
+        <meshStandardMaterial color="#1a0000" roughness={0.95} side={THREE.DoubleSide} />
       </mesh>
+
+      {/* Ambient elite glow */}
+      <pointLight color="#ff3300" intensity={1.2} distance={5} decay={2} position={[0, 1.5, 0]} />
     </group>
   );
 }
