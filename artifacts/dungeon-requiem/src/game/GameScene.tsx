@@ -138,6 +138,10 @@ export interface EnemyRuntime {
    *  berserker land hit) and decayed each frame by Enemy3D's
    *  AffixIcons useFrame. Visual-only — does not affect mechanics. */
   affixPulseTimer: number;
+  /** Void Lance cooldown (boss only). Tracks time until next 3-shot
+   *  aimed-cone volley. Aimed projectiles punish ranged kiters who
+   *  otherwise ignore the boss's AoE slam + radial burst from distance. */
+  voidLanceTimer?: number;
 }
 
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
@@ -156,7 +160,7 @@ export interface EnemyProjectile {
   damage: number;
   lifetime: number;
   dead: boolean;
-  style: "default" | "orb" | "dagger" | "sword" | "crescent";
+  style: "default" | "orb" | "dagger" | "sword" | "crescent" | "lance";
 }
 
 export interface Projectile {
@@ -1019,6 +1023,10 @@ function spawnBoss(wave: number): EnemyRuntime {
   const bossCount = Math.floor(wave / GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL);
   const hpScale = 1 + (bossCount - 1) * GAME_CONFIG.DIFFICULTY.BOSS_HP_SCALE_PER_WAVE;
   const hp = Math.round(def.health * hpScale);
+  // Tier-based size scaling: tier 1 = 75%, each subsequent tier +25%.
+  // (tier 5 = 175%, tier 6 = 200%, …). Hitbox + reach scale with visuals
+  // so the bigger Warden feels as heavy as it looks.
+  const tierScale = 0.75 + (bossCount - 1) * 0.25;
   const corners: [number, number][] = [[-half, -half], [half, -half], [-half, half], [half, half]];
   const [cx, cz] = corners[Math.floor(Math.random() * corners.length)];
   return {
@@ -1026,14 +1034,14 @@ function spawnBoss(wave: number): EnemyRuntime {
     hp, maxHp: hp,
     damage: Math.round(def.damage * (1 + (bossCount - 1) * 0.15)),
     moveSpeed: def.moveSpeed,
-    attackRange: def.attackRange,
+    attackRange: def.attackRange * tierScale,
     attackInterval: def.attackInterval,
     attackTimer: def.attackInterval,
-    collisionRadius: def.collisionRadius,
+    collisionRadius: def.collisionRadius * tierScale,
     xpReward: def.xpReward,
     scoreValue: def.scoreValue,
     dead: false, hitFlashTimer: 0,
-    scale: def.scale, color: def.color, emissive: def.emissive,
+    scale: def.scale * tierScale, color: def.color, emissive: def.emissive,
     vx: 0, vz: 0, phasing: false, phaseTimer: 0,
     specialTimer: GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_INTERVAL,
     specialWarning: false,
@@ -1043,6 +1051,7 @@ function spawnBoss(wave: number): EnemyRuntime {
     enragePhase: 0, baseMoveSpeed: def.moveSpeed, baseDamage: Math.round(def.damage * (1 + (bossCount - 1) * 0.15)),
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
     affix: "none" as const, shieldHp: 0, affixPulseTimer: 0,
+    voidLanceTimer: 6.0,
   };
 }
 
@@ -2521,6 +2530,33 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         }
       }
 
+      // Void Lance — aimed 3-shot cone that punishes ranged kiters.
+      // Radial burst sprays omnidirectionally and falls off with distance
+      // (projectiles peter out before reaching the arena edge); the lance
+      // travels fast + far so stationary mages/rogues get clipped.
+      // Interval tightens with enrage: 6s → 4s → 3s → 2.5s.
+      e.voidLanceTimer = (e.voidLanceTimer ?? 6.0) - delta;
+      if (e.voidLanceTimer <= 0) {
+        const lanceInterval = e.enragePhase >= 3 ? 2.5 : e.enragePhase >= 2 ? 3.0 : e.enragePhase >= 1 ? 4.0 : 6.0;
+        e.voidLanceTimer = lanceInterval;
+        const dx = p.x - e.x;
+        const dz = p.z - e.z;
+        const baseAngle = Math.atan2(dx, dz);
+        const LANCE_SPEED = 14;
+        const LANCE_SPREAD = 0.12; // ±~7° total cone
+        for (let i = -1; i <= 1; i++) {
+          const a = baseAngle + i * LANCE_SPREAD;
+          g.enemyProjectiles.push({
+            id: eprojId(), x: e.x, z: e.z,
+            vx: Math.sin(a) * LANCE_SPEED,
+            vz: Math.cos(a) * LANCE_SPEED,
+            damage: e.damage * 0.6,
+            lifetime: 3.5, dead: false, style: "lance" as const,
+          });
+        }
+        audioManager.play("boss_special");
+      }
+
       // Sync boss HP to HUD each frame
       store.setBossState(e.hp, e.maxHp, ENEMY_DATA.boss.displayName, true);
     }
@@ -3357,6 +3393,10 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
       // Face travel direction, tilt forward slightly
       ref.current.rotation.y = Math.atan2(ep.vx, ep.vz);
       ref.current.rotation.x = -0.3;
+    } else if (ep.style === "lance") {
+      // Face travel direction; flat-laid so the long axis aligns with velocity
+      ref.current.rotation.y = Math.atan2(ep.vx, ep.vz);
+      ref.current.rotation.z = 0;
     } else {
       ref.current.rotation.y = t.current * 6;
     }
@@ -3411,6 +3451,30 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
           <meshStandardMaterial color="#ff4400" emissive="#ff2200" emissiveIntensity={4} metalness={0.8} roughness={0.1} />
         </mesh>
         <pointLight color="#ff4400" intensity={2} distance={4} decay={2} />
+      </group>
+    );
+  }
+
+  // ── Warden Void Lance — elongated glowing rod, point-forward ──
+  if (ep.style === "lance") {
+    return (
+      <group ref={ref}>
+        {/* Core shaft — long purple beam */}
+        <mesh position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.08, 0.08, 1.4, 6]} />
+          <meshStandardMaterial color="#ff40ff" emissive="#cc00ff" emissiveIntensity={6} metalness={0.4} roughness={0.1} />
+        </mesh>
+        {/* Glow halo — wider, softer */}
+        <mesh position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.18, 0.18, 1.4, 6]} />
+          <meshStandardMaterial color="#cc00ff" emissive="#ff00ff" emissiveIntensity={2.5} transparent opacity={0.35} />
+        </mesh>
+        {/* Sharp spearhead */}
+        <mesh position={[0, 0, -0.85]} rotation={[Math.PI / 2, 0, 0]}>
+          <coneGeometry args={[0.14, 0.45, 6]} />
+          <meshStandardMaterial color="#ffaaff" emissive="#ff00ff" emissiveIntensity={8} />
+        </mesh>
+        <pointLight color="#cc00ff" intensity={3} distance={6} decay={2} />
       </group>
     );
   }
