@@ -368,11 +368,11 @@ function MageMeshAnimated({ gs }: PlayerProps) {
   const STAFF = "#1a0a2e"; const ORB = "#cc44ff"; const TRIM = "#8833cc";
   const EYE = "#00ffff"; const STAFF_LINE = "#9933ff";
 
-  // Visual-only scale bump so the Mage doesn't read as a tiny dot from the
-  // top-down camera. Wrapped in a static inner group so it compounds with
-  // the per-race scale on groupRef. Hitbox and collision are runtime-side
-  // and unaffected.
-  const MAGE_SCALE = 1.4;
+  // Visual-only scale bump so the Mage reads clearly from the top-down
+  // camera without looking oversized. Wrapped in a static inner group so
+  // it compounds with the per-race scale on groupRef. Hitbox and
+  // collision are runtime-side and unaffected.
+  const MAGE_SCALE = 1.12;
 
   return (
     <>
@@ -395,14 +395,24 @@ function MageMeshAnimated({ gs }: PlayerProps) {
         <group ref={rightArmRef} position={[0.42, 1.18, 0]}>
           <mesh castShadow position={[0, -0.2, 0]}><boxGeometry args={[0.18, 0.44, 0.18]} /><meshStandardMaterial color={ROBE} roughness={0.9} /></mesh>
           <mesh castShadow position={[0, -0.46, 0]}><boxGeometry args={[0.16, 0.18, 0.16]} /><meshStandardMaterial color={SKIN} roughness={0.85} /></mesh>
-          <group ref={weaponRef} position={[0.08, -0.4, 0]}>
-            {/* Staff shaft — dark obsidian */}
-            <mesh castShadow position={[0, -0.55, 0]}><boxGeometry args={[0.07, 1.1, 0.07]} /><meshStandardMaterial color={STAFF} roughness={0.8} metalness={0.1} emissive={STAFF_LINE} emissiveIntensity={0.5} /></mesh>
-            {/* Staff energy line — thin bright strip up the shaft */}
-            <mesh position={[0, -0.55, 0.036]}><boxGeometry args={[0.012, 1.0, 0.003]} /><meshStandardMaterial color={STAFF_LINE} emissive={STAFF_LINE} emissiveIntensity={3.0} toneMapped={false} /></mesh>
-            {/* Staff orb — bright purple emissive, most visible element */}
-            <mesh position={[0, 0.08, 0]}><sphereGeometry args={[0.18, 10, 8]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={6.0} toneMapped={false} /></mesh>
-            <mesh position={[0, 0.08, 0]}><sphereGeometry args={[0.24, 8, 6]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={2.5} transparent opacity={0.35} depthWrite={false} /></mesh>
+          {/* Staff — proper wizard hold: shaft extends UP from the hand with
+              the orb floating above the head. Hand grips near the bottom of
+              the shaft. The outer group's static z-tilt gives a slight inward
+              lean so the staff isn't perfectly vertical; the inner weaponRef
+              is the part the swing animation rotates. */}
+          <group position={[0.08, -0.4, 0]} rotation={[0, 0, -0.12]}>
+            <group ref={weaponRef}>
+              {/* Shaft — length 1.4, centered at y=+0.55 so it spans from
+                  slightly below the hand up past the head. */}
+              <mesh castShadow position={[0, 0.55, 0]}><boxGeometry args={[0.08, 1.4, 0.08]} /><meshStandardMaterial color={STAFF} roughness={0.8} metalness={0.1} emissive={STAFF_LINE} emissiveIntensity={0.5} /></mesh>
+              {/* Staff energy line — thin bright strip on the front face of the shaft */}
+              <mesh position={[0, 0.55, 0.045]}><boxGeometry args={[0.014, 1.30, 0.003]} /><meshStandardMaterial color={STAFF_LINE} emissive={STAFF_LINE} emissiveIntensity={3.0} toneMapped={false} /></mesh>
+              {/* Shaft grip wrap at the hand — small accent so the hold reads */}
+              <mesh position={[0, -0.05, 0]}><boxGeometry args={[0.11, 0.14, 0.11]} /><meshStandardMaterial color={INNER} roughness={0.85} /></mesh>
+              {/* Orb — floats above the top of the shaft (small gap, not touching) */}
+              <mesh position={[0, 1.40, 0]}><sphereGeometry args={[0.18, 10, 8]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={6.0} toneMapped={false} /></mesh>
+              <mesh position={[0, 1.40, 0]}><sphereGeometry args={[0.24, 8, 6]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={2.5} transparent opacity={0.35} depthWrite={false} /></mesh>
+            </group>
           </group>
         </group>
         <group position={[0, 1.66, 0]}>
