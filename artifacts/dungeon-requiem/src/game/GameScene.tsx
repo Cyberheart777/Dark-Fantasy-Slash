@@ -297,7 +297,12 @@ function makeProgWithMeta(cls: CharacterClass, race: RaceType): { progression: P
     armor: Math.max(0, def.armor + raceDef.armorBonus),
     dashCooldown: def.dashCooldown,
     critChance: Math.min(0.95, def.critChance + raceDef.critBonus),
-    attackRange: def.attackRange,
+    // Main-game ranged nerf: mage -50%, rogue -70%. Labyrinth stays on its
+    // own resolution path (LabyrinthStats.ts → CharacterData.attackRange),
+    // so this cut is scoped to the main game only. Also drives auto-aim
+    // lock-on distance + UI-displayed range; projectile lifetime is cut
+    // to match at the fire site so effective travel shrinks too.
+    attackRange: def.attackRange * (cls === "mage" ? 0.50 : cls === "rogue" ? 0.30 : 1),
     // Class-specific base stats not stored in CharacterData
     critDamageMultiplier: cls === "rogue" ? 2.0 : 1.85,
     healthRegen: cls === "mage" ? 1.0 : 0.5,
@@ -1545,6 +1550,12 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const projSpeed = def.projectileSpeed * projSpeedMult;
           // Projectile radius with bonus
           const projRadius = def.projectileRadius + stats.projectileRadiusBonus;
+          // Main-game ranged nerf: shrink projectile travel by shortening
+          // its lifetime. Paired with the attackRange cut in makeProgWithMeta.
+          // Mage → 50% lifetime, Rogue → 30% lifetime. Labyrinth uses its
+          // own RangedAttack constants, so this stays main-game-only.
+          const projLifetimeMult = g.charClass === "mage" ? 0.50 : g.charClass === "rogue" ? 0.30 : 1;
+          const projLifetime = def.projectileLifetime * projLifetimeMult;
 
           const fireVolley = (angleOffset: number) => {
             for (let i = 0; i < totalCount; i++) {
@@ -1557,7 +1568,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 vz: Math.cos(angle) * projSpeed,
                 damage: projDmg,
                 radius: projRadius,
-                lifetime: def.projectileLifetime,
+                lifetime: projLifetime,
                 piercing: isPiercing,
                 hitIds: new Set(),
                 color: def.accentColor,
@@ -1567,7 +1578,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               };
               // Mage orb upgrade fields
               if (projStyle === "orb") {
-                if (stats.overchargedOrbBonus > 0) { proj.spawnX = p.x; proj.spawnZ = p.z; proj.maxRange = projSpeed * def.projectileLifetime; }
+                if (stats.overchargedOrbBonus > 0) { proj.spawnX = p.x; proj.spawnZ = p.z; proj.maxRange = projSpeed * projLifetime; }
                 if (stats.residualFieldEnabled) { proj.trailTimer = 0; }
                 if (stats.ricochetOrbEnabled) { proj.bouncesLeft = 3; proj.baseDamage = projDmg; }
               }
@@ -1583,7 +1594,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                     vx: Math.sin(sAngle) * projSpeed,
                     vz: Math.cos(sAngle) * projSpeed,
                     damage: splitDmg, radius: projRadius * 0.7,
-                    lifetime: def.projectileLifetime * 0.7,
+                    lifetime: projLifetime * 0.7,
                     piercing: isPiercing, hitIds: new Set(),
                     color: def.accentColor, glowColor: def.color,
                     style: projStyle, dead: false,
@@ -1600,7 +1611,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                   vz: Math.cos(extraAngle) * projSpeed,
                   damage: projDmg,
                   radius: projRadius,
-                  lifetime: def.projectileLifetime,
+                  lifetime: projLifetime,
                   piercing: isPiercing,
                   hitIds: new Set(),
                   color: def.accentColor,
@@ -1625,7 +1636,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               vx: Math.sin(p.angle) * megaSpeed,
               vz: Math.cos(p.angle) * megaSpeed,
               damage: megaDmg, radius: megaRadius,
-              lifetime: def.projectileLifetime * 1.5,
+              lifetime: projLifetime * 1.5,
               piercing: true, hitIds: new Set(),
               color: "#66ffcc", glowColor: "#22cc88",
               style: "dagger", dead: false,
@@ -1650,7 +1661,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                   vz: Math.cos(phantomAngle) * projSpeed * 0.8,
                   damage: Math.round(projDmg * 0.5),
                   radius: def.projectileRadius * 0.7,
-                  lifetime: def.projectileLifetime * 0.7,
+                  lifetime: projLifetime * 0.7,
                   piercing: false,
                   hitIds: new Set(),
                   color: "#80ffcc",
