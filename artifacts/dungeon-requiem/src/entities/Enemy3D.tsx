@@ -442,14 +442,25 @@ function EliteMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInter
   );
 }
 
-// ─── Boss (IMPROVED: arm movement + breathing + aura pulse) ─────────────────
+// ─── Boss: The Warden Reborn ────────────────────────────────────────────────
+//
+// Armored corrupted jailer. Silhouette: tapered greaves → sealed chestplate →
+// massive pauldrons → horned visor-helm, crowned with a halo of shattered
+// chain-links. Right hand grips a glowing warhammer. Twin aura rings counter-
+// rotate at the feet. Animation hooks preserved from prior version: torso
+// breathes + leans on strike; both arms raise on windup and slam on strike
+// (the hammer travels with the right arm group).
 
 function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
   const auraRef = useRef<THREE.Mesh>(null);
-  const leftArmRef = useRef<THREE.Mesh>(null);
-  const rightArmRef = useRef<THREE.Mesh>(null);
-  const torsoRef = useRef<THREE.Mesh>(null);
+  const auraRef2 = useRef<THREE.Mesh>(null);
+  const leftArmRef = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const torsoRef = useRef<THREE.Group>(null);
+  const capeRef = useRef<THREE.Mesh>(null);
+  const crownRef = useRef<THREE.Group>(null);
+  const sealRef = useRef<THREE.Mesh>(null);
   const prevAttackRef = useRef(attackTimer);
   const windupRef = useRef(0);
   const strikeRef = useRef(0);
@@ -458,12 +469,14 @@ function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { col
     t.current += delta;
     const { windup, strike } = updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
     if (auraRef.current) {
-      auraRef.current.rotation.y = t.current * 0.8;
-      // Aura expands on windup, flashes on strike
-      auraRef.current.scale.y = 1 + Math.sin(t.current * 2) * 0.1 + strike * 0.8;
-      const auraSpread = 1 + windup * 0.25 + strike * 0.4;
-      auraRef.current.scale.x = auraSpread;
-      auraRef.current.scale.z = auraSpread;
+      auraRef.current.rotation.z = t.current * 0.8;
+      const auraSpread = 1 + windup * 0.25 + strike * 0.5;
+      auraRef.current.scale.set(auraSpread, auraSpread, 1);
+    }
+    if (auraRef2.current) {
+      auraRef2.current.rotation.z = -t.current * 1.2;
+      const auraSpread2 = 1 + windup * 0.35 + strike * 0.7;
+      auraRef2.current.scale.set(auraSpread2, auraSpread2, 1);
     }
     // Breathing — torso scale pulse + lean forward on strike
     if (torsoRef.current) {
@@ -471,70 +484,263 @@ function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { col
       torsoRef.current.scale.set(breath, 1, breath);
       torsoRef.current.rotation.x = strike * 0.3 - windup * 0.08;
     }
-    // Menacing arm sway + overhead slam:
-    //   windup → both arms raise up (negative X = raise)
-    //   strike → slam down hard (positive X)
+    // Seal pulses with heartbeat; flares on strike
+    if (sealRef.current) {
+      const m = sealRef.current.material as THREE.MeshStandardMaterial;
+      m.emissiveIntensity = 3 + Math.sin(t.current * 2.2) * 1.5 + strike * 6;
+    }
+    // Crown of shattered chains orbits slowly, bobs on breath
+    if (crownRef.current) {
+      crownRef.current.rotation.y = t.current * 0.5;
+      crownRef.current.position.y = 3.95 + Math.sin(t.current * 1.2) * 0.04;
+    }
+    // Tattered cape sway
+    if (capeRef.current) {
+      capeRef.current.rotation.x = Math.sin(t.current * 1.8) * 0.08 - 0.05;
+    }
+    // Arm slam:
+    //   windup → arms raise back (negative X)
+    //   strike → slam down (positive X)
     const slam = -windup * 1.6 + strike * 2.4;
     if (leftArmRef.current) {
-      leftArmRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.15 + slam;
-      leftArmRef.current.rotation.z = -0.1 + Math.sin(t.current * 0.8) * 0.05;
+      leftArmRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.12 + slam;
+      leftArmRef.current.rotation.z = -0.08 + Math.sin(t.current * 0.8) * 0.04;
     }
     if (rightArmRef.current) {
-      rightArmRef.current.rotation.x = Math.sin(t.current * 1.5 + 1.5) * 0.15 + slam;
-      rightArmRef.current.rotation.z = 0.1 - Math.sin(t.current * 0.8 + 1) * 0.05;
+      rightArmRef.current.rotation.x = Math.sin(t.current * 1.5 + 1.5) * 0.12 + slam;
+      rightArmRef.current.rotation.z = 0.08 - Math.sin(t.current * 0.8 + 1) * 0.04;
     }
   });
 
-  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 5 : 2.0, roughness: 0.3, metalness: 0.6 };
+  const plate  = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 5 : 1.8, roughness: 0.35, metalness: 0.75 };
+  const dark   = { color: flash ? "#ffffff" : "#0a0012", emissive, emissiveIntensity: flash ? 5 : 0.6, roughness: 0.55, metalness: 0.4 };
+  const trim   = { color: flash ? "#ffffff" : "#3a0a4a", emissive: "#55008a", emissiveIntensity: flash ? 6 : 2.0, roughness: 0.3, metalness: 0.8 };
+  const chain  = { color: "#2a1030", emissive: "#6a20a0", emissiveIntensity: 1.2, roughness: 0.4, metalness: 0.85 };
+  const hammer = { color: "#1a0a2a", emissive: "#9920ee", emissiveIntensity: 2.5, roughness: 0.25, metalness: 0.9 };
 
   return (
     <group>
-      <mesh ref={auraRef} position={[0, 0.1, 0]} rotation={[Math.PI / 2, 0, 0]}>
+      {/* Twin counter-rotating aura rings at the feet */}
+      <mesh ref={auraRef} position={[0, 0.08, 0]} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[1.8, 0.08, 8, 32]} />
         <meshStandardMaterial color="#cc00ff" emissive="#aa00ff" emissiveIntensity={3} transparent opacity={0.7} />
       </mesh>
-      <mesh castShadow position={[-0.55, 0.75, 0]}>
-        <boxGeometry args={[0.7, 1.5, 0.65]} />
-        <meshStandardMaterial {...mat} />
+      <mesh ref={auraRef2} position={[0, 0.2, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[1.35, 0.05, 6, 24]} />
+        <meshStandardMaterial color="#ff40ff" emissive="#ff00cc" emissiveIntensity={3.5} transparent opacity={0.6} />
       </mesh>
-      <mesh castShadow position={[0.55, 0.75, 0]}>
-        <boxGeometry args={[0.7, 1.5, 0.65]} />
-        <meshStandardMaterial {...mat} />
+
+      {/* Greaves — tapered: wider at knee, narrow at boot */}
+      <mesh castShadow position={[-0.5, 0.35, 0]}>
+        <cylinderGeometry args={[0.26, 0.38, 0.75, 6]} />
+        <meshStandardMaterial {...plate} />
       </mesh>
-      <mesh ref={torsoRef} castShadow position={[0, 2.0, 0]}>
-        <boxGeometry args={[1.8, 1.4, 1.0]} />
-        <meshStandardMaterial {...mat} />
+      <mesh castShadow position={[0.5, 0.35, 0]}>
+        <cylinderGeometry args={[0.26, 0.38, 0.75, 6]} />
+        <meshStandardMaterial {...plate} />
       </mesh>
-      <mesh ref={leftArmRef} castShadow position={[-1.35, 1.8, 0.2]}>
-        <boxGeometry args={[0.65, 1.4, 0.65]} />
-        <meshStandardMaterial {...mat} />
+      {/* Boots */}
+      <mesh castShadow position={[-0.5, 0.05, 0.12]}>
+        <boxGeometry args={[0.5, 0.2, 0.7]} />
+        <meshStandardMaterial {...dark} />
       </mesh>
-      <mesh ref={rightArmRef} castShadow position={[1.35, 1.8, 0.2]}>
-        <boxGeometry args={[0.65, 1.4, 0.65]} />
-        <meshStandardMaterial {...mat} />
+      <mesh castShadow position={[0.5, 0.05, 0.12]}>
+        <boxGeometry args={[0.5, 0.2, 0.7]} />
+        <meshStandardMaterial {...dark} />
       </mesh>
-      <mesh castShadow position={[0, 3.05, 0]}>
-        <boxGeometry args={[1.1, 0.9, 0.85]} />
-        <meshStandardMaterial {...mat} />
+      {/* Upper legs — armored thighs */}
+      <mesh castShadow position={[-0.5, 0.95, 0]}>
+        <boxGeometry args={[0.62, 0.6, 0.58]} />
+        <meshStandardMaterial {...plate} />
       </mesh>
-      {[0, 1, 2, 3, 4, 5].map((i) => {
-        const angle = (i / 6) * Math.PI * 2;
-        return (
-          <mesh key={i} castShadow position={[Math.sin(angle) * 0.45, 3.6, Math.cos(angle) * 0.35]}>
-            <coneGeometry args={[0.07, 0.4, 5]} />
-            <meshStandardMaterial color="#4a0050" roughness={0.4} metalness={0.5} />
-          </mesh>
-        );
-      })}
-      <mesh position={[-0.25, 3.1, 0.44]}>
-        <boxGeometry args={[0.2, 0.1, 0.02]} />
-        <meshStandardMaterial color="#ff00ff" emissive="#cc00cc" emissiveIntensity={6} />
+      <mesh castShadow position={[0.5, 0.95, 0]}>
+        <boxGeometry args={[0.62, 0.6, 0.58]} />
+        <meshStandardMaterial {...plate} />
       </mesh>
-      <mesh position={[0.25, 3.1, 0.44]}>
-        <boxGeometry args={[0.2, 0.1, 0.02]} />
-        <meshStandardMaterial color="#ff00ff" emissive="#cc00cc" emissiveIntensity={6} />
+
+      {/* Belt — ridged band with central trim */}
+      <mesh castShadow position={[0, 1.3, 0]}>
+        <boxGeometry args={[1.55, 0.25, 0.85]} />
+        <meshStandardMaterial {...dark} />
       </mesh>
-      <pointLight color="#aa00ff" intensity={3} distance={15} decay={2} />
+      <mesh position={[0, 1.3, 0.44]}>
+        <boxGeometry args={[0.4, 0.18, 0.02]} />
+        <meshStandardMaterial {...trim} />
+      </mesh>
+
+      {/* Torso — chestplate with glowing seal. Group so breath scale
+          preserves seal position. */}
+      <group ref={torsoRef} position={[0, 2.0, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[1.75, 1.45, 1.0]} />
+          <meshStandardMaterial {...plate} />
+        </mesh>
+        {/* Chest ridges (sternum) */}
+        <mesh castShadow position={[0, 0, 0.51]}>
+          <boxGeometry args={[0.12, 1.2, 0.06]} />
+          <meshStandardMaterial {...dark} />
+        </mesh>
+        {/* Glowing warden-seal */}
+        <mesh ref={sealRef} position={[0, 0.05, 0.53]}>
+          <cylinderGeometry args={[0.28, 0.28, 0.04, 6]} />
+          <meshStandardMaterial color="#ff00ff" emissive="#cc00ff" emissiveIntensity={3.5} roughness={0.2} metalness={0.3} />
+        </mesh>
+        {/* Seal inner ring — decorative */}
+        <mesh position={[0, 0.05, 0.56]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.18, 0.02, 6, 12]} />
+          <meshStandardMaterial {...trim} />
+        </mesh>
+        {/* Back plate trim */}
+        <mesh position={[0, 0.4, -0.51]}>
+          <boxGeometry args={[1.6, 0.1, 0.03]} />
+          <meshStandardMaterial {...trim} />
+        </mesh>
+      </group>
+
+      {/* Pauldrons — massive rounded shoulder caps (half-spheres) */}
+      <mesh castShadow position={[-1.0, 2.55, 0]} rotation={[0, 0, 0]}>
+        <sphereGeometry args={[0.55, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial {...plate} />
+      </mesh>
+      <mesh castShadow position={[1.0, 2.55, 0]}>
+        <sphereGeometry args={[0.55, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial {...plate} />
+      </mesh>
+      {/* Pauldron spikes */}
+      <mesh castShadow position={[-1.15, 2.95, 0]} rotation={[0, 0, 0.4]}>
+        <coneGeometry args={[0.12, 0.45, 5]} />
+        <meshStandardMaterial {...trim} />
+      </mesh>
+      <mesh castShadow position={[1.15, 2.95, 0]} rotation={[0, 0, -0.4]}>
+        <coneGeometry args={[0.12, 0.45, 5]} />
+        <meshStandardMaterial {...trim} />
+      </mesh>
+
+      {/* Tattered cape — hangs from between pauldrons */}
+      <mesh ref={capeRef} castShadow position={[0, 1.9, -0.52]}>
+        <boxGeometry args={[1.55, 1.8, 0.05]} />
+        <meshStandardMaterial color="#1a0024" emissive="#300040" emissiveIntensity={0.5} roughness={0.95} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* Left arm (shield/fist side). Pivot at shoulder — children offset
+          downward so rotation.x acts as shoulder pivot. */}
+      <group ref={leftArmRef} position={[-1.3, 2.45, 0]}>
+        <mesh castShadow position={[0, -0.4, 0]}>
+          <boxGeometry args={[0.55, 1.0, 0.55]} />
+          <meshStandardMaterial {...plate} />
+        </mesh>
+        {/* Elbow trim */}
+        <mesh position={[0, -0.95, 0]}>
+          <boxGeometry args={[0.6, 0.1, 0.6]} />
+          <meshStandardMaterial {...trim} />
+        </mesh>
+        {/* Forearm + gauntlet */}
+        <mesh castShadow position={[0, -1.4, 0]}>
+          <boxGeometry args={[0.5, 0.85, 0.5]} />
+          <meshStandardMaterial {...plate} />
+        </mesh>
+        {/* Fist */}
+        <mesh castShadow position={[0, -1.95, 0]}>
+          <boxGeometry args={[0.56, 0.3, 0.56]} />
+          <meshStandardMaterial {...dark} />
+        </mesh>
+      </group>
+
+      {/* Right arm — carries the warhammer. */}
+      <group ref={rightArmRef} position={[1.3, 2.45, 0]}>
+        <mesh castShadow position={[0, -0.4, 0]}>
+          <boxGeometry args={[0.55, 1.0, 0.55]} />
+          <meshStandardMaterial {...plate} />
+        </mesh>
+        <mesh position={[0, -0.95, 0]}>
+          <boxGeometry args={[0.6, 0.1, 0.6]} />
+          <meshStandardMaterial {...trim} />
+        </mesh>
+        <mesh castShadow position={[0, -1.4, 0]}>
+          <boxGeometry args={[0.5, 0.85, 0.5]} />
+          <meshStandardMaterial {...plate} />
+        </mesh>
+        <mesh castShadow position={[0, -1.95, 0]}>
+          <boxGeometry args={[0.56, 0.3, 0.56]} />
+          <meshStandardMaterial {...dark} />
+        </mesh>
+        {/* Warhammer shaft — extends down past fist so slam travels with it */}
+        <mesh castShadow position={[0, -2.65, 0.1]}>
+          <cylinderGeometry args={[0.08, 0.08, 1.6, 6]} />
+          <meshStandardMaterial color="#2a1040" roughness={0.6} metalness={0.5} />
+        </mesh>
+        {/* Hammer head — hex block with glowing trim */}
+        <mesh castShadow position={[0, -3.5, 0.1]}>
+          <boxGeometry args={[0.8, 0.55, 0.55]} />
+          <meshStandardMaterial {...plate} />
+        </mesh>
+        <mesh position={[0, -3.5, 0.4]}>
+          <boxGeometry args={[0.82, 0.4, 0.04]} />
+          <meshStandardMaterial {...hammer} />
+        </mesh>
+        <mesh position={[0, -3.5, -0.2]}>
+          <boxGeometry args={[0.82, 0.4, 0.04]} />
+          <meshStandardMaterial {...hammer} />
+        </mesh>
+        {/* Hammer pommel spike */}
+        <mesh castShadow position={[0, -1.72, 0.1]}>
+          <coneGeometry args={[0.1, 0.22, 5]} />
+          <meshStandardMaterial {...trim} />
+        </mesh>
+      </group>
+
+      {/* Neck collar */}
+      <mesh position={[0, 2.85, 0]}>
+        <boxGeometry args={[0.7, 0.18, 0.7]} />
+        <meshStandardMaterial {...dark} />
+      </mesh>
+
+      {/* Helm — visored skull-plate */}
+      <mesh castShadow position={[0, 3.25, 0]}>
+        <boxGeometry args={[0.95, 0.85, 0.9]} />
+        <meshStandardMaterial {...plate} />
+      </mesh>
+      {/* Forehead ridge */}
+      <mesh castShadow position={[0, 3.55, 0.2]}>
+        <boxGeometry args={[1.0, 0.2, 0.55]} />
+        <meshStandardMaterial {...dark} />
+      </mesh>
+      {/* Jaw / mouth guard */}
+      <mesh castShadow position={[0, 2.95, 0.2]}>
+        <boxGeometry args={[0.75, 0.25, 0.55]} />
+        <meshStandardMaterial {...dark} />
+      </mesh>
+      {/* Visor slit (single horizontal bar) */}
+      <mesh position={[0, 3.22, 0.47]}>
+        <boxGeometry args={[0.7, 0.1, 0.02]} />
+        <meshStandardMaterial color="#ff00ff" emissive="#ff00ff" emissiveIntensity={7} />
+      </mesh>
+      {/* Helm horns — curved back-swept */}
+      <mesh castShadow position={[-0.48, 3.75, -0.05]} rotation={[0.3, 0, -0.5]}>
+        <coneGeometry args={[0.13, 0.85, 6]} />
+        <meshStandardMaterial {...plate} />
+      </mesh>
+      <mesh castShadow position={[0.48, 3.75, -0.05]} rotation={[0.3, 0, 0.5]}>
+        <coneGeometry args={[0.13, 0.85, 6]} />
+        <meshStandardMaterial {...plate} />
+      </mesh>
+
+      {/* Crown of shattered chain-links floating above helm */}
+      <group ref={crownRef} position={[0, 3.95, 0]}>
+        {[0, 1, 2, 3, 4, 5, 6].map((i) => {
+          const angle = (i / 7) * Math.PI * 2;
+          const r = 0.55;
+          return (
+            <mesh key={i} position={[Math.sin(angle) * r, Math.sin(angle * 2) * 0.08, Math.cos(angle) * r]} rotation={[0, angle, Math.PI / 2]}>
+              <torusGeometry args={[0.08, 0.025, 4, 8]} />
+              <meshStandardMaterial {...chain} />
+            </mesh>
+          );
+        })}
+      </group>
+
+      {/* Ambient boss light */}
+      <pointLight color="#aa00ff" intensity={3} distance={15} decay={2} position={[0, 2.2, 0]} />
     </group>
   );
 }
