@@ -216,7 +216,7 @@ function WarriorMeshAnimated({ gs }: PlayerProps) {
     t.current += delta;
     const p = gs.current.player;
     groupRef.current.position.set(p.x, 0, p.z);
-    groupRef.current.rotation.y = p.angle + Math.PI;
+    groupRef.current.rotation.y = p.angle;
     applyRaceScale(gs, groupRef.current);
     const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
     lastX.current = p.x; lastZ.current = p.z;
@@ -322,7 +322,7 @@ function MageMeshAnimated({ gs }: PlayerProps) {
     t.current += delta;
     const p = gs.current.player;
     groupRef.current.position.set(p.x, 0, p.z);
-    groupRef.current.rotation.y = p.angle + Math.PI;
+    groupRef.current.rotation.y = p.angle;
     applyRaceScale(gs, groupRef.current);
     const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
     lastX.current = p.x; lastZ.current = p.z;
@@ -452,7 +452,7 @@ function RogueMeshAnimated({ gs }: PlayerProps) {
     t.current += delta;
     const p = gs.current.player;
     groupRef.current.position.set(p.x, 0, p.z);
-    groupRef.current.rotation.y = p.angle + Math.PI;
+    groupRef.current.rotation.y = p.angle;
     applyRaceScale(gs, groupRef.current);
     const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
     lastX.current = p.x; lastZ.current = p.z;
