@@ -12,6 +12,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { DifficultyTier } from "../data/DifficultyData";
+import { ENHANCE_COST, ENHANCE_MAX } from "../data/GearData";
 import { useAchievementStore } from "./achievementStore";
 
 // ─── Trial buff definitions ──────────────────────────────────────────────────
@@ -475,11 +476,11 @@ export const useMetaStore = create<MetaState>()(
         const item = s.gearStash[stashIndex];
         if (!item) return false;
         const currentLevel = item.enhanceLevel ?? 0;
-        // Max enhancement by rarity: common +3, rare +5, epic +7
-        const maxLevel = item.rarity === "epic" ? 7 : item.rarity === "rare" ? 5 : 3;
+        // Max enhancement by rarity: common +3, rare +5, epic +7 (from GearData)
+        const rarity = item.rarity as keyof typeof ENHANCE_MAX;
+        const maxLevel = ENHANCE_MAX[rarity] ?? 3;
         if (currentLevel >= maxLevel) return false;
-        const costs = [0, 30, 60, 100, 150, 220, 300, 400];
-        const cost = costs[currentLevel + 1] ?? 400;
+        const cost = ENHANCE_COST[currentLevel + 1] ?? ENHANCE_COST[ENHANCE_COST.length - 1];
         if (s.shards < cost) return false;
         const newStash = [...s.gearStash];
         const newLevel = currentLevel + 1;

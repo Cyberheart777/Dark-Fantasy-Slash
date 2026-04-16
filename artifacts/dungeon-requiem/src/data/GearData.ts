@@ -115,8 +115,12 @@ export const ENHANCE_MAX: Record<GearRarity, number> = {
   epic: 7,
 };
 
-/** Enhancement shard cost per level (cost to go FROM level N-1 TO level N). */
-export const ENHANCE_COST = [0, 30, 60, 100, 150, 220, 300, 400];
+/**
+ * Enhancement shard cost per level (cost to go FROM level N-1 TO level N).
+ * Doubling schedule: 50, 100, 200, 400, 800, 1600, 3200.
+ * Total to max: common (+3) = 350 · rare (+5) = 1,550 · epic (+7) = 6,350.
+ */
+export const ENHANCE_COST = [0, 50, 100, 200, 400, 800, 1600, 3200];
 
 /**
  * Get the effective bonuses for a gear piece, accounting for enhancement.
