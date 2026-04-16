@@ -531,4 +531,4 @@ function RogueMeshAnimated({ gs }: PlayerProps) {
   );
 }
 
-const GAME_CONFIG_INV_TIME = 0.8;
+const GAME_CONFIG_INV_TIME = 0.6;

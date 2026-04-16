@@ -21,7 +21,7 @@ export const GAME_CONFIG = {
     START_DODGE_CHANCE: 0,
     ATTACK_RANGE: 5,            // units
     ATTACK_ARC: 120,            // degrees
-    INVINCIBILITY_TIME: 0.8,    // seconds after being hit
+    INVINCIBILITY_TIME: 0.6,    // seconds after being hit
     DASH_SPEED: 22,             // units/second during dash
     DASH_DURATION: 0.18,        // seconds
     DASH_COOLDOWN: 2.2,         // seconds
