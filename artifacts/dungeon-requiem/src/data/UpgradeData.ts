@@ -75,6 +75,19 @@ export type UpgradeId =
   | "cloak_and_dagger"
   | "ricochet"
   | "predators_instinct"
+  // ── Necromancer-only ──
+  | "grave_robber"
+  | "bone_shards"
+  | "dark_vigor"
+  | "undying_legion"
+  | "haunting_presence"
+  | "soul_harvest"
+  | "relentless_dead"
+  | "necrotic_edge"
+  | "dark_communion"
+  | "army_of_darkness"
+  | "lichs_bargain"
+  | "death_coil"
   // ── Relics ──
   | "relic_soulfire"
   | "relic_vampiric"
@@ -736,6 +749,88 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     description: "Enemies below 30% HP take +40% crit damage from you.",
     icon: "🦅", maxStacks: 1, rarity: "rare", classes: ["rogue"],
     apply: (s) => { s.predatorsInstinctEnabled = true; },
+  },
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // NECROMANCER-ONLY
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // ── Tier 1 — Common ──
+  grave_robber: {
+    id: "grave_robber", name: "Grave Robber",
+    description: "Raise chance +10% (30% → 40%).",
+    icon: "⚱", maxStacks: 3, rarity: "common", classes: ["necromancer"],
+    apply: (s) => { s.necroRaiseChance += 0.10; },
+  },
+  bone_shards: {
+    id: "bone_shards", name: "Bone Shards",
+    description: "Minion bone projectile damage +2.",
+    icon: "🦴", maxStacks: 5, rarity: "common", classes: ["necromancer"],
+    apply: (s) => { s.necroMinionDamageBonus += 2; },
+  },
+  dark_vigor: {
+    id: "dark_vigor", name: "Dark Vigor",
+    description: "Scythe damage +3.",
+    icon: "💀", maxStacks: 5, rarity: "common", classes: ["necromancer"],
+    apply: (s) => { s.necroScytheDamageBonus += 3; },
+  },
+  undying_legion: {
+    id: "undying_legion", name: "Undying Legion",
+    description: "Minion HP +15.",
+    icon: "🛡", maxStacks: 5, rarity: "common", classes: ["necromancer"],
+    apply: (s) => { s.necroMinionHpBonus += 15; },
+  },
+  haunting_presence: {
+    id: "haunting_presence", name: "Haunting Presence",
+    description: "Scythe arc width +15 degrees.",
+    icon: "👻", maxStacks: 3, rarity: "common", classes: ["necromancer"],
+    apply: (s) => { s.necroScytheArcBonus += 15; },
+  },
+
+  // ── Tier 2 — Rare ──
+  soul_harvest: {
+    id: "soul_harvest", name: "Soul Harvest",
+    description: "Killing a minion-killed enemy heals Necromancer for 8 HP.",
+    icon: "💚", maxStacks: 1, rarity: "rare", classes: ["necromancer"],
+    apply: (s) => { s.necroSoulHarvestHeal = 8; },
+  },
+  relentless_dead: {
+    id: "relentless_dead", name: "Relentless Dead",
+    description: "When a minion dies it explodes dealing 10 damage to nearby enemies.",
+    icon: "💥", maxStacks: 3, rarity: "rare", classes: ["necromancer"],
+    apply: (s) => { s.necroRelentlessDeadDmg += 10; },
+  },
+  necrotic_edge: {
+    id: "necrotic_edge", name: "Necrotic Edge",
+    description: "Scythe hits apply 1 poison stack.",
+    icon: "☠", maxStacks: 1, rarity: "rare", classes: ["necromancer"],
+    apply: (s) => { s.necroNecroticEdge = true; },
+  },
+  dark_communion: {
+    id: "dark_communion", name: "Dark Communion",
+    description: "Death Surge damage +25% per minion sacrificed.",
+    icon: "🌑", maxStacks: 3, rarity: "rare", classes: ["necromancer"],
+    apply: (s) => { s.necroDeathSurgeDamageMult += 0.25; },
+  },
+
+  // ── Tier 3 — Epic ──
+  army_of_darkness: {
+    id: "army_of_darkness", name: "Army of Darkness",
+    description: "Minion cap increases from 3 to 5.",
+    icon: "⚔", maxStacks: 1, rarity: "epic", classes: ["necromancer"],
+    apply: (s) => { s.necroArmyOfDarkness = true; },
+  },
+  lichs_bargain: {
+    id: "lichs_bargain", name: "Lich's Bargain",
+    description: "Raise chance becomes 60% but each raise costs 5 HP.",
+    icon: "📜", maxStacks: 1, rarity: "epic", classes: ["necromancer"],
+    apply: (s) => { s.necroLichsBargain = true; },
+  },
+  death_coil: {
+    id: "death_coil", name: "Death Coil",
+    description: "Death Surge kills also raise 1 skeletal mage from each slain enemy.",
+    icon: "🔮", maxStacks: 1, rarity: "epic", classes: ["necromancer"],
+    apply: (s) => { s.necroDeathCoil = true; },
   },
 
   // ════════════════════════════════════════════════════════════════════════════
