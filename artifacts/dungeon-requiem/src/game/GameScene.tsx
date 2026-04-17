@@ -3581,7 +3581,6 @@ function Minion3D({ m }: { m: MinionRuntime }) {
         <meshBasicMaterial color="#b8a070" />
       </mesh>
       {/* Purple aura glow */}
-      <pointLight color="#aa66ff" intensity={1.2} distance={3} decay={2} position={[0, 1.2, 0]} />
     </group>
   );
 }

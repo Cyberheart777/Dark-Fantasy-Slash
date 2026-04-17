@@ -265,8 +265,6 @@ function WraithMesh({ color, emissive, flash, attackTimer, attackInterval }: { c
   const leftArmRef = useRef<THREE.Mesh>(null);
   const rightArmRef = useRef<THREE.Mesh>(null);
   const robeRef = useRef<THREE.Mesh>(null);
-  const eyeLeftRef = useRef<THREE.Mesh>(null);
-  const eyeRightRef = useRef<THREE.Mesh>(null);
   const prevAttackRef = useRef(attackTimer);
   const windupRef = useRef(0);
   const strikeRef = useRef(0);
@@ -293,10 +291,6 @@ function WraithMesh({ color, emissive, flash, attackTimer, attackInterval }: { c
       robeRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.08;
       robeRef.current.rotation.z = Math.sin(t.current * 1.1) * 0.05;
     }
-    // Eye flicker — intensifies on windup, peaks on strike
-    const flicker = 3 + Math.sin(t.current * 8) * 2 + windup * 4 + strike * 6;
-    if (eyeLeftRef.current) (eyeLeftRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity = flicker;
-    if (eyeRightRef.current) (eyeRightRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity = flicker;
   });
 
   return (
@@ -313,11 +307,11 @@ function WraithMesh({ color, emissive, flash, attackTimer, attackInterval }: { c
         <sphereGeometry args={[0.32, 8, 8]} />
         <meshStandardMaterial color={flash ? "#ffffff" : "#2a1550"} emissive="#1a0040" emissiveIntensity={flash ? 3 : 0.5} roughness={0.8} />
       </mesh>
-      <mesh ref={eyeLeftRef} position={[-0.1, 1.58, 0.3]}>
+      <mesh position={[-0.1, 1.58, 0.3]}>
         <sphereGeometry args={[0.055, 6, 6]} />
         <meshStandardMaterial color="#00ccff" emissive="#00aaff" emissiveIntensity={5} />
       </mesh>
-      <mesh ref={eyeRightRef} position={[0.1, 1.58, 0.3]}>
+      <mesh position={[0.1, 1.58, 0.3]}>
         <sphereGeometry args={[0.055, 6, 6]} />
         <meshStandardMaterial color="#00ccff" emissive="#00aaff" emissiveIntensity={5} />
       </mesh>
@@ -348,7 +342,6 @@ function EliteMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInter
   const rightArmRef = useRef<THREE.Group>(null);
   const torsoRef = useRef<THREE.Group>(null);
   const weaponRef = useRef<THREE.Group>(null);
-  const runeRef = useRef<THREE.Mesh>(null);
   const prevAttackRef = useRef(attackTimer);
   const windupRef = useRef(0);
   const strikeRef = useRef(0);
@@ -377,11 +370,6 @@ function EliteMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInter
     if (weaponRef.current) {
       weaponRef.current.rotation.z = 0.3 + Math.sin(t.current * 2) * 0.08 + windup * 1.1 - strike * 2.0;
       weaponRef.current.rotation.x = 0.2 - windup * 0.4 + strike * 0.8;
-    }
-    // Chest rune pulses with heartbeat; flares on strike
-    if (runeRef.current) {
-      const m = runeRef.current.material as THREE.MeshStandardMaterial;
-      m.emissiveIntensity = 3 + Math.sin(t.current * 2.5) * 1.2 + strike * 5;
     }
   });
 
@@ -413,7 +401,7 @@ function EliteMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInter
           <boxGeometry args={[0.95, 0.95, 0.6]} />
           <meshStandardMaterial {...PLATE} />
         </mesh>
-        <mesh ref={runeRef} position={[0, 0, 0.31]}>
+        <mesh position={[0, 0, 0.31]}>
           <cylinderGeometry args={[0.15, 0.15, 0.04, 6]} />
           <meshStandardMaterial color="#ff40ff" emissive="#ff00ff" emissiveIntensity={3} roughness={0.2} metalness={0.3} />
         </mesh>
@@ -492,7 +480,6 @@ function EliteMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInter
       </mesh>
 
       {/* Ambient elite glow */}
-      <pointLight color="#ff3300" intensity={1.2} distance={5} decay={2} position={[0, 1.5, 0]} />
     </group>
   );
 }
@@ -515,7 +502,6 @@ function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { col
   const torsoRef = useRef<THREE.Group>(null);
   const capeRef = useRef<THREE.Mesh>(null);
   const crownRef = useRef<THREE.Group>(null);
-  const sealRef = useRef<THREE.Mesh>(null);
   const prevAttackRef = useRef(attackTimer);
   const windupRef = useRef(0);
   const strikeRef = useRef(0);
@@ -538,11 +524,6 @@ function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { col
       const breath = 1 + Math.sin(t.current * 1.2) * 0.03;
       torsoRef.current.scale.set(breath, 1, breath);
       torsoRef.current.rotation.x = strike * 0.3 - windup * 0.08;
-    }
-    // Seal pulses with heartbeat; flares on strike
-    if (sealRef.current) {
-      const m = sealRef.current.material as THREE.MeshStandardMaterial;
-      m.emissiveIntensity = 3 + Math.sin(t.current * 2.2) * 1.5 + strike * 6;
     }
     // Crown of shattered chains orbits slowly, bobs on breath
     if (crownRef.current) {
@@ -576,12 +557,12 @@ function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { col
     <group>
       {/* Aura ring — single flat circle instead of torus (cheaper) */}
       <mesh ref={auraRef} position={[0, 0.08, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1.65, 1.85, 24]} />
-        <meshStandardMaterial color="#cc00ff" emissive="#aa00ff" emissiveIntensity={3} transparent opacity={0.7} side={THREE.DoubleSide} />
+        <ringGeometry args={[1.65, 1.85, 16]} />
+        <meshStandardMaterial color="#cc00ff" emissive="#aa00ff" emissiveIntensity={3} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
       <mesh ref={auraRef2} position={[0, 0.2, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1.2, 1.4, 20]} />
-        <meshStandardMaterial color="#ff40ff" emissive="#ff00cc" emissiveIntensity={3.5} transparent opacity={0.6} side={THREE.DoubleSide} />
+        <ringGeometry args={[1.2, 1.4, 12]} />
+        <meshStandardMaterial color="#ff40ff" emissive="#ff00cc" emissiveIntensity={3.5} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
 
       {/* Legs — greaves + boots merged */}
@@ -607,7 +588,7 @@ function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { col
           <meshStandardMaterial {...plate} />
         </mesh>
         {/* Glowing warden-seal */}
-        <mesh ref={sealRef} position={[0, 0.05, 0.53]}>
+        <mesh position={[0, 0.05, 0.53]}>
           <cylinderGeometry args={[0.28, 0.28, 0.04, 6]} />
           <meshStandardMaterial color="#ff00ff" emissive="#cc00ff" emissiveIntensity={3.5} roughness={0.2} metalness={0.3} />
         </mesh>
@@ -701,7 +682,6 @@ function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { col
       </group>
 
       {/* Ambient boss light */}
-      <pointLight color="#aa00ff" intensity={3} distance={15} decay={2} position={[0, 2.2, 0]} />
     </group>
   );
 }
@@ -764,7 +744,6 @@ function XPGoblinMesh({ color, emissive, flash }: { color: string; emissive: str
         <boxGeometry args={[0.16, 0.2, 0.16]} />
         <meshStandardMaterial {...mat} />
       </mesh>
-      <pointLight color="#ffaa00" intensity={2} distance={4} decay={2} position={[0, 0.2, 0]} />
     </group>
   );
 }
@@ -955,7 +934,6 @@ function WarriorChampionMesh({ color, emissive, flash, walkSpeed, attackTimer, a
           <meshStandardMaterial {...goldMat} />
         </mesh>
       ))}
-      <pointLight color="#4488ff" intensity={4} distance={12} decay={2} />
     </group>
   );
 }
@@ -1057,7 +1035,6 @@ function MageChampionMesh({ color, emissive, flash }: { color: string; emissive:
         <sphereGeometry args={[0.07, 6, 6]} />
         <meshStandardMaterial color="#ee00ff" emissive="#cc00ff" emissiveIntensity={8} />
       </mesh>
-      <pointLight color="#9900ff" intensity={5} distance={14} decay={2} />
     </group>
   );
 }
@@ -1151,7 +1128,6 @@ function RogueChampionMesh({ color, emissive, flash, walkSpeed }: { color: strin
         <boxGeometry args={[0.12, 0.05, 0.02]} />
         <meshStandardMaterial color="#00ff88" emissive="#00dd66" emissiveIntensity={8} />
       </mesh>
-      <pointLight color="#00ff88" intensity={4} distance={12} decay={2} />
     </group>
   );
 }
@@ -1193,7 +1169,6 @@ function NecromancerChampionMesh({ color, emissive, flash, walkSpeed, attackTime
       <mesh castShadow position={[0.68, 1.75, 0.15]} rotation={[0, 0, -0.8]}><boxGeometry args={[0.06, 0.7, 0.03]} /><meshStandardMaterial {...mat} /></mesh>
       {/* Tattered cape */}
       <mesh castShadow position={[0, 0.9, -0.28]}><boxGeometry args={[0.65, 1.0, 0.05]} /><meshStandardMaterial {...dark} /></mesh>
-      <pointLight color="#9900ff" intensity={2} distance={6} decay={2} position={[0, 1.5, 0]} />
     </group>
   );
 }
