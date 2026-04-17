@@ -1336,6 +1336,48 @@ function RogueChampionMesh({ color, emissive, flash, walkSpeed }: { color: strin
   );
 }
 
+// ─── Necromancer Champion ─────────────────────────────────────────────────────
+
+function NecromancerChampionMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
+  const t = useRef(Math.random() * 100);
+  const groupRef = useRef<THREE.Group>(null);
+  const prevAttackRef = useRef(attackTimer);
+  const windupRef = useRef(0);
+  const strikeRef = useRef(0);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (!groupRef.current) return;
+    const moving = walkSpeed > 0.3;
+    const bob = moving ? Math.abs(Math.sin(t.current * 6)) * 0.04 : Math.sin(t.current * 1.5) * 0.02;
+    groupRef.current.position.y = bob;
+    updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
+  });
+
+  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 4 : 1.2, roughness: 0.4, metalness: 0.5 };
+  const dark = { color: flash ? "#ffffff" : "#0a0012", emissive: "#1a0030", emissiveIntensity: flash ? 3 : 0.6 };
+
+  return (
+    <group ref={groupRef}>
+      {/* Robe body — void black */}
+      <mesh castShadow position={[0, 1.0, 0]}><boxGeometry args={[0.7, 1.0, 0.5]} /><meshStandardMaterial {...dark} /></mesh>
+      {/* Robe skirt */}
+      <mesh castShadow position={[0, 0.5, 0]}><boxGeometry args={[0.82, 0.4, 0.58]} /><meshStandardMaterial {...dark} /></mesh>
+      {/* Hood */}
+      <mesh castShadow position={[0, 1.75, 0.06]}><boxGeometry args={[0.55, 0.55, 0.55]} /><meshStandardMaterial {...mat} /></mesh>
+      {/* Eyes — purple glow */}
+      <mesh position={[-0.12, 1.75, 0.32]}><boxGeometry args={[0.1, 0.06, 0.02]} /><meshStandardMaterial color="#cc00ff" emissive="#cc00ff" emissiveIntensity={8} /></mesh>
+      <mesh position={[0.12, 1.75, 0.32]}><boxGeometry args={[0.1, 0.06, 0.02]} /><meshStandardMaterial color="#cc00ff" emissive="#cc00ff" emissiveIntensity={8} /></mesh>
+      {/* Scythe */}
+      <mesh castShadow position={[0.5, 0.8, 0.15]} rotation={[0, 0, -0.2]}><boxGeometry args={[0.06, 1.8, 0.06]} /><meshStandardMaterial color="#1a0828" /></mesh>
+      <mesh castShadow position={[0.68, 1.75, 0.15]} rotation={[0, 0, -0.8]}><boxGeometry args={[0.06, 0.7, 0.03]} /><meshStandardMaterial {...mat} /></mesh>
+      {/* Tattered cape */}
+      <mesh castShadow position={[0, 0.9, -0.28]}><boxGeometry args={[0.65, 1.0, 0.05]} /><meshStandardMaterial {...dark} /></mesh>
+      <pointLight color="#9900ff" intensity={2} distance={6} decay={2} position={[0, 1.5, 0]} />
+    </group>
+  );
+}
+
 // ─── Status Effect Visuals ───────────────────────────────────────────────────
 
 const _poisonGeo = new THREE.SphereGeometry(0.06, 4, 4);
@@ -1688,6 +1730,7 @@ export function Enemy3D({ enemy }: EnemyProps) {
         )}
         {enemy.type === "mage_champion" && <MageChampionMesh {...meshProps} />}
         {enemy.type === "rogue_champion" && <RogueChampionMesh {...meshProps} walkSpeed={walkSpeed} />}
+        {enemy.type === "necromancer_champion" && <NecromancerChampionMesh {...meshProps} walkSpeed={walkSpeed} {...attackProps} />}
       </group>
 
       {/* Status effect visuals */}

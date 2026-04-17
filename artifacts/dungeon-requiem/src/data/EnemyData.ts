@@ -9,7 +9,7 @@
  *   orange= 50× (boss)
  */
 
-export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss" | "xp_goblin" | "warrior_champion" | "mage_champion" | "rogue_champion";
+export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss" | "xp_goblin" | "warrior_champion" | "mage_champion" | "rogue_champion" | "necromancer_champion";
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
 
 export interface EnemyDef {
@@ -178,6 +178,23 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     scoreValue: 0,
     color: "#18b870",
     emissive: "#0a4020",
+    scale: 1.8,
+  },
+
+  necromancer_champion: {
+    type: "necromancer_champion",
+    displayName: "The Dread Shepherd",
+    health: 2000,
+    damage: 35,
+    moveSpeed: 4.0,
+    xpReward: 0,
+    crystalTier: "orange",
+    attackRange: 6.0,
+    attackInterval: 1.6,
+    collisionRadius: 1.7,
+    scoreValue: 0,
+    color: "#6a1e8a",
+    emissive: "#2a0840",
     scale: 1.8,
   },
 };

@@ -1083,7 +1083,7 @@ function spawnBoss(wave: number): EnemyRuntime {
 }
 
 function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult = 1): EnemyRuntime {
-  const type = `${cls}_champion` as "warrior_champion" | "mage_champion" | "rogue_champion";
+  const type = `${cls}_champion` as "warrior_champion" | "mage_champion" | "rogue_champion" | "necromancer_champion";
   const def = ENEMY_DATA[type];
   const hp = Math.round(def.health * hpMult);
   const finalDmg = Math.round(def.damage * dmgMult);
@@ -2124,7 +2124,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       }
 
       // Attack player (champions with custom AI handle damage themselves — skip generic melee)
-      const skipGenericMelee = e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "warrior_champion";
+      const skipGenericMelee = e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "warrior_champion" || e.type === "necromancer_champion";
       if (!skipGenericMelee && dist <= e.attackRange) {
         e.attackTimer -= delta;
         if (e.attackTimer <= 0) {
@@ -2843,7 +2843,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     // ── Champion AI (Trial of Champions) ──────────────────────────────────
     for (const e of g.enemies) {
       if (e.dead) continue;
-      const isChamp = e.type === "warrior_champion" || e.type === "mage_champion" || e.type === "rogue_champion";
+      const isChamp = e.type === "warrior_champion" || e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "necromancer_champion";
       if (!isChamp) continue;
 
       // ── Enrage phases at 75/50/25% HP ─────────────────────────────────
@@ -3024,7 +3024,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
 
       } else if (e.type === "rogue_champion") {
         // ── Rogue Champion: fast, rapid twin shots, periodic dash ─────
-        // Circle-strafe around player at ~8 units distance
         const strafeAngle = Math.atan2(p.x - e.x, p.z - e.z) + 0.015 * e.moveSpeed;
         const targetX = p.x - Math.sin(strafeAngle) * 8;
         const targetZ = p.z - Math.cos(strafeAngle) * 8;
@@ -3035,7 +3034,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
         e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
 
-        // Twin rapid shots
         e.radialTimer -= delta;
         if (e.radialTimer <= 0) {
           e.radialTimer = e.attackInterval;
@@ -3053,7 +3051,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           }
         }
 
-        // Teleport dash every 3s (minionTimer)
         e.minionTimer -= delta;
         if (e.minionTimer <= 0) {
           e.minionTimer = 3.0 - e.enragePhase * 0.5;
@@ -3063,6 +3060,61 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           e.z = Math.max(-ARENA, Math.min(ARENA, p.z + Math.cos(dashAngle) * dashDist));
           e.hitFlashTimer = 0.2;
           audioManager.play("dash");
+        }
+
+      } else if (e.type === "necromancer_champion") {
+        // ── Necromancer Champion: melee stalker + Death Surge AoE ────
+        // Pursues the player like warrior champion but with a radial
+        // burst AoE (Death Surge) instead of arc slash projectiles.
+        const cx = p.x - e.x, cz = p.z - e.z;
+        const clen = Math.sqrt(cx * cx + cz * cz) || 1;
+        e.x += (cx / clen) * e.moveSpeed * 0.7 * delta;
+        e.z += (cz / clen) * e.moveSpeed * 0.7 * delta;
+        e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
+        e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
+
+        // Death Surge AoE — reuse radialTimer
+        e.radialTimer -= delta;
+        if (e.radialTimer <= 0 && cDist <= 10) {
+          e.radialTimer = 6.0 - e.enragePhase * 1.0;
+          const surgeDmg = e.damage * 2.0;
+          const SURGE_R = 7;
+          if (cDist <= SURGE_R && p.invTimer <= 0 && !p.dead) {
+            const eff = applyArmor(surgeDmg, stats.armor, stats.incomingDamageMult);
+            p.hp -= eff; spawnPlayerDmgPopup(p, eff);
+            p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+            handlePlayerDamageTakenProcs(p, stats, g);
+            if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
+          }
+          triggerShake(g, 0.4, 0.3);
+          audioManager.play("boss_special");
+        }
+
+        // Ground slam special
+        e.specialTimer -= delta;
+        if (e.specialTimer <= 0) {
+          e.specialTimer = 8.0;
+          e.specialWarning = true;
+          e.specialWarnTimer = 1.3;
+          store.setBossSpecialWarn(true);
+          audioManager.play("boss_special");
+        }
+        if (e.specialWarning) {
+          e.specialWarnTimer -= delta;
+          if (e.specialWarnTimer <= 0) {
+            e.specialWarning = false;
+            store.setBossSpecialWarn(false);
+            triggerShake(g, 0.5, 0.3);
+            triggerFreeze(g, 40);
+            if (cDist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
+              const rawDmg = e.damage * 1.5;
+              const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
+              p.hp -= effective; spawnPlayerDmgPopup(p, effective);
+              p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+              handlePlayerDamageTakenProcs(p, stats, g);
+              if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
+            }
+          }
         }
 
       }

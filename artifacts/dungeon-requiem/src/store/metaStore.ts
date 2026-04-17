@@ -41,6 +41,11 @@ export const TRIAL_BUFFS: TrialBuff[] = [
   { class: "rogue",   difficulty: "normal",    label: "Shadow's Swiftness",   description: "+0.5 Move Speed permanently",    stat: "moveSpeed",   value: 0.5 },
   { class: "rogue",   difficulty: "hard",      label: "Shadow's Edge",        description: "+3% Dodge Chance permanently",   stat: "dodgeChance", value: 0.03 },
   { class: "rogue",   difficulty: "nightmare", label: "Shadow's Embrace",     description: "+3% Lifesteal permanently",      stat: "lifesteal",   value: 0.03 },
+  // ── Necromancer champion rewards ──
+  // TODO: replace with Necromancer-specific trial track when available
+  { class: "necromancer", difficulty: "normal",    label: "Shepherd's Vigor",    description: "+15 Max HP permanently",         stat: "maxHealth",   value: 15 },
+  { class: "necromancer", difficulty: "hard",      label: "Shepherd's Command",  description: "+3 Damage permanently",          stat: "damage",      value: 3 },
+  { class: "necromancer", difficulty: "nightmare", label: "Shepherd's Dominion", description: "+3 Armor permanently",           stat: "armor",       value: 3 },
 ];
 
 /** Difficulty ranking for comparison. */
