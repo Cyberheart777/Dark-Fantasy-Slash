@@ -23,7 +23,7 @@ import { RACE_DATA, RACES, type RaceType } from "../../data/RaceData";
 
 const clickSfx = () => audioManager.play("menu_click");
 
-const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue"];
+const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue", "necromancer"];
 
 /** Which classes are playable in the labyrinth today. All three
  *  unlocked as of step 4 commit G — mage + rogue get ranged

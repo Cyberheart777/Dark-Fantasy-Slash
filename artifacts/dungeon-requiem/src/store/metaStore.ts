@@ -208,7 +208,7 @@ const DEFAULT_STATE = {
   milestones: {} as Record<string, boolean>,
   totalKills: 0,
   bestWaveEver: 0,
-  unlockedClasses: ["warrior"] as string[],
+  unlockedClasses: ["warrior", "necromancer"] as string[],
   unlockedRaces: ["human"] as string[],
   trialWins: {} as Record<string, string>,
   difficultyClears: { normal: 0, hard: 0, nightmare: 0 } as Record<DifficultyTier, number>,
@@ -536,6 +536,9 @@ export const useMetaStore = create<MetaState>()(
           };
         }
         return state as MetaState;
+      },
+      onRehydrateStorage: () => (state) => {
+        if (state) state.checkUnlocks();
       },
     },
   ),
