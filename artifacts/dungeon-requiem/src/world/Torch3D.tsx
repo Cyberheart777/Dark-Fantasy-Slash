@@ -80,9 +80,6 @@ export function Torch3D({ position }: TorchProps) {
         intensity={3.5}
         distance={22}
         decay={1}
-        castShadow
-        shadow-mapSize={[256, 256]}
-        shadow-bias={-0.002}
       />
     </group>
   );

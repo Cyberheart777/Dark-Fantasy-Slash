@@ -320,30 +320,13 @@ function WallButtress({ x, y, z, along }: { x: number; y: number; z: number; alo
   const width = along === "x" ? 0.35 : 0.5;
   return (
     <group position={[x, 0, z]}>
-      {/* Pilaster — full height vertical stone strip */}
-      <mesh castShadow position={[0, WH / 2, 0]}>
+      <mesh position={[0, WH / 2, 0]}>
         <boxGeometry args={[width, WH, depth]} />
         <meshStandardMaterial color="#3e3058" roughness={0.9} metalness={0.05} />
       </mesh>
-      {/* Pilaster cap — small crown at top */}
-      <mesh position={[0, WH - 0.15, 0]}>
-        <boxGeometry args={[width + 0.12, 0.3, depth + 0.12]} />
-        <meshStandardMaterial color={ACCENT_COLOR} roughness={0.8} metalness={0.12} />
-      </mesh>
-      {/* Pilaster base — wider foot */}
-      <mesh position={[0, 0.2, 0]}>
-        <boxGeometry args={[width + 0.08, 0.4, depth + 0.08]} />
-        <meshStandardMaterial color="#2a1e3e" roughness={0.95} />
-      </mesh>
-      {/* Carved rune inset — small glowing rectangle at eye height */}
       <mesh position={[0, WH * 0.55, along === "z" ? (z > 0 ? -depth / 2 - 0.02 : depth / 2 + 0.02) : 0]}>
         <boxGeometry args={[width * 0.4, 0.5, 0.02]} />
-        <meshStandardMaterial
-          color="#5a30a0"
-          emissive="#4a2080"
-          emissiveIntensity={0.8}
-          roughness={0.3}
-        />
+        <meshStandardMaterial color="#5a30a0" emissive="#4a2080" emissiveIntensity={0.8} roughness={0.3} />
       </mesh>
     </group>
   );
