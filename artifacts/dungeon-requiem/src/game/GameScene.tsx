@@ -3966,7 +3966,7 @@ function Lighting() {
   return (
     <>
       {/* Very dim blue-black ambient — dungeon should feel dark */}
-      <ambientLight color="#1a1a2e" intensity={0.4} />
+      <ambientLight color="#1a1a2e" intensity={0.25} />
       {/* Cool moonlit overhead — faint directional for shadow casting */}
       <directionalLight color="#6688bb" intensity={1.0} position={[5, 30, 15]} castShadow
         shadow-mapSize={[1024, 1024]}
@@ -3989,7 +3989,7 @@ function PlayerLight({ gs }: { gs: React.RefObject<GameState | null> }) {
     const p = gs.current.player;
     lightRef.current.position.set(p.x, 6, p.z);
   });
-  return <pointLight ref={lightRef} color="#ffaa66" intensity={3} distance={32} decay={2} />;
+  return <pointLight ref={lightRef} color="#ffaa66" intensity={3} distance={32} decay={1} />;
 }
 
 // ─── Scene content (inside Canvas) ───────────────────────────────────────────

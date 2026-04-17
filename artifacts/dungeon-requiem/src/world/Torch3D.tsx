@@ -77,9 +77,9 @@ export function Torch3D({ position }: TorchProps) {
       <pointLight
         ref={lightRef}
         color="#ff8800"
-        intensity={2.5}
-        distance={18}
-        decay={2}
+        intensity={3.5}
+        distance={22}
+        decay={1}
         castShadow
         shadow-mapSize={[256, 256]}
         shadow-bias={-0.002}
