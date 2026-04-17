@@ -32,6 +32,7 @@ const LABYRINTH_CLASS_AVAILABLE: Record<CharacterClass, boolean> = {
   warrior: true,
   mage: true,
   rogue: true,
+  necromancer: true,
 };
 
 const LABYRINTH_CLASS_COMING_SOON_HINT = "Playable in a future labyrinth update.";

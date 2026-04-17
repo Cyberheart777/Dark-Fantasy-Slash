@@ -1,9 +1,9 @@
 /**
  * CharacterData.ts
- * Defines the three playable classes: Warrior, Mage, Rogue.
+ * Defines the four playable classes: Warrior, Mage, Rogue, Necromancer.
  */
 
-export type CharacterClass = "warrior" | "mage" | "rogue";
+export type CharacterClass = "warrior" | "mage" | "rogue" | "necromancer";
 
 export interface CharacterDef {
   id: CharacterClass;
@@ -120,5 +120,33 @@ export const CHARACTER_DATA: Record<CharacterClass, CharacterDef> = {
     accentColor: "#40e8a0",
     auraColor: "#20c070",
     image: "rogue.png",
+  },
+
+  necromancer: {
+    id: "necromancer",
+    name: "NECROMANCER",
+    title: "Dread Shepherd",
+    description: "Reaps with a scythe and raises fallen foes as skeletal mage minions.",
+    lore: "Death is not the end. It is a promotion.",
+    story: "You entered the Vault carrying nothing but a curved blade and a whisper you shouldn't have answered. The dead down here don't stay dead — and you've learned to make that work for you.",
+    hp: 110,
+    damage: 14,
+    attackSpeed: 0.85,
+    moveSpeed: 7,
+    armor: 3,
+    dashCooldown: 2.0,
+    critChance: 0.06,
+    attackType: "melee",
+    attackRange: 6.0,
+    projectileSpeed: 0,
+    projectilePiercing: false,
+    projectileCount: 0,
+    projectileSpread: 0,
+    projectileRadius: 0,
+    projectileLifetime: 0,
+    color: "#6a1e8a",
+    accentColor: "#9944cc",
+    auraColor: "#7030a0",
+    image: "necromancer.png",
   },
 };

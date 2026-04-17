@@ -1593,8 +1593,10 @@ function CombatEnemyLoop({
     };
     const effectiveCrit = critChance + (gearBonuses.critChance ?? 0);
     const isRogue = charClass === "rogue";
+    const isNecromancer = charClass === "necromancer";
+    const isMelee = isWarrior || isNecromancer;
     if (isWarrior) tickLabWarrior(warriorStateRef.current, delta);
-    if (!isWarrior) tickRangedAttack(rangedAttackStateRef.current, delta);
+    if (!isMelee) tickRangedAttack(rangedAttackStateRef.current, delta);
 
     // 2) Auto-attack per class. No manual trigger — the player fires
     //    whenever their cooldown is ready AND a target is available:
@@ -1609,7 +1611,7 @@ function CombatEnemyLoop({
     //    attack on desktop (spacebar / click) — that keeps keyboard
     //    play snappy even though the button is no longer required.
     const inputState = input.state;
-    const autoAimRange = isWarrior
+    const autoAimRange = isMelee
       ? effectiveStats.atkRange * 1.15
       : RANGED_AUTO_RANGE;
     const aimTarget = findNearestEnemyInRange(enemies, p.x, p.z, autoAimRange);
@@ -1630,7 +1632,7 @@ function CombatEnemyLoop({
       inputState.attack;
     if (inputState.attack) input.consumeAttack();
     if (canAttack) {
-      if (isWarrior) {
+      if (isMelee) {
         if (tryStartSwing(atk, aimAngle, effectiveStats)) {
           audioManager.play("attack_melee");
           for (const e of enemies) {
@@ -2926,9 +2928,10 @@ function evaluateLabRunAchievements(
 }
 
 function rivalOrderForClass(cls: CharacterClass): ["rival_warrior" | "rival_mage" | "rival_rogue", "rival_warrior" | "rival_mage" | "rival_rogue"] {
-  if (cls === "warrior") return ["rival_mage",    "rival_rogue"];
-  if (cls === "mage")    return ["rival_warrior", "rival_rogue"];
-  return                        ["rival_warrior", "rival_mage"];
+  if (cls === "warrior")     return ["rival_mage",    "rival_rogue"];
+  if (cls === "mage")        return ["rival_warrior", "rival_rogue"];
+  if (cls === "necromancer") return ["rival_warrior", "rival_mage"];
+  return                            ["rival_warrior", "rival_mage"];
 }
 
 /** Rival-kill reward handler. Centralised so both kill paths (melee

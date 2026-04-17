@@ -25,12 +25,13 @@ const clickSfx = () => audioManager.play("menu_click");
  */
 const CHARSELECT_BG_URL = `${import.meta.env.BASE_URL}images/character-menu-bg.png`;
 
-const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue"];
+const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue", "necromancer"];
 
 const CLASS_UNLOCK_CONDITION: Record<CharacterClass, string | null> = {
   warrior: null,
   mage: "Reach Wave 5",
   rogue: "Slay 100 enemies (cumulative)",
+  necromancer: "Clear Wave 15",
 };
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -286,7 +287,7 @@ export function CharacterSelect() {
                         {/* Compact attack badge — always visible */}
                         {!locked && !isSelected && (
                           <span style={{ fontSize: 9, letterSpacing: 1, color: def.accentColor, fontFamily: "monospace", flexShrink: 0 }}>
-                            {c === "warrior" ? "⚔ MELEE" : c === "mage" ? "✦ ORB" : "◆ DAGGERS"}
+                            {c === "warrior" ? "⚔ MELEE" : c === "mage" ? "✦ ORB" : c === "rogue" ? "◆ DAGGERS" : "⚰ SCYTHE"}
                           </span>
                         )}
                         {isSelected && !locked && <span style={{ ...S.checkmark, color: def.accentColor }}>✔</span>}
@@ -307,7 +308,7 @@ export function CharacterSelect() {
                             <StatBar label="ATK" value={def.attackSpeed}  max={2.5}  color="#c040e0" />
                           </div>
                           <div style={{ ...S.attackBadge, color: def.accentColor, borderColor: def.color + "50" }}>
-                            {c === "warrior" ? "⚔ MELEE SWEEP" : c === "mage" ? "✦ PIERCING ORB" : "◆ TWIN DAGGERS"}
+                            {c === "warrior" ? "⚔ MELEE SWEEP" : c === "mage" ? "✦ PIERCING ORB" : c === "rogue" ? "◆ TWIN DAGGERS" : "⚰ SCYTHE + MINIONS"}
                           </div>
                           <div style={{ ...S.storyBlurb, borderColor: def.color + "40" }}>
                             {def.story}

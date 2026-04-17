@@ -28,13 +28,9 @@ const WARRIOR_GLB_URL = `${import.meta.env.BASE_URL}models/warrior/Character_out
 export function Player3D({ gs }: PlayerProps) {
   const charClass = gs.current?.charClass ?? "warrior";
 
-  if (charClass === "mage")  return <MageMeshAnimated  gs={gs} />;
-  if (charClass === "rogue") return <RogueMeshAnimated gs={gs} />;
-  // Warrior GLB reverted to procedural per user request — consistent,
-  // stable visual across both main game and labyrinth. Mage + Rogue
-  // GLBs are unaffected. The GLB loader code below is kept for now
-  // (dead) in case we ever re-enable; the preload is disabled in
-  // WarriorMeshGLB definition so the network fetch no longer fires.
+  if (charClass === "mage")       return <MageMeshAnimated  gs={gs} />;
+  if (charClass === "rogue")      return <RogueMeshAnimated gs={gs} />;
+  if (charClass === "necromancer") return <NecromancerMeshAnimated gs={gs} />;
   return <WarriorMeshAnimated gs={gs} />;
 }
 
@@ -527,6 +523,163 @@ function RogueMeshAnimated({ gs }: PlayerProps) {
         </group>
       </group>
       <pointLight ref={playerLtRef} color="#20c870" intensity={1.5} distance={10} decay={2} />
+    </>
+  );
+}
+
+// ─── Necromancer — robed scythe-wielder (meshBasicMaterial, iOS-safe) ────────
+
+function NecromancerMeshAnimated({ gs }: PlayerProps) {
+  const groupRef    = useRef<THREE.Group>(null);
+  const bodyRef     = useRef<THREE.Mesh>(null);
+  const leftArmRef  = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const legsRef     = useRef<THREE.Group>(null);
+  const weaponRef   = useRef<THREE.Group>(null);
+  const capeRef     = useRef<THREE.Mesh>(null);
+  const playerLtRef = useRef<THREE.PointLight>(null);
+  const t           = useRef(0);
+  const lastX       = useRef(0);
+  const lastZ       = useRef(0);
+  const weaponSwing = useRef(0);
+  const lastAttack  = useRef(0);
+
+  useFrame((_, delta) => {
+    if (!gs.current || !groupRef.current) return;
+    t.current += delta;
+    const p = gs.current.player;
+    groupRef.current.position.set(p.x, 0, p.z);
+    groupRef.current.rotation.y = p.angle;
+    applyRaceScale(gs, groupRef.current);
+    const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
+    lastX.current = p.x; lastZ.current = p.z;
+    if (leftArmRef.current && rightArmRef.current && legsRef.current) {
+      if (isMoving && !p.isDashing) {
+        const freq = 7, amp = 0.45;
+        leftArmRef.current.rotation.x  =  Math.sin(t.current * freq) * amp;
+        rightArmRef.current.rotation.x = -Math.sin(t.current * freq) * amp;
+        const lg = legsRef.current.children;
+        if (lg[0]) (lg[0] as THREE.Group).rotation.x =  Math.sin(t.current * freq) * amp;
+        if (lg[1]) (lg[1] as THREE.Group).rotation.x = -Math.sin(t.current * freq) * amp;
+      } else {
+        leftArmRef.current.rotation.x  = Math.sin(t.current * 1.5) * 0.04;
+        rightArmRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.04 + 0.08;
+        const lg = legsRef.current.children;
+        if (lg[0]) (lg[0] as THREE.Group).rotation.x = 0;
+        if (lg[1]) (lg[1] as THREE.Group).rotation.x = 0;
+      }
+    }
+    if (bodyRef.current) bodyRef.current.position.y = 1.0 + Math.sin(t.current * 1.5) * 0.02;
+    if (p.attackTrigger !== lastAttack.current) { lastAttack.current = p.attackTrigger; weaponSwing.current = 1; }
+    if (weaponSwing.current > 0) weaponSwing.current = Math.max(0, weaponSwing.current - delta * 4);
+    if (weaponRef.current) {
+      const swp = weaponSwing.current;
+      if (swp > 0) {
+        const prog = 1 - swp;
+        // Wide horizontal slash for scythe
+        weaponRef.current.rotation.z = -0.3 + prog * Math.PI * 0.8;
+        weaponRef.current.rotation.x = Math.sin(prog * Math.PI) * 0.4;
+      } else {
+        weaponRef.current.rotation.z = THREE.MathUtils.lerp(weaponRef.current.rotation.z, -0.3, 0.12);
+        weaponRef.current.rotation.x = THREE.MathUtils.lerp(weaponRef.current.rotation.x, 0, 0.12);
+      }
+    }
+    groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, p.isDashing ? -0.2 : 0, 0.2);
+    if (capeRef.current) capeRef.current.rotation.x = Math.sin(t.current * 2.5) * 0.08;
+    if (playerLtRef.current) {
+      playerLtRef.current.position.set(p.x, 2, p.z);
+      const invPct = Math.max(0, p.invTimer / GAME_CONFIG_INV_TIME);
+      playerLtRef.current.intensity = 1.2 + invPct * 3;
+      if (invPct > 0.1) playerLtRef.current.color.setRGB(0.8, 0.1, 0.8);
+      else playerLtRef.current.color.setRGB(0.5, 0.15, 0.7);
+    }
+  });
+
+  // Palette
+  const ROBE = "#1a0828"; const INNER = "#0e0418"; const HOOD = "#120620";
+  const SKIN = "#c8b8a0"; const SCYTHE_SHAFT = "#2a1840"; const SCYTHE_BLADE = "#6a1e8a";
+  const EYE = "#cc66ff";
+
+  return (
+    <>
+      <group ref={groupRef}>
+        {/* Legs (hidden under robe, short stubs) */}
+        <group ref={legsRef}>
+          <group position={[-0.15, 0.4, 0]}>
+            <mesh castShadow><boxGeometry args={[0.18, 0.45, 0.18]} /><meshBasicMaterial color={INNER} /></mesh>
+          </group>
+          <group position={[0.15, 0.4, 0]}>
+            <mesh castShadow><boxGeometry args={[0.18, 0.45, 0.18]} /><meshBasicMaterial color={INNER} /></mesh>
+          </group>
+        </group>
+        {/* Robe body — wide at bottom (tattered skirt look) */}
+        <mesh ref={bodyRef} castShadow position={[0, 1.0, 0]}>
+          <boxGeometry args={[0.68, 0.95, 0.5]} />
+          <meshBasicMaterial color={ROBE} />
+        </mesh>
+        {/* Robe skirt — wider hem */}
+        <mesh castShadow position={[0, 0.55, 0]}>
+          <boxGeometry args={[0.78, 0.35, 0.58]} />
+          <meshBasicMaterial color={ROBE} />
+        </mesh>
+        {/* Hood — slightly forward-tilted */}
+        <mesh castShadow position={[0, 1.72, 0.06]}>
+          <boxGeometry args={[0.52, 0.52, 0.52]} />
+          <meshBasicMaterial color={HOOD} />
+        </mesh>
+        {/* Hood top rim */}
+        <mesh castShadow position={[0, 1.95, -0.04]}>
+          <boxGeometry args={[0.46, 0.12, 0.48]} />
+          <meshBasicMaterial color={HOOD} />
+        </mesh>
+        {/* Glowing eyes (deep inside hood) */}
+        <mesh position={[-0.1, 1.7, 0.27]}>
+          <boxGeometry args={[0.08, 0.05, 0.02]} />
+          <meshBasicMaterial color={EYE} />
+        </mesh>
+        <mesh position={[0.1, 1.7, 0.27]}>
+          <boxGeometry args={[0.08, 0.05, 0.02]} />
+          <meshBasicMaterial color={EYE} />
+        </mesh>
+        {/* Left arm — skeletal hand visible at hem */}
+        <group ref={leftArmRef} position={[-0.42, 1.12, 0]}>
+          <mesh castShadow position={[0, -0.15, 0]}><boxGeometry args={[0.2, 0.55, 0.2]} /><meshBasicMaterial color={ROBE} /></mesh>
+          {/* Skeletal hand */}
+          <mesh castShadow position={[0, -0.48, 0.04]}><boxGeometry args={[0.14, 0.16, 0.1]} /><meshBasicMaterial color={SKIN} /></mesh>
+        </group>
+        {/* Right arm — holds scythe */}
+        <group ref={rightArmRef} position={[0.42, 1.12, 0]}>
+          <mesh castShadow position={[0, -0.15, 0]}><boxGeometry args={[0.2, 0.55, 0.2]} /><meshBasicMaterial color={ROBE} /></mesh>
+        </group>
+        {/* Scythe weapon — shaft up from right hand, blade curves forward at top */}
+        <group position={[0.12, -0.35, 0]} rotation={[0, 0, -0.3]}>
+          <group ref={weaponRef}>
+            {/* Shaft */}
+            <mesh castShadow position={[0, 0.8, 0]}><boxGeometry args={[0.06, 1.8, 0.06]} /><meshBasicMaterial color={SCYTHE_SHAFT} /></mesh>
+            {/* Curved blade — angled forward */}
+            <mesh castShadow position={[0.2, 1.75, 0]} rotation={[0, 0, -0.8]}>
+              <boxGeometry args={[0.06, 0.8, 0.03]} />
+              <meshBasicMaterial color={SCYTHE_BLADE} />
+            </mesh>
+            {/* Blade edge glow */}
+            <mesh position={[0.25, 1.72, 0]} rotation={[0, 0, -0.8]}>
+              <boxGeometry args={[0.02, 0.82, 0.02]} />
+              <meshBasicMaterial color="#cc44ff" />
+            </mesh>
+            {/* Pommel */}
+            <mesh position={[0, -0.15, 0]}>
+              <sphereGeometry args={[0.06, 6, 6]} />
+              <meshBasicMaterial color={SCYTHE_SHAFT} />
+            </mesh>
+          </group>
+        </group>
+        {/* Tattered cape */}
+        <mesh ref={capeRef} castShadow position={[0, 0.95, -0.28]}>
+          <boxGeometry args={[0.6, 0.95, 0.05]} />
+          <meshBasicMaterial color={INNER} />
+        </mesh>
+      </group>
+      <pointLight ref={playerLtRef} />
     </>
   );
 }

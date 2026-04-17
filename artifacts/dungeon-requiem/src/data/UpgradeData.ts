@@ -186,6 +186,23 @@ export interface PlayerStats {
   ricochetBounces: number;        // daggers bounce to N enemies for 50% dmg
   predatorsInstinctEnabled: boolean; // +40% crit dmg vs enemies below 30% HP
   convergenceBladeEnabled: boolean;  // merge all daggers into single mega-projectile
+  // ── Necromancer-specific ────────────────────────────────────────────────────
+  necroRaiseChance: number;          // on-kill chance to raise skeletal mage (0.30 base)
+  necroMinionCap: number;            // max simultaneous skeletal mages (3 base)
+  necroMinionHp: number;             // per-minion HP pool (30 base)
+  necroMinionDamage: number;         // bone projectile damage per shot (4 base)
+  necroMinionFireRate: number;       // seconds between bone shots (1.5 base)
+  necroDeathSurgeDamageMult: number; // multiplier on Death Surge burst damage (1.0 base)
+  necroSoulHarvestHeal: number;      // HP healed when a minion-killed enemy dies (0 base)
+  necroRelentlessDeadDmg: number;    // damage dealt by minion death explosion (0 base)
+  necroNecroticEdge: boolean;        // scythe hits apply 1 poison stack
+  necroArmyOfDarkness: boolean;      // minion cap → 5
+  necroLichsBargain: boolean;        // raise chance → 60% but costs 5 HP
+  necroDeathCoil: boolean;           // Death Surge kills can raise minions
+  necroScytheArcBonus: number;       // extra arc degrees (0 base)
+  necroScytheDamageBonus: number;    // flat bonus scythe damage (0 base)
+  necroMinionHpBonus: number;        // flat bonus minion HP (0 base)
+  necroMinionDamageBonus: number;    // flat bonus bone projectile damage (0 base)
   // ── Gear proc stat fields ──────────────────────────────────────────────────
   critDamageBonus: number;        // gear (+% crit damage), additive to critDamageMultiplier
   poisonDamageBonus: number;      // gear (+% poison damage), additive bonus to poison DPS
@@ -284,6 +301,23 @@ export function createDefaultStats(): PlayerStats {
     ricochetBounces: 0,
     predatorsInstinctEnabled: false,
     convergenceBladeEnabled: false,
+    // Necromancer
+    necroRaiseChance: 0.30,
+    necroMinionCap: 3,
+    necroMinionHp: 30,
+    necroMinionDamage: 4,
+    necroMinionFireRate: 1.5,
+    necroDeathSurgeDamageMult: 1.0,
+    necroSoulHarvestHeal: 0,
+    necroRelentlessDeadDmg: 0,
+    necroNecroticEdge: false,
+    necroArmyOfDarkness: false,
+    necroLichsBargain: false,
+    necroDeathCoil: false,
+    necroScytheArcBonus: 0,
+    necroScytheDamageBonus: 0,
+    necroMinionHpBonus: 0,
+    necroMinionDamageBonus: 0,
     // Gear proc defaults (neutral — no equipped gear)
     critDamageBonus: 0,
     poisonDamageBonus: 0,

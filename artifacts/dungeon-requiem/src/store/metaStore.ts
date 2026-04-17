@@ -342,6 +342,7 @@ export const useMetaStore = create<MetaState>()(
         const newMilestones = { ...s.milestones };
         if (wave >= 5) newMilestones["wave5"] = true;
         if (wave >= 10) newMilestones["wave10"] = true;
+        if (wave >= 15) newMilestones["wave15"] = true;
         set({ bestWaveEver: wave, milestones: newMilestones });
       },
 
@@ -350,6 +351,7 @@ export const useMetaStore = create<MetaState>()(
         const classes: string[] = ["warrior"];
         if (s.milestones["wave5"]) classes.push("mage");
         if (s.milestones["kills100"]) classes.push("rogue");
+        if (s.milestones["wave15"]) classes.push("necromancer");
         const races: string[] = ["human"];
         if (s.milestones["boss_kill"]) races.push("dwarf");
         if (s.milestones["wave10"]) races.push("elf");

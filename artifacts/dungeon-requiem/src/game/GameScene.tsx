@@ -87,6 +87,9 @@ export interface PlayerRuntime {
   cloakAndDaggerReady: boolean;  // rogue: next attack is empowered
   lastAttackTime: number;        // universal: time of last attack for cloak and dagger
   lastX: number; lastZ: number;  // track movement for leyline anchor
+  // ── Necromancer runtime fields ────────────────────────────────────────────
+  deathSurgeCooldown: number;    // seconds remaining on Death Surge cooldown
+  shadowStepVoids: { x: number; z: number; timer: number; }[];  // active void zones
   // ── Gear proc runtime fields ──────────────────────────────────────────────
   arcSlashTimer: number;         // Arc Warblade: counts up to arcSlashInterval, then procs
   phantomWrapCdTimer: number;    // Phantom Wrap: cooldown remaining (seconds)
@@ -196,9 +199,23 @@ export interface GroundEffect {
   appliesPoison?: boolean; // if true, applies poison stacks instead of raw dps
 }
 
+/** Necromancer skeletal-mage minion. Orbits the player at a fixed radius,
+ *  auto-fires bone projectiles at the nearest enemy. Passively collidable:
+ *  enemy projectiles can hit them but enemies don't actively target them. */
+export interface MinionRuntime {
+  id: string;
+  x: number; z: number;
+  angle: number;
+  hp: number; maxHp: number;
+  orbitAngle: number;
+  fireTimer: number;
+  spawnTime: number;
+}
+
 export interface GameState {
   player: PlayerRuntime;
   enemies: EnemyRuntime[];
+  minions: MinionRuntime[];
   xpOrbs: XPOrb[];
   projectiles: Projectile[];
   enemyProjectiles: EnemyProjectile[];
@@ -306,6 +323,8 @@ function makeProgWithMeta(cls: CharacterClass, race: RaceType): { progression: P
     // Class-specific base stats not stored in CharacterData
     critDamageMultiplier: cls === "rogue" ? 2.0 : 1.85,
     healthRegen: cls === "mage" ? 1.0 : 0.5,
+    // Necromancer — wider scythe arc (140° vs warrior 120°)
+    attackArc: cls === "necromancer" ? 140 : 120,
   };
   // 2. Resolve meta flat bonuses + trial buffs on top (Layer 1 — flat additions only)
   const metaMods = buildMetaModifiers(useMetaStore.getState().purchased);
@@ -558,6 +577,9 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     cloakAndDaggerReady: false,
     lastAttackTime: 0,
     lastX: 0, lastZ: 0,
+    // Necromancer runtime
+    deathSurgeCooldown: 0,
+    shadowStepVoids: [],
     // Gear proc runtime
     arcSlashTimer: 0,
     phantomWrapCdTimer: 0,
@@ -1335,6 +1357,72 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               }
             }
 
+          } else if (g.charClass === "necromancer") {
+            // ── Necromancer: Shadow Step — teleport + leave damaging void ──
+            const blinkDist = GAME_CONFIG.PLAYER.DASH_SPEED * GAME_CONFIG.PLAYER.DASH_DURATION;
+            p.x = Math.max(-ARENA, Math.min(ARENA, p.x + dashDir.x * blinkDist));
+            p.z = Math.max(-ARENA, Math.min(ARENA, p.z + dashDir.z * blinkDist));
+            p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.15;
+            p.isDashing = false;
+            p.dashCooldown = stats.dashCooldown;
+            // Spawn void zone at departure point
+            const NECRO_SHADOW_STEP_VOID_DURATION = 2.0;
+            const originVoidX = p.x - dashDir.x * blinkDist;
+            const originVoidZ = p.z - dashDir.z * blinkDist;
+            p.shadowStepVoids.push({ x: originVoidX, z: originVoidZ, timer: NECRO_SHADOW_STEP_VOID_DURATION });
+            triggerBootsOfSpeed(p, stats);
+            // Death Surge — sacrifice all minions for burst AoE
+            if (p.deathSurgeCooldown <= 0 && g.minions.length > 0) {
+              const SURGE_DMG = [0, 20, 45, 80];
+              const count = Math.min(g.minions.length, 3);
+              const baseDmg = SURGE_DMG[count] ?? 80;
+              const dmg = Math.round(baseDmg * stats.necroDeathSurgeDamageMult);
+              const SURGE_RADIUS = 8;
+              for (const e of g.enemies) {
+                if (e.dead) continue;
+                const sx = e.x - originVoidX, sz = e.z - originVoidZ;
+                if (Math.sqrt(sx * sx + sz * sz) <= SURGE_RADIUS) {
+                  e.hp -= dmg; e.hitFlashTimer = 0.3;
+                  if (e.hp <= 0 && !e.dead) {
+                    e.dead = true; g.kills++; g.score += e.scoreValue;
+                    handleBossKillCleanup(e, g);
+                    trySpawnGear(e.type, e.x, e.z, g);
+                    // Death Coil: kills from surge can raise minions
+                    if (stats.necroDeathCoil && e.type !== "boss") {
+                      const minionHp = stats.necroMinionHp + stats.necroMinionHpBonus;
+                      g.minions.push({
+                        id: `minion_surge_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+                        x: e.x, z: e.z, angle: 0,
+                        hp: minionHp, maxHp: minionHp,
+                        orbitAngle: Math.random() * Math.PI * 2,
+                        fireTimer: stats.necroMinionFireRate,
+                        spawnTime: performance.now(),
+                      });
+                    }
+                  }
+                }
+              }
+              // Relentless Dead: each sacrificed minion explodes
+              if (stats.necroRelentlessDeadDmg > 0) {
+                for (const m of g.minions) {
+                  for (const e of g.enemies) {
+                    if (e.dead) continue;
+                    const nx = e.x - m.x, nz = e.z - m.z;
+                    if (Math.sqrt(nx * nx + nz * nz) <= 3) {
+                      e.hp -= stats.necroRelentlessDeadDmg; e.hitFlashTimer = 0.12;
+                      if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; handleBossKillCleanup(e, g); }
+                    }
+                  }
+                }
+              }
+              g.minions = [];
+              triggerShake(g, 0.4, 0.3);
+              p.deathSurgeCooldown = 12.0;
+              // Cap Death Coil raised minions
+              const cap = stats.necroArmyOfDarkness ? 5 : stats.necroMinionCap;
+              while (g.minions.length > cap) g.minions.shift();
+            }
+
           } else {
             // ── Warrior: Knockback Charge — push enemies away ──
             p.isDashing = true;
@@ -1530,6 +1618,78 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               }
             }
           }
+        } else if (g.charClass === "necromancer") {
+          audioManager.play("attack_melee");
+          // ── Necromancer: Scythe Slash — wide 140° arc, raise on kill ──
+          const lowHpMult = getLowHpDamageMult(p, stats);
+          const necroArc = (stats.attackArc + stats.necroScytheArcBonus) / 2 * (Math.PI / 180);
+          const scytheDmg = stats.damage + stats.necroScytheDamageBonus;
+          for (const e of g.enemies) {
+            if (e.dead) continue;
+            const edx = e.x - p.x, edz = e.z - p.z;
+            const dist = Math.sqrt(edx * edx + edz * edz);
+            if (dist > stats.attackRange) continue;
+            const eAngle = Math.atan2(edx, edz);
+            let angleDiff = Math.abs(eAngle - p.angle);
+            if (angleDiff > Math.PI) angleDiff = Math.PI * 2 - angleDiff;
+            if (angleDiff > necroArc) continue;
+            if (cleaved.current.has(e.id) && Math.random() > stats.cleaveChance) continue;
+            const isCrit = Math.random() < stats.critChance;
+            let dmg = Math.round(scytheDmg * lowHpMult * (isCrit ? stats.critDamageMultiplier + stats.critDamageBonus : 1));
+            const weakenReduction = e.weakenPct > 0 ? 1 + e.weakenPct : 1;
+            const markBonus = e.markTimer > 0 ? 1.3 : 1;
+            dmg = Math.round(dmg * weakenReduction * markBonus);
+            e.hp -= dmg;
+            e.hitFlashTimer = isCrit ? 0.22 : 0.12;
+            cleaved.current.add(e.id);
+            spawnTextPopup(e.x, e.z, `${dmg}`, isCrit ? "#ffcc00" : "#ffffff", isCrit ? 1.4 : 1.0);
+            if (isCrit) triggerShake(g, 0.12, 0.12);
+            if (stats.lifesteal > 0) healPlayer(p, stats, dmg * stats.lifesteal);
+            // Necrotic Edge: scythe hits apply 1 poison stack
+            if (stats.necroNecroticEdge) {
+              const poisonDps = stats.venomStackDps > 0 ? stats.venomStackDps : 3;
+              e.poisonStacks = Math.min(e.poisonStacks + 1, getMaxPoisonStacks(stats));
+              e.poisonDps = poisonDps * (1 + stats.poisonDamageBonus);
+            }
+            if (e.hp <= 0 && !e.dead) {
+              e.dead = true; g.kills++; g.score += e.scoreValue;
+              trySpawnGear(e.type, e.x, e.z, g);
+              applyBloodforge(p, stats);
+              handleBossKillCleanup(e, g);
+              if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
+              // Raise chance — skeletal mage minion (wired in commit 2)
+              const raiseChance = stats.necroLichsBargain ? 0.60 : stats.necroRaiseChance;
+              const cap = stats.necroArmyOfDarkness ? 5 : stats.necroMinionCap;
+              if (Math.random() < raiseChance && e.type !== "boss") {
+                if (stats.necroLichsBargain) { p.hp -= 5; if (p.hp <= 0) handlePlayerFatalDmg(p, g); }
+                const minionHp = stats.necroMinionHp + stats.necroMinionHpBonus;
+                const minion: MinionRuntime = {
+                  id: `minion_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+                  x: e.x, z: e.z, angle: 0,
+                  hp: minionHp, maxHp: minionHp,
+                  orbitAngle: Math.random() * Math.PI * 2,
+                  fireTimer: stats.necroMinionFireRate * 0.5,
+                  spawnTime: performance.now(),
+                };
+                g.minions.push(minion);
+                if (g.minions.length > cap) {
+                  const oldest = g.minions.shift()!;
+                  // Relentless Dead: dying minion explodes
+                  if (stats.necroRelentlessDeadDmg > 0) {
+                    for (const ne of g.enemies) {
+                      if (ne.dead) continue;
+                      const nx = ne.x - oldest.x, nz = ne.z - oldest.z;
+                      if (Math.sqrt(nx * nx + nz * nz) <= 3) {
+                        ne.hp -= stats.necroRelentlessDeadDmg; ne.hitFlashTimer = 0.12;
+                        if (ne.hp <= 0 && !ne.dead) { ne.dead = true; g.kills++; g.score += ne.scoreValue; handleBossKillCleanup(ne, g); }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
         } else {
           audioManager.play(g.charClass === "mage" ? "attack_orb" : "attack_dagger");
           // ── Projectile attack (Mage / Rogue) ───────────────────────────
@@ -2086,6 +2246,114 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         }
       }
       g.groundEffects = g.groundEffects.filter((ge) => ge.lifetime > 0);
+    }
+
+    // ── Necromancer: Minion AI (orbit + auto-fire + collision) ─────────
+    if (g.charClass === "necromancer" && g.minions.length > 0) {
+      const ORBIT_RADIUS = 3;
+      const ORBIT_SPEED = 1.5;
+      const BONE_SPEED = 12;
+      const BONE_LIFETIME = 2.0;
+      const BONE_RADIUS = 0.3;
+
+      for (let mi = g.minions.length - 1; mi >= 0; mi--) {
+        const m = g.minions[mi];
+        // Orbit
+        m.orbitAngle += ORBIT_SPEED * delta;
+        m.x = p.x + Math.cos(m.orbitAngle) * ORBIT_RADIUS;
+        m.z = p.z + Math.sin(m.orbitAngle) * ORBIT_RADIUS;
+
+        // Face nearest enemy
+        let nearDist = Infinity, nearE: EnemyRuntime | null = null;
+        for (const e of g.enemies) {
+          if (e.dead) continue;
+          const dx = e.x - m.x, dz = e.z - m.z;
+          const d = dx * dx + dz * dz;
+          if (d < nearDist) { nearDist = d; nearE = e; }
+        }
+        if (nearE) m.angle = Math.atan2(nearE.x - m.x, nearE.z - m.z);
+
+        // Auto-fire bone projectile
+        m.fireTimer -= delta;
+        if (m.fireTimer <= 0 && nearE) {
+          m.fireTimer = stats.necroMinionFireRate;
+          const boneDmg = stats.necroMinionDamage + stats.necroMinionDamageBonus;
+          const boneAngle = Math.atan2(nearE.x - m.x, nearE.z - m.z);
+          g.projectiles.push({
+            id: `bone_${m.id}_${Date.now()}`,
+            x: m.x, z: m.z,
+            vx: Math.sin(boneAngle) * BONE_SPEED,
+            vz: Math.cos(boneAngle) * BONE_SPEED,
+            damage: boneDmg,
+            radius: BONE_RADIUS,
+            lifetime: BONE_LIFETIME,
+            piercing: false,
+            hitIds: new Set(),
+            color: "#d4c8a0",
+            glowColor: "#aa88cc",
+            style: "orb",
+            dead: false,
+          });
+        }
+
+        // Minion takes damage from enemy projectiles (passive bodyguard)
+        for (const ep of g.enemyProjectiles) {
+          if (ep.dead) continue;
+          const dx = ep.x - m.x, dz = ep.z - m.z;
+          if (Math.sqrt(dx * dx + dz * dz) <= 0.8) {
+            m.hp -= ep.damage;
+            ep.dead = true;
+          }
+        }
+
+        // Despawn at 0 HP
+        if (m.hp <= 0) {
+          // Relentless Dead explosion
+          if (stats.necroRelentlessDeadDmg > 0) {
+            for (const e of g.enemies) {
+              if (e.dead) continue;
+              const nx = e.x - m.x, nz = e.z - m.z;
+              if (Math.sqrt(nx * nx + nz * nz) <= 3) {
+                e.hp -= stats.necroRelentlessDeadDmg; e.hitFlashTimer = 0.12;
+                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; handleBossKillCleanup(e, g); }
+              }
+            }
+          }
+          g.minions.splice(mi, 1);
+        }
+      }
+    }
+
+    // ── Necromancer: Death Surge cooldown ────────────────────────────────
+    if (g.charClass === "necromancer" && p.deathSurgeCooldown > 0) {
+      p.deathSurgeCooldown -= delta;
+    }
+
+    // ── Necromancer: Shadow Step void zones ──────────────────────────────
+    if (p.shadowStepVoids.length > 0) {
+      const VOID_DMG = 8;
+      const VOID_RADIUS = 2.0;
+      for (const v of p.shadowStepVoids) {
+        v.timer -= delta;
+        if (v.timer <= 0) continue;
+        for (const e of g.enemies) {
+          if (e.dead) continue;
+          const vx = v.x - e.x, vz = v.z - e.z;
+          if (Math.sqrt(vx * vx + vz * vz) <= VOID_RADIUS + e.collisionRadius) {
+            e.hp -= VOID_DMG * delta;
+            if (e.hitFlashTimer <= 0) e.hitFlashTimer = 0.08;
+            if (e.hp < 0.5) e.hp = 0;
+            if (e.hp <= 0 && !e.dead) {
+              e.dead = true; g.kills++; g.score += e.scoreValue;
+              if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
+              applyBloodforge(p, stats);
+              handleBossKillCleanup(e, g);
+              trySpawnGear(e.type, e.x, e.z, g);
+            }
+          }
+        }
+      }
+      p.shadowStepVoids = p.shadowStepVoids.filter((v) => v.timer > 0);
     }
 
     // ── Projectiles ───────────────────────────────────────────────────────
@@ -3058,6 +3326,14 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       {gs.current?.groundEffects.map((ge) => (
         <GroundEffect3D key={ge.id} ge={ge} />
       ))}
+      {/* Necromancer minions */}
+      {gs.current?.minions.map((m) => (
+        <Minion3D key={m.id} m={m} />
+      ))}
+      {/* Necromancer shadow step void zones */}
+      {gs.current?.player.shadowStepVoids.map((v, i) => (
+        <ShadowVoid3D key={`void_${i}`} x={v.x} z={v.z} timer={v.timer} />
+      ))}
       {/* Ability visual effects */}
       <AbilityEffects gs={gs} />
     </>
@@ -3168,6 +3444,86 @@ function GroundEffect3D({ ge }: { ge: GroundEffect }) {
         depthWrite={false}
         side={THREE.DoubleSide}
       />
+    </mesh>
+  );
+}
+
+// ─── Necromancer Minion 3D ────────────────────────────────────────────────────
+
+function Minion3D({ m }: { m: MinionRuntime }) {
+  const ref = useRef<THREE.Group>(null);
+  const t = useRef(Math.random() * 100);
+  useFrame((_, delta) => {
+    if (!ref.current) return;
+    t.current += delta;
+    ref.current.position.set(m.x, Math.sin(t.current * 3) * 0.06, m.z);
+    ref.current.rotation.y = m.angle;
+  });
+  return (
+    <group ref={ref} scale={0.4}>
+      {/* Skull */}
+      <mesh castShadow position={[0, 1.65, 0]}>
+        <boxGeometry args={[0.4, 0.45, 0.38]} />
+        <meshBasicMaterial color="#d8c8a0" />
+      </mesh>
+      {/* Eye sockets */}
+      <mesh position={[-0.1, 1.7, 0.2]}>
+        <boxGeometry args={[0.1, 0.08, 0.02]} />
+        <meshBasicMaterial color="#cc66ff" />
+      </mesh>
+      <mesh position={[0.1, 1.7, 0.2]}>
+        <boxGeometry args={[0.1, 0.08, 0.02]} />
+        <meshBasicMaterial color="#cc66ff" />
+      </mesh>
+      {/* Ribcage */}
+      <mesh castShadow position={[0, 1.15, 0]}>
+        <boxGeometry args={[0.38, 0.5, 0.25]} />
+        <meshBasicMaterial color="#c8b888" />
+      </mesh>
+      {/* Spine */}
+      <mesh castShadow position={[0, 0.75, 0]}>
+        <boxGeometry args={[0.12, 0.35, 0.12]} />
+        <meshBasicMaterial color="#b8a878" />
+      </mesh>
+      {/* Arms (thin bones) */}
+      <mesh castShadow position={[-0.32, 1.1, 0]}>
+        <boxGeometry args={[0.1, 0.55, 0.1]} />
+        <meshBasicMaterial color="#c0b080" />
+      </mesh>
+      <mesh castShadow position={[0.32, 1.1, 0]}>
+        <boxGeometry args={[0.1, 0.55, 0.1]} />
+        <meshBasicMaterial color="#c0b080" />
+      </mesh>
+      {/* Legs */}
+      <mesh castShadow position={[-0.12, 0.35, 0]}>
+        <boxGeometry args={[0.1, 0.5, 0.1]} />
+        <meshBasicMaterial color="#b8a070" />
+      </mesh>
+      <mesh castShadow position={[0.12, 0.35, 0]}>
+        <boxGeometry args={[0.1, 0.5, 0.1]} />
+        <meshBasicMaterial color="#b8a070" />
+      </mesh>
+      {/* Purple aura glow */}
+      <pointLight color="#aa66ff" intensity={1.2} distance={3} decay={2} position={[0, 1.2, 0]} />
+    </group>
+  );
+}
+
+// ─── Shadow Step Void Zone ───────────────────────────────────────────────────
+
+function ShadowVoid3D({ x, z, timer }: { x: number; z: number; timer: number }) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame(() => {
+    if (!ref.current) return;
+    const fade = Math.min(1, timer);
+    const mat = ref.current.material as THREE.MeshBasicMaterial;
+    mat.opacity = fade * 0.6;
+    ref.current.scale.setScalar(2.0 * (0.8 + fade * 0.2));
+  });
+  return (
+    <mesh ref={ref} position={[x, 0.08, z]} rotation={[-Math.PI / 2, 0, 0]}>
+      <circleGeometry args={[1, 12]} />
+      <meshBasicMaterial color="#1a002a" transparent opacity={0.6} depthWrite={false} side={THREE.DoubleSide} />
     </mesh>
   );
 }
@@ -3632,6 +3988,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
     const gs0: GameState = {
       player: makePlayer(startHp),
       enemies: initEnemies,
+      minions: [],
       xpOrbs: [],
       projectiles: [],
       score: 0, kills: 0, survivalTime: 0, wave: 1,
@@ -3716,6 +4073,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
         gsRef.current = {
           player: makePlayer(startHp),
           enemies: resetInitEnemies,
+          minions: [],
           xpOrbs: [],
           projectiles: [],
           score: 0, kills: 0, survivalTime: 0, wave: 1,
