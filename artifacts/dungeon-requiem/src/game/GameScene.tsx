@@ -2075,7 +2075,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             id: eprojId(), x: e.x, z: e.z,
             vx: (edx / dn) * 9, vz: (edz / dn) * 9,
             damage: e.damage * 0.9,
-            lifetime: 4.5, dead: false, style: "default" as const,
+            lifetime: 2.25, dead: false, style: "default" as const,
           });
         }
       }
