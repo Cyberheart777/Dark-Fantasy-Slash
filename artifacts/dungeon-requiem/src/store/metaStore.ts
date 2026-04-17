@@ -353,7 +353,7 @@ export const useMetaStore = create<MetaState>()(
 
       checkUnlocks: () => {
         const s = get();
-        const classes: string[] = ["warrior"];
+        const classes: string[] = ["warrior", "necromancer"];
         if (s.milestones["wave5"]) classes.push("mage");
         if (s.milestones["kills100"]) classes.push("rogue");
         if (s.milestones["wave15"]) classes.push("necromancer");
