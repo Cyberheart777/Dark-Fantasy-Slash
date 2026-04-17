@@ -269,7 +269,7 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
     WebkitUserSelect: "none",
     touchAction: "none",
-    zIndex: 5,
+    zIndex: 15,
   },
   joystickBase: {
     position: "absolute",
