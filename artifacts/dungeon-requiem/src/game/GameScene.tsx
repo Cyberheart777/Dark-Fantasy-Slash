@@ -89,6 +89,7 @@ export interface PlayerRuntime {
   lastX: number; lastZ: number;  // track movement for leyline anchor
   // ── Necromancer runtime fields ────────────────────────────────────────────
   deathSurgeCooldown: number;    // seconds remaining on Death Surge cooldown
+  necroPassiveSpawnTimer?: number; // passive skeleton spawn cooldown (5s)
   shadowStepVoids: { x: number; z: number; timer: number; }[];  // active void zones
   // ── Gear proc runtime fields ──────────────────────────────────────────────
   arcSlashTimer: number;         // Arc Warblade: counts up to arcSlashInterval, then procs
@@ -2328,6 +2329,26 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     // ── Necromancer: Death Surge cooldown ────────────────────────────────
     if (g.charClass === "necromancer" && p.deathSurgeCooldown > 0) {
       p.deathSurgeCooldown -= delta;
+    }
+
+    // ── Necromancer: Passive minion spawn every 5s ───────────────────────
+    if (g.charClass === "necromancer") {
+      p.necroPassiveSpawnTimer = (p.necroPassiveSpawnTimer ?? 5.0) - delta;
+      if (p.necroPassiveSpawnTimer <= 0) {
+        p.necroPassiveSpawnTimer = 5.0;
+        const cap = stats.necroArmyOfDarkness ? 5 : stats.necroMinionCap;
+        if (g.minions.length < cap) {
+          const minionHp = stats.necroMinionHp + stats.necroMinionHpBonus;
+          g.minions.push({
+            id: `minion_passive_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+            x: p.x + (Math.random() - 0.5) * 2, z: p.z + (Math.random() - 0.5) * 2,
+            angle: 0, hp: minionHp, maxHp: minionHp,
+            orbitAngle: Math.random() * Math.PI * 2,
+            fireTimer: stats.necroMinionFireRate,
+            spawnTime: performance.now(),
+          });
+        }
+      }
     }
 
     // ── Necromancer: Shadow Step void zones ──────────────────────────────
