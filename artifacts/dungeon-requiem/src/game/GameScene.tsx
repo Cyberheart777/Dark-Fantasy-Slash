@@ -2810,9 +2810,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       }
 
       // Void Lance — aimed 3-shot cone that punishes ranged kiters.
-      // Radial burst sprays omnidirectionally and falls off with distance
-      // (projectiles peter out before reaching the arena edge); the lance
-      // travels fast + far so stationary mages/rogues get clipped.
+      // Lances spawn 5 units out from the boss (past melee range) so
+      // players fighting up close are safe. Ranged kiters at distance
+      // must sidestep. Low damage per lance — pressure, not a nuke.
       // Interval tightens with enrage: 6s → 4s → 3s → 2.5s.
       e.voidLanceTimer = (e.voidLanceTimer ?? 6.0) - delta;
       if (e.voidLanceTimer <= 0) {
@@ -2822,14 +2822,17 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         const dz = p.z - e.z;
         const baseAngle = Math.atan2(dx, dz);
         const LANCE_SPEED = 14;
-        const LANCE_SPREAD = 0.12; // ±~7° total cone
+        const LANCE_SPREAD = 0.12;
+        const LANCE_SPAWN_DIST = 5;
         for (let i = -1; i <= 1; i++) {
           const a = baseAngle + i * LANCE_SPREAD;
+          const spawnX = e.x + Math.sin(a) * LANCE_SPAWN_DIST;
+          const spawnZ = e.z + Math.cos(a) * LANCE_SPAWN_DIST;
           g.enemyProjectiles.push({
-            id: eprojId(), x: e.x, z: e.z,
+            id: eprojId(), x: spawnX, z: spawnZ,
             vx: Math.sin(a) * LANCE_SPEED,
             vz: Math.cos(a) * LANCE_SPEED,
-            damage: e.damage * 0.6,
+            damage: e.damage * 0.25,
             lifetime: 3.5, dead: false, style: "lance" as const,
           });
         }
