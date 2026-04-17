@@ -157,7 +157,7 @@ export interface PlayerStats {
   earthbreakerEnabled: boolean;  // every 5th hit AoE slam
   ironReprisalEnabled: boolean;  // shockwave on damage taken
   warCryDmgBonus: number;        // % bonus damage for 5s after dash (baseline)
-  bloodforgeMaxHpPerKill: number; // +1 max HP per kill, capped at 20
+  bloodforgeMaxHpPerKill: number; // +0.2 max HP per kill, capped at +30
   weakeningBlowsPct: number;     // % damage reduction applied per melee hit on enemies
   dashKnockbackForce: number;    // knockback distance on dash (baseline, upgradeable)
   executionersWrathEnabled: boolean; // crits deal 40% AoE around target
@@ -517,7 +517,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   bloodforge: {
     id: "bloodforge", name: "Bloodforge",
-    description: "Each kill grants +1 max HP (capped at +20).",
+    description: "Each kill grants +0.2 max HP (capped at +30).",
     icon: "🩸", maxStacks: 1, rarity: "rare", classes: ["warrior"],
     apply: (s) => { s.bloodforgeMaxHpPerKill = 1; },
   },

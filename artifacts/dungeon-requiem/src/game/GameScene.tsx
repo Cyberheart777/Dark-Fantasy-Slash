@@ -71,7 +71,7 @@ export interface PlayerRuntime {
   singularityActiveTimer: number;// mage: remaining duration of active vortex
   singularityX: number;          // mage: vortex position
   singularityZ: number;
-  bloodforgeKills: number;       // warrior: kills tracked for bloodforge (+1 HP each, cap 20)
+  bloodforgeKills: number;       // warrior: kills tracked for bloodforge (+0.2 HP each, cap 30 = 150 kills)
   // Phase 7 runtime fields
   berserkersMarkTimer: number;   // warrior: remaining buff duration
   berserkersMarkCooldown: number;// warrior: ICD timer
@@ -470,12 +470,13 @@ function applyDeathsMomentum(p: PlayerRuntime, stats: PlayerStats): void {
 
 function applyBloodforge(p: PlayerRuntime, stats: PlayerStats): void {
   applyDeathsMomentum(p, stats);
-  if (stats.bloodforgeMaxHpPerKill > 0 && p.bloodforgeKills < 20) {
+  if (stats.bloodforgeMaxHpPerKill > 0 && p.bloodforgeKills < 150) {
     p.bloodforgeKills++;
-    stats.maxHealth += 1;
-    stats.currentHealth = Math.min(stats.currentHealth + 1, stats.maxHealth);
-    p.maxHp = stats.maxHealth;
-    p.hp = Math.min(p.hp + 1, p.maxHp);
+    const gain = 0.2;
+    stats.maxHealth += gain;
+    stats.currentHealth = Math.min(stats.currentHealth + gain, stats.maxHealth);
+    p.maxHp = Math.round(stats.maxHealth);
+    p.hp = Math.min(p.hp + gain, p.maxHp);
   }
 }
 
