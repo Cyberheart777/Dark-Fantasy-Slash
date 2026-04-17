@@ -111,7 +111,7 @@ export function HUD({ onExtract }: HUDProps) {
   return (
     <div style={styles.hud}>
       {/* Top-left: player vitals */}
-      <div style={{ ...styles.vitals, width: isMobile ? 160 : 220 }}>
+      <div style={{ ...styles.vitals, width: isMobile ? 140 : 220, padding: isMobile ? "8px 10px" : "12px 16px", top: isMobile ? 12 : 20, left: isMobile ? 10 : 20 }}>
         {/* HP bar */}
         <div style={styles.barLabel}>
           <span style={{ color: isOverheal ? "#ffcc44" : "#ff6666", fontWeight: "bold", textShadow: isOverheal ? "0 0 6px #ffaa00" : undefined }}>
@@ -149,7 +149,10 @@ export function HUD({ onExtract }: HUDProps) {
       </div>
 
       {/* Top-center: wave/score */}
-      <div style={styles.center}>
+      <div style={{
+        ...styles.center,
+        padding: isMobile ? "4px 12px" : "8px 24px",
+      }}>
         <div style={{
           display: "inline-block",
           padding: "2px 10px",
@@ -157,15 +160,15 @@ export function HUD({ onExtract }: HUDProps) {
           background: diffDef.color + "22",
           border: `1px solid ${diffDef.color}aa`,
           color: diffDef.accentColor,
-          fontSize: 10,
+          fontSize: isMobile ? 8 : 10,
           fontWeight: 900,
           letterSpacing: 2,
           fontFamily: "monospace",
-          marginBottom: 4,
+          marginBottom: isMobile ? 2 : 4,
           textShadow: `0 0 6px ${diffDef.color}80`,
         }}>{diffDef.label}</div>
-        <div style={styles.waveText}>WAVE {wave}</div>
-        <div style={styles.statsRow}>
+        <div style={{ ...styles.waveText, fontSize: isMobile ? 14 : 22, letterSpacing: isMobile ? 2 : 3 }}>WAVE {wave}</div>
+        <div style={{ ...styles.statsRow, fontSize: isMobile ? 10 : 14, gap: isMobile ? 10 : 20, marginTop: isMobile ? 2 : 4 }}>
           <span>⚔ {kills}</span>
           <span>★ {score.toLocaleString()}</span>
           <span>⏱ {timeStr}</span>
@@ -226,21 +229,25 @@ export function HUD({ onExtract }: HUDProps) {
       )}
 
       {/* Gear slots — top-right */}
-      <div style={styles.gearPanel}>
-        {([["⚔", equippedWeapon], ["🛡", equippedArmor], ["💎", equippedTrinket]] as [string, any][]).map(([slotIcon, gear], i) => (
-          <div key={i} style={{
-            ...styles.gearSlot,
-            borderColor: gear ? (gear.rarity === "epic" ? "#aa44ff" : gear.rarity === "rare" ? "#4488dd" : "#6a6a7a") : "#2a2035",
-            boxShadow: gear?.rarity === "epic" ? "0 0 8px rgba(140,40,255,0.3)" : gear?.rarity === "rare" ? "0 0 6px rgba(60,120,255,0.2)" : "none",
-          }}>
-            <div style={{ fontSize: 16 }}>{gear ? gear.icon : slotIcon}</div>
-            {gear && (
-              <div style={{ fontSize: 8, color: gear.rarity === "epic" ? "#cc88ff" : gear.rarity === "rare" ? "#70b0ff" : "#999", letterSpacing: 1, marginTop: 2, textAlign: "center" as const, lineHeight: 1.2, maxWidth: 52, overflow: "hidden" }}>
-                {gear.name}
-              </div>
-            )}
-          </div>
-        ))}
+      <div style={{ ...styles.gearPanel, top: isMobile ? 80 : 120, right: isMobile ? 8 : 12, gap: isMobile ? 4 : 6 }}>
+        {([["⚔", equippedWeapon], ["🛡", equippedArmor], ["💎", equippedTrinket]] as [string, any][]).map(([slotIcon, gear], i) => {
+          const sz = isMobile ? 40 : 52;
+          return (
+            <div key={i} style={{
+              ...styles.gearSlot,
+              width: sz, height: sz,
+              borderColor: gear ? (gear.rarity === "epic" ? "#aa44ff" : gear.rarity === "rare" ? "#4488dd" : "#6a6a7a") : "#2a2035",
+              boxShadow: gear?.rarity === "epic" ? "0 0 8px rgba(140,40,255,0.3)" : gear?.rarity === "rare" ? "0 0 6px rgba(60,120,255,0.2)" : "none",
+            }}>
+              <div style={{ fontSize: isMobile ? 13 : 16 }}>{gear ? gear.icon : slotIcon}</div>
+              {gear && (
+                <div style={{ fontSize: isMobile ? 7 : 8, color: gear.rarity === "epic" ? "#cc88ff" : gear.rarity === "rare" ? "#70b0ff" : "#999", letterSpacing: 1, marginTop: 1, textAlign: "center" as const, lineHeight: 1.1, maxWidth: sz, overflow: "hidden" }}>
+                  {gear.name}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Dash cooldown indicator — desktop only (mobile has its own dash button) */}
@@ -252,8 +259,8 @@ export function HUD({ onExtract }: HUDProps) {
 
       {/* Extract Run button — shown only after first boss kill, normal mode */}
       {showExtract && (
-        <div style={styles.extractWrapper}>
-          <button style={styles.extractBtn} onClick={onExtract}>
+        <div style={{ ...styles.extractWrapper, top: isMobile ? 12 : 64, right: isMobile ? 8 : 16 }}>
+          <button style={{ ...styles.extractBtn, padding: isMobile ? "8px 12px" : "12px 20px", fontSize: isMobile ? 11 : 13 }} onClick={onExtract}>
             ↑ EXTRACT RUN
             <span style={styles.extractSub}>Keep {extractFraction} of run shards</span>
           </button>

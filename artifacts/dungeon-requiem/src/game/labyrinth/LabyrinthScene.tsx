@@ -2372,6 +2372,8 @@ function LabyrinthHUD({
   progressionRef: React.MutableRefObject<LabProgressionState>;
 }) {
   const setPhase = useGameStore((s) => s.setPhase);
+  const [isMob, setIsMob] = useState(() => window.innerWidth < 900);
+  useEffect(() => { const fn = () => setIsMob(window.innerWidth < 900); window.addEventListener("resize", fn); return () => window.removeEventListener("resize", fn); }, []);
   const [esc, setEsc] = useState(false);
   /** Which view the pause overlay shows when open. "main" = the
    *  resume/exit buttons; "character" = the diagnostic stat sheet +
@@ -2495,7 +2497,7 @@ function LabyrinthHUD({
   return (
     <>
       {/* Top: mode title */}
-      <div style={styles.hudBanner}>
+      <div style={{ ...styles.hudBanner, display: isMob ? "none" : "block" }}>
         <div style={styles.hudTitle}>THE LABYRINTH</div>
         <div style={styles.hudStats}>
           {maze.size}×{maze.size} maze · {maze.deadEnds.length} dead ends
@@ -2503,7 +2505,7 @@ function LabyrinthHUD({
       </div>
 
       {/* Top-left: HP bar */}
-      <div style={styles.hpBox}>
+      <div style={{ ...styles.hpBox, width: isMob ? 150 : 220, padding: isMob ? "6px 10px" : "10px 14px", top: isMob ? 12 : 20, left: isMob ? 10 : 20 }}>
         <div style={styles.hpLabel}>
           <span style={{ color: "#ff6666", fontWeight: "bold" }}>HP</span>
           <span style={{ color: "#ccc", fontSize: 13 }}>
@@ -2571,10 +2573,12 @@ function LabyrinthHUD({
       </div>
 
       {/* Top-right: zone timer */}
-      <div style={styles.timerBox}>
+      <div style={{ ...styles.timerBox, minWidth: isMob ? 120 : 180, padding: isMob ? "6px 10px" : "10px 14px", top: isMob ? 12 : 20, right: isMob ? 8 : 20 }}>
         <div style={styles.timerLabel}>ZONE CLOSES IN</div>
         <div style={{
           ...styles.timerValue,
+          fontSize: isMob ? 18 : 26,
+          letterSpacing: isMob ? 2 : 4,
           color: display.timeRemaining < 120 ? "#ff4444" : "#c080ff",
         }}>
           {formatZoneTime(display.timeRemaining)}
@@ -2585,7 +2589,7 @@ function LabyrinthHUD({
       </div>
 
       {/* Below the timer: threat readout (live enemies + kills) */}
-      <div style={styles.threatBox}>
+      <div style={{ ...styles.threatBox, minWidth: isMob ? 120 : 180, top: isMob ? 80 : 108, right: isMob ? 8 : 20, padding: isMob ? "4px 10px" : "8px 14px" }}>
         <div style={styles.threatRow}>
           <span style={styles.threatLabel}>THREATS</span>
           <span style={styles.threatValue}>{display.enemyCount}</span>
@@ -3797,27 +3801,27 @@ const styles: Record<string, React.CSSProperties> = {
   },
   gearStrip: {
     position: "absolute" as const,
-    top: 195,
-    right: 20,
+    top: 155,
+    right: 10,
     display: "flex",
-    gap: 6,
-    padding: "6px",
+    gap: 4,
+    padding: "4px",
     background: "rgba(10,5,20,0.7)",
     border: "1px solid rgba(140,100,200,0.35)",
-    borderRadius: 8,
+    borderRadius: 6,
     backdropFilter: "blur(4px)",
     pointerEvents: "none" as const,
   },
   gearSlotBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 6,
+    width: 34,
+    height: 34,
+    borderRadius: 5,
     border: "2px solid rgba(60,60,80,0.5)",
     background: "rgba(10,8,22,0.8)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: 22,
+    fontSize: 18,
     color: "rgba(120,120,140,0.6)",
     fontFamily: "monospace",
     transition: "border-color 0.15s, box-shadow 0.2s, color 0.15s",
