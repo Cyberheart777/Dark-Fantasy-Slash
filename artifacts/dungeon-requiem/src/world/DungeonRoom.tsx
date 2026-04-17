@@ -270,6 +270,105 @@ function Walls() {
           />
         </mesh>
       ))}
+
+      {/* Base trim — dark stone baseboard at floor level */}
+      {[
+        [0, 0.25, -H - W / 2 + 0.1, FULL + W * 2, 0.5, 0.3, false] as const,
+        [0, 0.25, H + W / 2 - 0.1, FULL + W * 2, 0.5, 0.3, true] as const,
+        [-H - W / 2 + 0.1, 0.25, 0, 0.3, 0.5, FULL, false] as const,
+        [H + W / 2 - 0.1, 0.25, 0, 0.3, 0.5, FULL, false] as const,
+      ].map(([x, y, z, w, h, d, isSouth], i) => (
+        <mesh key={`base_${i}`} position={[x, y, z]}>
+          <boxGeometry args={[w, h, d]} />
+          <meshStandardMaterial
+            color="#1e1430"
+            roughness={0.95}
+            transparent={isSouth || undefined}
+            opacity={isSouth ? 0.3 : 1}
+          />
+        </mesh>
+      ))}
+
+      {/* Mid-height stone band — horizontal molding */}
+      {[
+        [0, WH * 0.5, -H - W / 2 + 0.15, FULL + W * 2, 0.25, 0.35, false] as const,
+        [0, WH * 0.5, H + W / 2 - 0.15, FULL + W * 2, 0.25, 0.35, true] as const,
+        [-H - W / 2 + 0.15, WH * 0.5, 0, 0.35, 0.25, FULL, false] as const,
+        [H + W / 2 - 0.15, WH * 0.5, 0, 0.35, 0.25, FULL, false] as const,
+      ].map(([x, y, z, w, h, d, isSouth], i) => (
+        <mesh key={`mid_${i}`} position={[x, y, z]}>
+          <boxGeometry args={[w, h, d]} />
+          <meshStandardMaterial
+            color="#4a3868"
+            roughness={0.85}
+            metalness={0.08}
+            transparent={isSouth || undefined}
+            opacity={isSouth ? 0.3 : 1}
+          />
+        </mesh>
+      ))}
+
+      <WallButtresses />
+    </group>
+  );
+}
+
+// ─── Wall Buttresses — vertical pilasters + decorative details ──────────────
+
+function WallButtress({ x, y, z, along }: { x: number; y: number; z: number; along: "x" | "z" }) {
+  const depth = along === "x" ? 0.5 : 0.35;
+  const width = along === "x" ? 0.35 : 0.5;
+  return (
+    <group position={[x, 0, z]}>
+      {/* Pilaster — full height vertical stone strip */}
+      <mesh castShadow position={[0, WH / 2, 0]}>
+        <boxGeometry args={[width, WH, depth]} />
+        <meshStandardMaterial color="#3e3058" roughness={0.9} metalness={0.05} />
+      </mesh>
+      {/* Pilaster cap — small crown at top */}
+      <mesh position={[0, WH - 0.15, 0]}>
+        <boxGeometry args={[width + 0.12, 0.3, depth + 0.12]} />
+        <meshStandardMaterial color={ACCENT_COLOR} roughness={0.8} metalness={0.12} />
+      </mesh>
+      {/* Pilaster base — wider foot */}
+      <mesh position={[0, 0.2, 0]}>
+        <boxGeometry args={[width + 0.08, 0.4, depth + 0.08]} />
+        <meshStandardMaterial color="#2a1e3e" roughness={0.95} />
+      </mesh>
+      {/* Carved rune inset — small glowing rectangle at eye height */}
+      <mesh position={[0, WH * 0.55, along === "z" ? (z > 0 ? -depth / 2 - 0.02 : depth / 2 + 0.02) : 0]}>
+        <boxGeometry args={[width * 0.4, 0.5, 0.02]} />
+        <meshStandardMaterial
+          color="#5a30a0"
+          emissive="#4a2080"
+          emissiveIntensity={0.8}
+          roughness={0.3}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function WallButtresses() {
+  const buttresses: { x: number; z: number; along: "x" | "z" }[] = [];
+  const spacing = 10;
+
+  // North + south walls — buttresses along X axis
+  for (let bx = -H + spacing; bx < H; bx += spacing) {
+    buttresses.push({ x: bx, z: -H - W / 2 + 0.3, along: "z" });
+    buttresses.push({ x: bx, z: H + W / 2 - 0.3, along: "z" });
+  }
+  // West + east walls — buttresses along Z axis
+  for (let bz = -H + spacing; bz < H; bz += spacing) {
+    buttresses.push({ x: -H - W / 2 + 0.3, z: bz, along: "x" });
+    buttresses.push({ x: H + W / 2 - 0.3, z: bz, along: "x" });
+  }
+
+  return (
+    <group>
+      {buttresses.map((b, i) => (
+        <WallButtress key={i} x={b.x} y={0} z={b.z} along={b.along} />
+      ))}
     </group>
   );
 }
