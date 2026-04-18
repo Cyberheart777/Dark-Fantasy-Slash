@@ -2827,6 +2827,11 @@ function LabyrinthHUD({
         <SafeZoneArrow dx={display.safeDirX} dz={display.safeDirZ} />
       )}
 
+      {/* Fog-of-war minimap — bottom left, reveals as player explores */}
+      {!display.defeated && !display.extracted && !display.victory && (
+        <LabyrinthMinimap maze={maze} playerRef={playerRef} />
+      )}
+
       {/* Nearest-portal edge arrow (gold/purple) — separate from the safe-zone arrow */}
       {display.hasPortal && !display.defeated && !display.extracted && (
         <PortalArrow
@@ -3000,6 +3005,86 @@ function LabyrinthHUD({
       {/* Level-up upgrade pick screen — same component as main game */}
       {phase === "levelup" && <LevelUp onChoice={handleLabUpgrade} />}
     </>
+  );
+}
+
+function LabyrinthMinimap({ maze, playerRef }: { maze: Maze; playerRef: React.MutableRefObject<LabPlayer> }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const exploredRef = useRef(new Set<number>());
+  const MINIMAP_SIZE = 140;
+  const cellPx = MINIMAP_SIZE / maze.size;
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const cvs = canvasRef.current;
+      if (!cvs) return;
+      const ctx = cvs.getContext("2d");
+      if (!ctx) return;
+      const p = playerRef.current;
+      const pc = worldToCell(p.x, p.z);
+
+      // Reveal cells within 2-cell radius of player
+      for (let dr = -2; dr <= 2; dr++) {
+        for (let dc = -2; dc <= 2; dc++) {
+          const c = pc.col + dc, r = pc.row + dr;
+          if (c >= 0 && c < maze.size && r >= 0 && r < maze.size) {
+            exploredRef.current.add(r * maze.size + c);
+          }
+        }
+      }
+
+      ctx.clearRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
+      ctx.fillStyle = "rgba(0,0,0,0.85)";
+      ctx.fillRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
+
+      for (let r = 0; r < maze.size; r++) {
+        for (let c = 0; c < maze.size; c++) {
+          const i = r * maze.size + c;
+          if (!exploredRef.current.has(i)) continue;
+          const cell = maze.cells[i];
+          const x = c * cellPx;
+          const y = r * cellPx;
+
+          // Floor
+          ctx.fillStyle = "#1a1228";
+          ctx.fillRect(x, y, cellPx, cellPx);
+
+          // Walls
+          ctx.strokeStyle = "#6644aa";
+          ctx.lineWidth = 1;
+          if (cell.walls & WALL_N) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + cellPx, y); ctx.stroke(); }
+          if (cell.walls & WALL_S) { ctx.beginPath(); ctx.moveTo(x, y + cellPx); ctx.lineTo(x + cellPx, y + cellPx); ctx.stroke(); }
+          if (cell.walls & WALL_W) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + cellPx); ctx.stroke(); }
+          if (cell.walls & WALL_E) { ctx.beginPath(); ctx.moveTo(x + cellPx, y); ctx.lineTo(x + cellPx, y + cellPx); ctx.stroke(); }
+        }
+      }
+
+      // Player dot
+      const px = pc.col * cellPx + cellPx / 2;
+      const py = pc.row * cellPx + cellPx / 2;
+      ctx.fillStyle = "#44ff88";
+      ctx.beginPath();
+      ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }, 150);
+    return () => clearInterval(iv);
+  }, [maze, playerRef, cellPx]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={MINIMAP_SIZE}
+      height={MINIMAP_SIZE}
+      style={{
+        position: "absolute",
+        bottom: 12,
+        left: 12,
+        borderRadius: 6,
+        border: "1px solid rgba(100,60,180,0.4)",
+        pointerEvents: "none",
+        zIndex: 20,
+      }}
+    />
   );
 }
 

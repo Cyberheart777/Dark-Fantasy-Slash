@@ -42,7 +42,7 @@ interface DebugShared {
 /** Force-on while we diagnose the post-step-4 mobile regression.
  *  Flip back to URL-gated once the scene renders reliably on iOS. */
 function isDebugEnabled(): boolean {
-  return true;
+  return false;
 }
 
 interface Props {
