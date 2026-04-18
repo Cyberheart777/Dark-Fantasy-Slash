@@ -124,7 +124,7 @@ export const LAYER_CONFIG: Record<1 | 2 | 3, LayerConfig> = {
     hpBonusOnEntry: 0,
   },
   2: {
-    gridSize: 13,
+    gridSize: 15,
     spawnMult: 1.3,
     zoneShrinkMult: 1.25,
     gearDropMult: 1.5,
@@ -138,7 +138,7 @@ export const LAYER_CONFIG: Record<1 | 2 | 3, LayerConfig> = {
     hpBonusOnEntry: 20,
   },
   3: {
-    gridSize: 7,
+    gridSize: 5,
     spawnMult: 0,
     zoneShrinkMult: 0,
     gearDropMult: 0,

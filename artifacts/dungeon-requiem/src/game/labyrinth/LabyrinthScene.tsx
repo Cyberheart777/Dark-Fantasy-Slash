@@ -272,13 +272,14 @@ interface LabSharedState {
   miniBossAlive: boolean;
   soulCrystalMult: number;
   descentPortalsSpawned: boolean;
+  pendingLayerChange: 2 | 3 | null;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
 
 export function LabyrinthScene() {
-  // Generate maze once per scene mount — each run gets a fresh maze.
-  const maze = useMemo(() => generateMaze(), []);
+  // Maze regenerates on layer transitions (state, not memo). Initial L1 = full GRID_SIZE.
+  const [maze, setMaze] = useState(() => generateMaze(LAYER_CONFIG[1].gridSize));
 
   // Class picked in the character-select step before landing here. The
   // store defaults to "warrior" so direct-to-labyrinth (eg. deep link,
@@ -375,6 +376,7 @@ export function LabyrinthScene() {
     miniBossAlive: false,
     soulCrystalMult: LAYER_CONFIG[1].crystalMult,
     descentPortalsSpawned: false,
+    pendingLayerChange: null,
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
@@ -550,6 +552,50 @@ export function LabyrinthScene() {
     sharedRef.current.enemyCount = enemiesRef.current.length;
   }
   const runStartMs = useRef(performance.now());
+
+  // Layer transition watcher: when a descent portal sets shared.pendingLayerChange,
+  // regenerate the maze with the new size + reset all per-layer state.
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const s = sharedRef.current;
+      const next = s.pendingLayerChange;
+      if (!next) return;
+      const nlc = LAYER_CONFIG[next];
+      // Generate a new, smaller maze for the next layer
+      const newMaze = generateMaze(nlc.gridSize);
+      setMaze(newMaze);
+      // Reset all layer state on shared
+      s.layer = next;
+      s.layerElapsedSec = 0;
+      s.championsToKill = nlc.championCount;
+      s.championsKilled = 0;
+      s.championSpawnIndex = 0;
+      s.layerComplete = false;
+      s.miniBossSpawned = false;
+      s.miniBossAlive = false;
+      s.soulCrystalMult = nlc.crystalMult;
+      s.descentPortalsSpawned = false;
+      s.portals = [];
+      s.rivalKillCount = 0;
+      s.wardenSpawned = false;
+      s.rivalAnnounce = null;
+      s.wardenHud = null;
+      s.pendingLayerChange = null;
+      // Clear enemies + projectiles
+      enemiesRef.current.length = 0;
+      projectilesRef.current.length = 0;
+      s.enemyCount = 0;
+      // Reset zone shrink
+      runStartMs.current = performance.now();
+      // Teleport player to new maze spawn cell + apply HP bonus
+      const spawn = cellToWorld(newMaze.spawn.col, newMaze.spawn.row);
+      const p = playerRef.current;
+      p.x = spawn.x;
+      p.z = spawn.z;
+      if (nlc.hpBonusOnEntry > 0) p.hp = Math.min(p.maxHp, p.hp + nlc.hpBonusOnEntry);
+    }, 100);
+    return () => clearInterval(iv);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -2371,36 +2417,9 @@ function ZoneTickLoop({
     for (const portal of shared.portals) {
       if (portalCollision(p.x, p.z, portal)) {
         if (portal.id.startsWith("descent_") && shared.layer < 3) {
-          // Layer transition — advance to next layer
-          const nextLayer = (shared.layer + 1) as 1 | 2 | 3;
-          const nlc = LAYER_CONFIG[nextLayer];
-          shared.layer = nextLayer;
-          shared.layerElapsedSec = 0;
-          shared.championsToKill = nlc.championCount;
-          shared.championsKilled = 0;
-          shared.championSpawnIndex = 0;
-          shared.layerComplete = false;
-          shared.miniBossSpawned = false;
-          shared.miniBossAlive = false;
-          shared.soulCrystalMult = nlc.crystalMult;
-          shared.descentPortalsSpawned = false;
+          // Flag the layer change — parent will regen the maze + reset state
+          shared.pendingLayerChange = (shared.layer + 1) as 2 | 3;
           shared.portals = [];
-          shared.rivalKillCount = 0;
-          shared.wardenSpawned = false;
-          shared.rivalAnnounce = null;
-          shared.wardenHud = null;
-          // Clear all enemies from previous layer — fresh slate
-          enemiesRef.current.length = 0;
-          shared.enemyCount = 0;
-          onEnemiesChange([]);
-          // Reset zone shrink (start fresh on the new layer)
-          runStartMs.current = performance.now();
-          // +HP on entry
-          if (nlc.hpBonusOnEntry > 0) {
-            p.hp = Math.min(p.maxHp, p.hp + nlc.hpBonusOnEntry);
-          }
-          // Reset player position to center
-          p.x = 0; p.z = 0;
           portalsChanged = true;
           break;
         } else {
