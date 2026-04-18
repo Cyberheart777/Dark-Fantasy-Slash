@@ -2768,7 +2768,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           // AoE damage lands
           const dist = Math.sqrt((p.x - e.x) ** 2 + (p.z - e.z) ** 2);
           if (dist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
-            const rawDmg = e.damage * 3;
+            const rawDmg = e.damage * 0.75;
             const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult, 100);
             p.hp -= effective; spawnPlayerDmgPopup(p, effective);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;

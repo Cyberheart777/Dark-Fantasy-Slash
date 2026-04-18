@@ -100,7 +100,7 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     type: "boss",
     displayName: "The Warden Reborn",
     health: 2250,
-    damage: 69,
+    damage: 35,
     moveSpeed: 3.0,
     xpReward: GREEN_XP * 50,     // 50× — orange crystal
     crystalTier: "orange",
