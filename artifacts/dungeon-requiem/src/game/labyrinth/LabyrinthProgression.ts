@@ -14,6 +14,8 @@
  */
 
 import type { XPOrb } from "../GameScene";
+import type { CharacterClass } from "../../data/CharacterData";
+import { pickUpgradeChoices, type UpgradeId } from "../../data/UpgradeData";
 
 // ─── XP formula (same as main game) ──────────────────────────────────────────
 
@@ -36,17 +38,25 @@ export interface LabProgressionState {
   totalXp: number;
   /** Number of level-ups this frame; reset to 0 after the caller reads. */
   pendingLevelUps: number;
+  /** Tracks acquired upgrades + stack count for pickUpgradeChoices filtering. */
+  acquiredUpgrades: Map<UpgradeId, number>;
+  /** Character class — needed for class-filtered upgrade picks. */
+  charClass: CharacterClass;
 }
 
-export function makeLabProgression(): LabProgressionState {
+export function makeLabProgression(charClass: CharacterClass): LabProgressionState {
   return {
     level: 1,
     xp: 0,
     xpToNext: xpNeededForLevel(1),
     totalXp: 0,
     pendingLevelUps: 0,
+    acquiredUpgrades: new Map(),
+    charClass,
   };
 }
+
+export { pickUpgradeChoices };
 
 /** Add XP and handle overflow level-ups. Caller checks `pendingLevelUps`
  *  after to apply per-level effects (HP boost, SFX) and then zeroes it. */

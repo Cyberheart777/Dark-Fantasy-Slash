@@ -117,6 +117,7 @@ import {
   spawnLabXpOrb,
   tickLabXpOrbs,
   rollEnemyLoot,
+  pickUpgradeChoices,
   type LabProgressionState,
 } from "./LabyrinthProgression";
 import { XPOrb3D } from "../../entities/XPOrb3D";
@@ -183,7 +184,8 @@ import {
 import { CHARACTER_DATA, type CharacterClass } from "../../data/CharacterData";
 import type { RaceType } from "../../data/RaceData";
 import { resolveLabPlayerStats } from "./LabyrinthStats";
-import type { PlayerStats } from "../../data/UpgradeData";
+import { UPGRADES, type PlayerStats } from "../../data/UpgradeData";
+import { LevelUp } from "../../ui/LevelUp";
 import { audioManager } from "../../audio/AudioManager";
 
 // ─── Player runtime (lean — no combat yet) ────────────────────────────────────
@@ -412,7 +414,7 @@ export function LabyrinthScene() {
   const deathFxRef = useRef<LabDeathFx[]>([]);
   const groundFxRef = useRef<LabGroundFx[]>([]);
   const shroudMistRef = useRef<LabShroudMistEmitter>(makeShroudMistEmitter());
-  const progressionRef = useRef<LabProgressionState>(makeLabProgression());
+  const progressionRef = useRef<LabProgressionState>(makeLabProgression(selectedClass));
   const xpOrbsRef = useRef<XPOrb[]>([]);
   // Warrior-only passives state. Created unconditionally (cheap), but
   // the combat loop only invokes it when charClass === "warrior".
@@ -1568,6 +1570,7 @@ function CombatEnemyLoop({
       evaluateLabRunAchievements(shared, playerRef.current, gearStateRef.current, charClass);
     }
     if (shared.defeated || shared.extracted || shared.victory) return;
+    if (useGameStore.getState().phase === "levelup") return;
     const input = inputRef.current;
     if (!input) return;
 
@@ -1846,14 +1849,15 @@ function CombatEnemyLoop({
     if (orbTick.awardedXp > 0) {
       audioManager.play("xp_pickup");
       addLabXp(progressionRef.current, orbTick.awardedXp);
-      while (progressionRef.current.pendingLevelUps > 0) {
+      if (progressionRef.current.pendingLevelUps > 0) {
         progressionRef.current.pendingLevelUps -= 1;
-        // Flat per-level growth — matches the warrior's CLASS_GROWTH
-        // (ProgressionManager.ts:54-66 → +3 HP per level). Heal to
-        // full on level-up, same as the main game.
         p.maxHp += 3;
         p.hp = p.maxHp;
         audioManager.play("level_up");
+        const prog = progressionRef.current;
+        const choices = pickUpgradeChoices(prog.acquiredUpgrades, 3, prog.level, prog.charClass);
+        useGameStore.getState().setProgression(prog.level, prog.xp, prog.xpToNext);
+        useGameStore.getState().setLevelUpChoices(choices);
       }
     }
     shared.level = progressionRef.current.level;
@@ -2491,6 +2495,16 @@ function LabyrinthHUD({
 
   const exit = useCallback(() => setPhase("menu"), [setPhase]);
 
+  const phase = useGameStore((s) => s.phase);
+  const handleLabUpgrade = useCallback((id: string) => {
+    const upgrade = UPGRADES[id as keyof typeof UPGRADES];
+    if (!upgrade) return;
+    upgrade.apply(labStats);
+    const prog = progressionRef.current;
+    prog.acquiredUpgrades.set(id as any, (prog.acquiredUpgrades.get(id as any) ?? 0) + 1);
+    useGameStore.getState().setPhase("labyrinth");
+  }, [labStats, progressionRef]);
+
   const hpPct = Math.max(0, (display.hp / display.maxHp) * 100);
   const hpColor = hpPct > 60 ? "#22cc55" : hpPct > 30 ? "#ff8800" : "#cc2222";
 
@@ -2807,6 +2821,9 @@ function LabyrinthHUD({
           </div>
         </div>
       )}
+
+      {/* Level-up upgrade pick screen — same component as main game */}
+      {phase === "levelup" && <LevelUp onChoice={handleLabUpgrade} />}
     </>
   );
 }
