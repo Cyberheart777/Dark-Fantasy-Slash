@@ -273,6 +273,7 @@ interface LabSharedState {
   soulCrystalMult: number;
   descentPortalsSpawned: boolean;
   pendingLayerChange: 2 | 3 | null;
+  layerBanner: { text: string; sub: string; color: string; at: number } | null;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -377,6 +378,7 @@ export function LabyrinthScene() {
     soulCrystalMult: LAYER_CONFIG[1].crystalMult,
     descentPortalsSpawned: false,
     pendingLayerChange: null,
+    layerBanner: { text: "DEFEAT 4 CHAMPIONS TO DESCEND", sub: "THE HUNT BEGINS", color: "#cc88ff", at: 0 },
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
@@ -581,6 +583,12 @@ export function LabyrinthScene() {
       s.rivalAnnounce = null;
       s.wardenHud = null;
       s.pendingLayerChange = null;
+      // Layer intro banner
+      if (next === 2) {
+        s.layerBanner = { text: "LAYER 2 — THE DEEP LABYRINTH", sub: "DEFEAT 3 CHAMPIONS TO DESCEND", color: "#cc88ff", at: 0 };
+      } else {
+        s.layerBanner = { text: "LAYER 3 — THE ABYSS", sub: "DEFEAT THE WARDEN REBORN", color: "#ff4488", at: 0 };
+      }
       // Clear enemies + projectiles
       enemiesRef.current.length = 0;
       projectilesRef.current.length = 0;
@@ -2575,6 +2583,7 @@ function LabyrinthHUD({
     championsKilled: 0,
     championsToKill: 4,
     layerComplete: false,
+    layerBanner: null as LabSharedState["layerBanner"],
   });
 
   useEffect(() => {
@@ -2634,6 +2643,7 @@ function LabyrinthHUD({
         championsKilled: s.championsKilled,
         championsToKill: s.championsToKill,
         layerComplete: s.layerComplete,
+        layerBanner: s.layerBanner,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -2831,6 +2841,9 @@ function LabyrinthHUD({
         elapsedSec={display.elapsedSec}
         announce={display.rivalAnnounce}
       />
+
+      {/* Layer event banners — intro, one-champion-left, portals opened */}
+      <LayerBanner banner={display.layerBanner} elapsedSec={display.elapsedSec} />
 
       {/* Poison stack pip bar (only visible when stacks > 0) */}
       {display.poisonStacks > 0 && !display.defeated && !display.extracted && (
@@ -3033,6 +3046,31 @@ function LabyrinthHUD({
       {/* Level-up upgrade pick screen — same component as main game */}
       {phase === "levelup" && <LevelUp onChoice={handleLabUpgrade} />}
     </>
+  );
+}
+
+function LayerBanner({ banner, elapsedSec }: { banner: LabSharedState["layerBanner"]; elapsedSec: number }) {
+  if (!banner) return null;
+  const dt = elapsedSec - banner.at;
+  if (dt < 0 || dt > 5) return null;
+  let opacity = 1;
+  if (dt < 0.4) opacity = dt / 0.4;
+  else if (dt > 3.5) opacity = Math.max(0, 1 - (dt - 3.5) / 1.5);
+  return (
+    <div style={{
+      position: "absolute", top: "28%", left: "50%", transform: "translateX(-50%)",
+      textAlign: "center", pointerEvents: "none", zIndex: 30, opacity,
+      transition: "opacity 0.3s",
+    }}>
+      <div style={{
+        fontSize: 28, fontWeight: 900, letterSpacing: 6, color: banner.color,
+        textShadow: `0 0 20px ${banner.color}80`, fontFamily: "monospace",
+      }}>{banner.text}</div>
+      <div style={{
+        fontSize: 13, letterSpacing: 3, color: "rgba(200,180,220,0.7)",
+        marginTop: 8, fontFamily: "monospace",
+      }}>{banner.sub}</div>
+    </div>
   );
 }
 
@@ -3334,15 +3372,19 @@ function onRivalChampionKill(
   }
   shared.rivalKillCount += 1;
   shared.championsKilled += 1;
-  // Check layer completion: all champions dead (+ mini-boss on L2)
   const lc = LAYER_CONFIG[shared.layer];
+  const remaining = lc.championCount - shared.championsKilled;
+  if (remaining === 1) {
+    shared.layerBanner = { text: "ONE CHAMPION REMAINS", sub: "FINISH THE HUNT", color: "#ff8844", at: shared.zone.elapsedSec };
+  }
   if (shared.championsKilled >= lc.championCount) {
     if (shared.layer === 2 && !shared.miniBossSpawned) {
-      // L2: spawn mini-boss after all 3 champions killed (handled by caller)
+      // L2: mini-boss spawns after all champions — handled by caller
     } else if (shared.layer === 2 && shared.miniBossAlive) {
       // L2: mini-boss still alive, wait
     } else {
       shared.layerComplete = true;
+      shared.layerBanner = { text: "PORTALS OPENED — CHOOSE YOUR PATH", sub: shared.layer < 3 ? "DESCEND DEEPER OR EXTRACT" : "THE ABYSS IS CONQUERED", color: "#44ff88", at: shared.zone.elapsedSec };
     }
   }
 }
