@@ -90,3 +90,65 @@ export const LABYRINTH_WORLD_EXTENT =
 
 /** Derived: half-extent for centering the maze at (0,0). */
 export const LABYRINTH_HALF = LABYRINTH_WORLD_EXTENT / 2;
+
+// ─── Per-layer descent config ────────────────────────────────────────────────
+
+export interface LayerConfig {
+  gridSize: number;
+  spawnMult: number;
+  zoneShrinkMult: number;
+  gearDropMult: number;
+  crystalMult: number;
+  championCount: number;
+  championScheduleSec: number[];
+  hasWarden: boolean;
+  hasMiniBoss: boolean;
+  hasZoneShrink: boolean;
+  hasEnemySpawns: boolean;
+  hpBonusOnEntry: number;
+}
+
+export const LAYER_CONFIG: Record<1 | 2 | 3, LayerConfig> = {
+  1: {
+    gridSize: 25,
+    spawnMult: 1.0,
+    zoneShrinkMult: 1.0,
+    gearDropMult: 1.0,
+    crystalMult: 1,
+    championCount: 4,
+    championScheduleSec: [120, 180, 240, 300],
+    hasWarden: false,
+    hasMiniBoss: false,
+    hasZoneShrink: true,
+    hasEnemySpawns: true,
+    hpBonusOnEntry: 0,
+  },
+  2: {
+    gridSize: 13,
+    spawnMult: 1.3,
+    zoneShrinkMult: 1.25,
+    gearDropMult: 1.5,
+    crystalMult: 2,
+    championCount: 3,
+    championScheduleSec: [60, 120, 180],
+    hasWarden: false,
+    hasMiniBoss: true,
+    hasZoneShrink: true,
+    hasEnemySpawns: true,
+    hpBonusOnEntry: 20,
+  },
+  3: {
+    gridSize: 7,
+    spawnMult: 0,
+    zoneShrinkMult: 0,
+    gearDropMult: 0,
+    crystalMult: 3,
+    championCount: 0,
+    championScheduleSec: [],
+    hasWarden: true,
+    hasMiniBoss: false,
+    hasZoneShrink: false,
+    hasEnemySpawns: false,
+    hpBonusOnEntry: 20,
+  },
+};
