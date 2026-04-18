@@ -1636,6 +1636,7 @@ function CombatEnemyLoop({
                 }
                 if (e.kind === "warden") {
                   shared.victory = true;
+                  shared.layerComplete = true;
                   clearWardenState(e.id);
                   audioManager.play("wave_clear");
                 }
@@ -2188,10 +2189,13 @@ function ZoneTickLoop({
     }
 
     // ── Warden spawn ────────────────────────────────────────────────────
-    // Gated by BOTH elapsed time (>= 5min) AND zone radius (< 50% of
-    // initial). Spawns once at the centre chamber; shared.wardenSpawned
-    // prevents re-spawn after he's killed.
-    if (shouldSpawnWarden(elapsedSec, zone.radius, ZONE_INITIAL_RADIUS, shared.wardenSpawned)) {
+    // Layer 1-2: no Warden (replaced by champion hunt).
+    // Layer 3: spawns immediately at center (boss arena).
+    // Legacy: time + zone gates for non-descent mode.
+    const wardenGate = shared.layer === 3
+      ? !shared.wardenSpawned
+      : (LAYER_CONFIG[shared.layer].hasWarden && shouldSpawnWarden(elapsedSec, zone.radius, ZONE_INITIAL_RADIUS, shared.wardenSpawned));
+    if (wardenGate) {
       const warden = makeWarden(maze);
       enemiesRef.current.push(warden);
       onEnemiesChange(enemiesRef.current.slice());
@@ -2264,16 +2268,65 @@ function ZoneTickLoop({
       }
     }
 
-    // ── Portal collision (extraction) ──────────────────────────────────
+    // ── Portal collision (extraction or descent) ─────────────────────
     for (const portal of shared.portals) {
       if (portalCollision(p.x, p.z, portal)) {
-        shared.extracted = true;
-        // Freeze the player in place at the portal center for visual
-        // consistency with the victory screen.
-        p.x = portal.x;
-        p.z = portal.z;
-        break;
+        if (portal.id.startsWith("descent_") && shared.layer < 3) {
+          // Layer transition — advance to next layer
+          const nextLayer = (shared.layer + 1) as 1 | 2 | 3;
+          const nlc = LAYER_CONFIG[nextLayer];
+          shared.layer = nextLayer;
+          shared.layerElapsedSec = 0;
+          shared.championsToKill = nlc.championCount;
+          shared.championsKilled = 0;
+          shared.championSpawnIndex = 0;
+          shared.layerComplete = false;
+          shared.miniBossSpawned = false;
+          shared.miniBossAlive = false;
+          shared.soulCrystalMult = nlc.crystalMult;
+          shared.descentPortalsSpawned = false;
+          shared.portals = [];
+          shared.rivalKillCount = 0;
+          // +HP on entry
+          if (nlc.hpBonusOnEntry > 0) {
+            p.hp = Math.min(p.maxHp, p.hp + nlc.hpBonusOnEntry);
+          }
+          // Reset player position to center
+          p.x = 0; p.z = 0;
+          portalsChanged = true;
+          break;
+        } else {
+          shared.extracted = true;
+          p.x = portal.x;
+          p.z = portal.z;
+          break;
+        }
       }
+    }
+
+    // ── Spawn descent/extraction portals on layer complete ──────────
+    if (shared.layerComplete && !shared.descentPortalsSpawned) {
+      shared.descentPortalsSpawned = true;
+      const portalSec = shared.zone.elapsedSec;
+      if (shared.layer < 3) {
+        // Two portals: descent + extraction, 3u apart
+        shared.portals.push({
+          id: `descent_${portalSec}`, x: p.x + 1.5, z: p.z, col: 0, row: 0,
+          spawnedAtSec: portalSec, consumed: false, fadeElapsedSec: 0,
+        });
+        shared.portals.push({
+          id: `extract_${portalSec}`, x: p.x - 1.5, z: p.z, col: 0, row: 0,
+          spawnedAtSec: portalSec, consumed: false, fadeElapsedSec: 0,
+        });
+      } else {
+        // Layer 3: just extraction on Warden kill
+        shared.portals.push({
+          id: `extract_${portalSec}`, x: p.x, z: p.z + 2, col: 0, row: 0,
+          spawnedAtSec: portalSec, consumed: false, fadeElapsedSec: 0,
+        });
+      }
+      portalsChanged = true;
+      audioManager.play("wave_clear");
     }
 
     // Drop fully-faded portals from the render list. We keep them in
