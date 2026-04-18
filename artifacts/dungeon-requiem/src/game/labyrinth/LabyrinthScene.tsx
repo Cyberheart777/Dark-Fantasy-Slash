@@ -123,7 +123,7 @@ import {
   type LabProgressionState,
 } from "./LabyrinthProgression";
 import { XPOrb3D } from "../../entities/XPOrb3D";
-import type { XPOrb } from "../GameScene";
+import type { XPOrb, MinionRuntime } from "../GameScene";
 import {
   makeLabWarriorState,
   tickLabWarrior,
@@ -136,6 +136,7 @@ import {
 } from "./LabyrinthWarrior";
 import {
   tickLabProjectiles,
+  spawnLabProjectile,
   type LabProjectile,
 } from "./LabyrinthProjectile";
 import { LabyrinthProjectiles3D } from "./LabyrinthProjectile3D";
@@ -397,6 +398,8 @@ export function LabyrinthScene() {
   // nearest enemy. Kept as a labyrinth-local ref so we don't need
   // to extend InputManager3D (core-game file).
   const aimOverrideRef = useRef<LabAimOverride>({ active: false, angle: 0 });
+  const labMinionsRef = useRef<MinionRuntime[]>([]);
+  const necroPassiveTimer = useRef(3.0);
   // Run-only gear system — equipped pieces + ground drops. Everything
   // auto-salvages into Soul Forge crystals at run end (see
   // ranSalvageRef). Labyrinth gear NEVER enters the main-game stash
@@ -594,6 +597,9 @@ export function LabyrinthScene() {
           gearStateRef={gearStateRef}
           gearDropsRef={gearDropsRef}
           ranSalvageRef={ranSalvageRef}
+          labMinionsRef={labMinionsRef}
+          necroPassiveTimer={necroPassiveTimer}
+          labStats={labStats}
           lootRoomCell={lootRoomCell}
           vaultOpenDir={lootLayout.vaultOpenDir}
           critChance={labStats.critChance}
@@ -662,6 +668,9 @@ function LabyrinthWorld({
   gearStateRef,
   gearDropsRef,
   ranSalvageRef,
+  labMinionsRef,
+  necroPassiveTimer,
+  labStats,
   lootRoomCell,
   vaultOpenDir,
   critChance,
@@ -698,6 +707,9 @@ function LabyrinthWorld({
   gearStateRef: React.MutableRefObject<LabGearState>;
   gearDropsRef: React.MutableRefObject<LabGearDropRuntime[]>;
   ranSalvageRef: React.MutableRefObject<boolean>;
+  labMinionsRef: React.MutableRefObject<MinionRuntime[]>;
+  necroPassiveTimer: React.MutableRefObject<number>;
+  labStats: PlayerStats;
   lootRoomCell: { col: number; row: number };
   vaultOpenDir: WallDir;
   critChance: number;
@@ -791,6 +803,8 @@ function LabyrinthWorld({
       {/* Death-burst renderer — independent of Enemies3D so even if the
           enemy visuals error out, the kill-feedback particles still play
           (they read only from deathFxList, not from GameState). */}
+      {/* Necromancer minions */}
+      <LabMinions3D minionsRef={labMinionsRef} />
       <LabyrinthDeathFx3D bursts={deathFxList} />
       {/* Shroud-mist ground trail — toxic green pools under the player
           while they're outside the safe zone. Purely visual; damage is
@@ -877,6 +891,9 @@ function LabyrinthWorld({
         gearStateRef={gearStateRef}
         gearDropsRef={gearDropsRef}
         ranSalvageRef={ranSalvageRef}
+        labMinionsRef={labMinionsRef}
+        necroPassiveTimer={necroPassiveTimer}
+        labStats={labStats}
         lootRoomCell={lootRoomCell}
         critChance={critChance}
         charClass={charClass}
@@ -1463,6 +1480,9 @@ function CombatEnemyLoop({
   onChestsChange,
   onGearDropsChange,
   onLootRoomUnlocked,
+  labMinionsRef,
+  necroPassiveTimer,
+  labStats,
 }: {
   maze: Maze;
   combatStats: LabCombatStats;
@@ -1495,6 +1515,9 @@ function CombatEnemyLoop({
   onChestsChange: (chests: LabChest[]) => void;
   onGearDropsChange: (drops: LabGearDropRuntime[]) => void;
   onLootRoomUnlocked: (unlocked: boolean) => void;
+  labMinionsRef: React.MutableRefObject<MinionRuntime[]>;
+  necroPassiveTimer: React.MutableRefObject<number>;
+  labStats: PlayerStats;
 }) {
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
   // Tracks the last death-fx list length we pushed to React state so we
@@ -1807,6 +1830,86 @@ function CombatEnemyLoop({
     if (tickedFx.length !== fxPrevLen) {
       lastEmittedFxLen.current = tickedFx.length;
       onDeathFxChange(tickedFx.slice());
+    }
+
+    // 6b) Necromancer minion system — passive spawn + orbit + auto-fire
+    if (isNecromancer) {
+      const minions = labMinionsRef.current;
+      const NECRO_CAP = labStats.necroArmyOfDarkness ? 5 : labStats.necroMinionCap;
+      const ORBIT_R = 3;
+      const ORBIT_SPD = 1.5;
+      const BONE_SPD = 12;
+      const BONE_LIFE = 2.0;
+      const BONE_RAD = 0.15;
+
+      // Passive spawn
+      necroPassiveTimer.current -= delta;
+      if (necroPassiveTimer.current <= 0 && minions.length < NECRO_CAP) {
+        necroPassiveTimer.current = 3.0;
+        const mhp = labStats.necroMinionHp + labStats.necroMinionHpBonus;
+        minions.push({
+          id: `lm_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+          x: p.x + (Math.random() - 0.5) * 2, z: p.z + (Math.random() - 0.5) * 2,
+          angle: 0, hp: mhp, maxHp: mhp,
+          orbitAngle: Math.random() * Math.PI * 2,
+          fireTimer: labStats.necroMinionFireRate * 0.5,
+          spawnTime: performance.now(),
+        });
+      }
+
+      // Tick each minion: orbit, aim, fire, collision with enemy projectiles
+      for (let mi = minions.length - 1; mi >= 0; mi--) {
+        const m = minions[mi];
+        m.orbitAngle += ORBIT_SPD * delta;
+        m.x = p.x + Math.cos(m.orbitAngle) * ORBIT_R;
+        m.z = p.z + Math.sin(m.orbitAngle) * ORBIT_R;
+
+        // Find nearest enemy
+        let nearDist = Infinity;
+        let nearE: EnemyRuntime | null = null;
+        for (const e of enemies) {
+          if (e.state === "dead") continue;
+          const dx = e.x - m.x, dz = e.z - m.z;
+          const d = dx * dx + dz * dz;
+          if (d < nearDist) { nearDist = d; nearE = e; }
+        }
+        if (nearE) m.angle = Math.atan2(nearE.x - m.x, nearE.z - m.z);
+
+        // Auto-fire
+        m.fireTimer -= delta;
+        if (m.fireTimer <= 0 && nearE) {
+          m.fireTimer = labStats.necroMinionFireRate;
+          const boneDmg = Math.round(effectiveStats.damage * 0.10) + labStats.necroMinionDamageBonus;
+          const boneAngle = Math.atan2(nearE.x - m.x, nearE.z - m.z);
+          spawnLabProjectile(projectilesRef.current, {
+            owner: "player",
+            x: m.x, z: m.z,
+            vx: Math.sin(boneAngle) * BONE_SPD,
+            vz: Math.cos(boneAngle) * BONE_SPD,
+            damage: boneDmg,
+            radius: BONE_RAD,
+            lifetime: BONE_LIFE,
+            piercing: false,
+            color: "#44ff66",
+            glowColor: "#22cc44",
+            style: "orb",
+          });
+        }
+
+        // Take damage from enemy projectiles
+        for (const ep of projectilesRef.current) {
+          if (ep.dead || ep.owner !== "enemy") continue;
+          const dx = ep.x - m.x, dz = ep.z - m.z;
+          if (Math.sqrt(dx * dx + dz * dz) <= 0.8) {
+            m.hp -= ep.damage;
+            ep.dead = true;
+          }
+        }
+
+        if (m.hp <= 0) {
+          minions.splice(mi, 1);
+        }
+      }
     }
 
     // 7) XP orbs — pickup detection + collect-animation tick, then
@@ -2902,6 +3005,38 @@ function LabyrinthHUD({
       {/* Level-up upgrade pick screen — same component as main game */}
       {phase === "levelup" && <LevelUp onChoice={handleLabUpgrade} />}
     </>
+  );
+}
+
+function LabMinions3D({ minionsRef }: { minionsRef: React.MutableRefObject<MinionRuntime[]> }) {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (!groupRef.current) return;
+    const minions = minionsRef.current;
+    const children = groupRef.current.children;
+    for (let i = 0; i < children.length; i++) {
+      if (i < minions.length) {
+        const m = minions[i];
+        children[i].position.set(m.x, 0, m.z);
+        children[i].rotation.y = m.angle;
+        children[i].visible = true;
+      } else {
+        children[i].visible = false;
+      }
+    }
+  });
+  return (
+    <group ref={groupRef}>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <group key={i} scale={0.4} visible={false}>
+          <mesh castShadow position={[0, 1.65, 0]}><boxGeometry args={[0.4, 0.45, 0.38]} /><meshBasicMaterial color="#d8c8a0" /></mesh>
+          <mesh position={[-0.1, 1.7, 0.2]}><boxGeometry args={[0.1, 0.08, 0.02]} /><meshBasicMaterial color="#cc66ff" /></mesh>
+          <mesh position={[0.1, 1.7, 0.2]}><boxGeometry args={[0.1, 0.08, 0.02]} /><meshBasicMaterial color="#cc66ff" /></mesh>
+          <mesh castShadow position={[0, 1.15, 0]}><boxGeometry args={[0.38, 0.5, 0.25]} /><meshBasicMaterial color="#c8b888" /></mesh>
+          <mesh castShadow position={[0, 0.75, 0]}><boxGeometry args={[0.12, 0.35, 0.12]} /><meshBasicMaterial color="#b8a878" /></mesh>
+        </group>
+      ))}
+    </group>
   );
 }
 
