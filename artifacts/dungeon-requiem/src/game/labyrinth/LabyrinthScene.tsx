@@ -2386,6 +2386,15 @@ function ZoneTickLoop({
           shared.descentPortalsSpawned = false;
           shared.portals = [];
           shared.rivalKillCount = 0;
+          shared.wardenSpawned = false;
+          shared.rivalAnnounce = null;
+          shared.wardenHud = null;
+          // Clear all enemies from previous layer — fresh slate
+          enemiesRef.current.length = 0;
+          shared.enemyCount = 0;
+          onEnemiesChange([]);
+          // Reset zone shrink (start fresh on the new layer)
+          runStartMs.current = performance.now();
           // +HP on entry
           if (nlc.hpBonusOnEntry > 0) {
             p.hp = Math.min(p.maxHp, p.hp + nlc.hpBonusOnEntry);
