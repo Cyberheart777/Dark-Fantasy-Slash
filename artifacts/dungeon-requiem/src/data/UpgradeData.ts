@@ -88,6 +88,24 @@ export type UpgradeId =
   | "army_of_darkness"
   | "lichs_bargain"
   | "death_coil"
+  // ── Bard-only ──
+  | "bard_sustain"
+  | "bard_clear_voice"
+  | "bard_long_reach"
+  | "bard_sharp_ears"
+  | "bard_opening_act"
+  | "bard_vital_song"
+  | "bard_distant_melody"
+  | "bard_amplifier"
+  | "bard_lingering_confuse"
+  | "bard_staccato"
+  | "bard_resonance"
+  | "bard_harmony"
+  | "bard_maestro"
+  | "bard_crescendo"
+  | "bard_symphony"
+  | "bard_grand_finale"
+  | "bard_rhapsody"
   // ── Relics ──
   | "relic_soulfire"
   | "relic_vampiric"
@@ -871,6 +889,118 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     description: "Death Surge kills also raise 1 skeletal mage from each slain enemy.",
     icon: "🔮", maxStacks: 1, rarity: "epic", classes: ["necromancer"],
     apply: (s) => { s.necroDeathCoil = true; },
+  },
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // BARD-ONLY
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // ── Tier 1 — Common ──
+  bard_sustain: {
+    id: "bard_sustain", name: "Sustain",
+    description: "Attack speed +20%.",
+    icon: "🎵", maxStacks: 3, rarity: "common", classes: ["bard"],
+    apply: (s) => { s.bardAtkSpeedBonus += 0.70; },
+  },
+  bard_clear_voice: {
+    id: "bard_clear_voice", name: "Clear Voice",
+    description: "Damage +6.",
+    icon: "🔊", maxStacks: 5, rarity: "common", classes: ["bard"],
+    apply: (s) => { s.bardDamageBonus += 6; },
+  },
+  bard_long_reach: {
+    id: "bard_long_reach", name: "Long Reach",
+    description: "Max range +15 units.",
+    icon: "📏", maxStacks: 3, rarity: "common", classes: ["bard"],
+    apply: (s) => { s.bardRangeBonus += 15; },
+  },
+  bard_sharp_ears: {
+    id: "bard_sharp_ears", name: "Sharp Ears",
+    description: "Confuse chance +10%.",
+    icon: "👂", maxStacks: 3, rarity: "common", classes: ["bard"],
+    apply: (s) => { s.bardConfuseChance += 0.10; },
+  },
+  bard_opening_act: {
+    id: "bard_opening_act", name: "Opening Act",
+    description: "HP +25.",
+    icon: "🎭", maxStacks: 5, rarity: "common", classes: ["bard"],
+    apply: (s) => { s.bardHpBonus += 25; s.maxHealth += 25; s.currentHealth += 25; },
+  },
+
+  // ── Tier 2 — Rare ──
+  bard_vital_song: {
+    id: "bard_vital_song", name: "Vital Song",
+    description: "Notes apply Dissonance: 3% damage taken per stack, max 8 (24% amp). Falls off after 3s.",
+    icon: "💀", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardDissonancePct = 0.03; },
+  },
+  bard_distant_melody: {
+    id: "bard_distant_melody", name: "Distant Melody",
+    description: "Damage falloff reduced: 75%→90%, 50%→80%, 25%→65%.",
+    icon: "🌙", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardFalloff2 = 0.90; s.bardFalloff3 = 0.80; s.bardFalloff4 = 0.65; },
+  },
+  bard_amplifier: {
+    id: "bard_amplifier", name: "Amplifier",
+    description: "Max range +25 units (60→85).",
+    icon: "📡", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardRangeBonus += 25; },
+  },
+  bard_lingering_confuse: {
+    id: "bard_lingering_confuse", name: "Lingering Confuse",
+    description: "Confuse duration +5s, max confused +1 (total 3).",
+    icon: "🌀", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardConfuseDuration += 5; s.bardConfuseCap += 1; },
+  },
+  bard_staccato: {
+    id: "bard_staccato", name: "Staccato",
+    description: "Every 3rd shot fires 3 notes in a tight spread at 80% damage.",
+    icon: "⚡", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardStaccatoEnabled = true; },
+  },
+  bard_resonance: {
+    id: "bard_resonance", name: "Resonance",
+    description: "Notes pierce through up to 3 enemies.",
+    icon: "🔔", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardPierceCount = 3; },
+  },
+  bard_harmony: {
+    id: "bard_harmony", name: "Harmony",
+    description: "Crit chance +15%, crit damage +50%.",
+    icon: "🎶", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.critChance += 0.15; s.critDamageMultiplier += 0.50; },
+  },
+
+  // ── Tier 3 — Epic ──
+  bard_maestro: {
+    id: "bard_maestro", name: "Maestro",
+    description: "Confuse chance tripled (10%→30%).",
+    icon: "🎩", maxStacks: 1, rarity: "epic", classes: ["bard"],
+    apply: (s) => { s.bardConfuseChance *= 3; },
+  },
+  bard_crescendo: {
+    id: "bard_crescendo", name: "Crescendo",
+    description: "Attack speed +75%, damage +40%.",
+    icon: "📈", maxStacks: 1, rarity: "epic", classes: ["bard"],
+    apply: (s) => { s.bardAtkSpeedBonus += 2.625; s.bardDamageBonus += Math.round(45 * 0.4); },
+  },
+  bard_symphony: {
+    id: "bard_symphony", name: "Symphony of Chaos",
+    description: "Confused enemies deal +100% damage to other enemies AND take +30% from all sources.",
+    icon: "🌪", maxStacks: 1, rarity: "epic", classes: ["bard"],
+    apply: (s) => { s.bardSymphonyEnabled = true; },
+  },
+  bard_grand_finale: {
+    id: "bard_grand_finale", name: "Grand Finale",
+    description: "Every 10th shot fires a massive note dealing 5× damage with no falloff.",
+    icon: "💥", maxStacks: 1, rarity: "epic", classes: ["bard"],
+    apply: (s) => { s.bardGrandFinaleEnabled = true; },
+  },
+  bard_rhapsody: {
+    id: "bard_rhapsody", name: "Rhapsody",
+    description: "After 3s of continuous attacking, damage ramps +10%/sec (capped at +100%).",
+    icon: "🔥", maxStacks: 1, rarity: "epic", classes: ["bard"],
+    apply: (s) => { s.bardRhapsodyEnabled = true; },
   },
 
   // ════════════════════════════════════════════════════════════════════════════
