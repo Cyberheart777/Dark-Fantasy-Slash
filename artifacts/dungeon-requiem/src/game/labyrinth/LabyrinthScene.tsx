@@ -22,6 +22,8 @@ import { InputManager3D } from "../InputManager3D";
 import {
   LABYRINTH_CONFIG,
   LABYRINTH_HALF,
+  LAYER_CONFIG,
+  type LayerConfig,
 } from "./LabyrinthConfig";
 import {
   generateMaze,
@@ -207,62 +209,22 @@ interface LabPlayer {
 /** Shared state read by HUD (polling) and mutated by Canvas useFrame. */
 interface LabSharedState {
   zone: ZoneState;
-  /** true once HP <= 0 or zone has fully closed on player. */
   defeated: boolean;
-  /** true once the player has used an extraction portal (win condition). */
   extracted: boolean;
-  /** true once the Warden has been slain (alternate win condition). */
   victory: boolean;
-  /** true once a warden has been spawned this run (prevents re-spawn). */
   wardenSpawned: boolean;
-  /** true once the first rival champion has spawned (at ~2 min). */
   firstRivalSpawned: boolean;
-  /** true once the second rival champion has spawned (at ~5 min). */
   secondRivalSpawned: boolean;
-  /** Number of rival champions the player has killed this run.
-   *  First kill drops the vault key. Second kill drops a guaranteed
-   *  rare gear piece. */
   rivalKillCount: number;
-  /** true once ANY rival has been killed AND dropped the key.
-   *  Flipped false when the key is consumed at the loot-door. */
   hasKey: boolean;
-  /** true once the player has opened the loot-room door by walking
-   *  into it with hasKey=true. Consumes the key (sets hasKey=false)
-   *  and signals CombatEnemyLoop to spawn the guaranteed epic gear
-   *  payload inside the room. Persistent for the rest of the run so
-   *  the door stays open. */
   lootRoomUnlocked: boolean;
-  /** One-shot trigger from MovementLoop → CombatEnemyLoop to spawn
-   *  the loot-room's gear payload. Set true the frame the door
-   *  unlocks; the combat loop consumes it by rolling 3 epic gear
-   *  drops inside the room and setting it back to false. */
   pendingLootSpawn: boolean;
-  /** Minor-room common-gear drops seeded at scene mount. Drained on
-   *  the first CombatEnemyLoop tick (spawn into the gearDrops list
-   *  with infinite lifetime so they persist until the player
-   *  actually visits the dead-end room). */
   pendingMinorRoomGear: Array<{ x: number; z: number; gear: GearDef }>;
-  /** True while the player is within prompt radius of the locked
-   *  vault door AND doesn't hold a champion key. Drives the
-   *  "REQUIRES CHAMPION KEY" HUD prompt. */
   nearLockedVault: boolean;
-  // ─── Achievement tracking (run-local) ────────────────────────────
-  /** Total shroud DoT damage taken this run. Drives Ghost Protocol
-   *  (extract with == 0). Incremented in the poison-damage tick. */
   shroudDamageTaken: number;
-  /** Count of gear pickups this run. Drives Iron Will (extract with
-   *  == 0 AND no equipped slots). Incremented in pickupLabGear path. */
   gearPickupsThisRun: number;
-  /** Guard so end-of-run single-run achievements evaluate once per
-   *  run (similar to ranSalvageRef but for the achievement pass). */
   achievementsEvaluated: boolean;
-  /** Per-rival announcement data. Populated on each rival spawn;
-   *  drives the "A RIVAL <CLASS> ENTERS THE LABYRINTH" HUD banner
-   *  which fades over 3.5 s. Null between announcements. */
   rivalAnnounce: { kind: "rival_warrior" | "rival_mage" | "rival_rogue"; announcedAt: number } | null;
-  /** HUD boss-bar snapshot. null while no warden exists; populated
-   *  on spawn and mutated each frame by CombatEnemyLoop. alive flips
-   *  false on warden kill — the HUD reads this to hide the bar. */
   wardenHud: {
     alive: boolean;
     hp: number;
@@ -270,36 +232,21 @@ interface LabSharedState {
     name: string;
     specialWarn: boolean;
   } | null;
-  /** true if the player is currently outside the safe zone. */
   outsideZone: boolean;
-  /** World direction TO the safe-zone center from the player, normalized. */
   safeDirX: number;
   safeDirZ: number;
-  /** Shroud poison-stack count (0..LAB_POISON_MAX_STACKS), for HUD display. */
   poisonStacks: number;
-  /** Per-stack DPS — so the HUD can show an indicator of upgrade scaling. */
   poisonDps: number;
-  /** Live portal list (mirrored for HUD — direction arrow + popups). */
   portals: ExtractionPortal[];
-  /** Milestone indices that have already spawned their portals. */
   spawnedMilestones: Set<number>;
-  /** Timestamp (sec elapsed) of the most recent portal spawn burst —
-   *  drives the HUD "EXTRACTION PORTAL OPENED" popup. */
   lastPortalPopupSec: number;
-  /** Count of portals spawned in the most recent burst (for the popup). */
   lastPortalPopupCount: number;
-  /** Live enemy count (alive + fading). Mirrored for HUD. */
   enemyCount: number;
-  /** Total enemies killed this run — shown on HUD / victory screens. */
   killCount: number;
-  /** Current player level (mirrored from LabProgressionState for HUD). */
   level: number;
-  /** XP progress toward the next level. */
   xp: number;
   xpToNext: number;
-  /** Cumulative XP earned this run. */
   totalXp: number;
-  /** Warrior-only passives snapshot — null for non-warrior classes. */
   warrior: {
     momentumStacks: number;
     momentumMult: number;
@@ -308,14 +255,22 @@ interface LabSharedState {
     bloodforgeGain: number;
     bloodforgeCap: number;
   } | null;
-  /** Currently-equipped gear by slot. Mirrored here so the HUD polling
-   *  loop can render equipped-slot icons without piercing the canvas
-   *  boundary. */
   equipped: {
     weapon: GearDef | null;
     armor: GearDef | null;
     trinket: GearDef | null;
   };
+  // ─── Descent layer tracking ─────────────────────────────────────────
+  layer: 1 | 2 | 3;
+  layerElapsedSec: number;
+  championsToKill: number;
+  championsKilled: number;
+  championSpawnIndex: number;
+  layerComplete: boolean;
+  miniBossSpawned: boolean;
+  miniBossAlive: boolean;
+  soulCrystalMult: number;
+  descentPortalsSpawned: boolean;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -408,6 +363,17 @@ export function LabyrinthScene() {
     totalXp: 0,
     warrior: null,
     equipped: { weapon: null, armor: null, trinket: null },
+    // Descent layer tracking
+    layer: 1,
+    layerElapsedSec: 0,
+    championsToKill: LAYER_CONFIG[1].championCount,
+    championsKilled: 0,
+    championSpawnIndex: 0,
+    layerComplete: false,
+    miniBossSpawned: false,
+    miniBossAlive: false,
+    soulCrystalMult: LAYER_CONFIG[1].crystalMult,
+    descentPortalsSpawned: false,
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
@@ -1903,28 +1869,33 @@ function CombatEnemyLoop({
     //       First rival at ~2 min in the mid ring, second at ~5 min
     //       in the outer ring. First kill drops the vault key,
     //       second kill drops a guaranteed rare (see kill handler).
-    if (!shared.firstRivalSpawned && shared.zone.elapsedSec >= 120) {
-      const [firstKind] = rivalOrderForClass(charClass);
-      const spawnPos = findMidRingSpawnCell(maze, p.x, p.z);
-      if (spawnPos) {
-        enemies.push(makeRivalChampion(firstKind, spawnPos.x, spawnPos.z));
-        onEnemiesChange(enemies.slice());
-        shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
-        shared.firstRivalSpawned = true;
-        shared.rivalAnnounce = { kind: firstKind, announcedAt: shared.zone.elapsedSec };
-        audioManager.play("boss_spawn");
-      }
-    }
-    if (!shared.secondRivalSpawned && shared.zone.elapsedSec >= 300) {
-      const [, secondKind] = rivalOrderForClass(charClass);
-      const spawnPos = findOuterRingSpawnCell(maze, p.x, p.z);
-      if (spawnPos) {
-        enemies.push(makeRivalChampion(secondKind, spawnPos.x, spawnPos.z));
-        onEnemiesChange(enemies.slice());
-        shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
-        shared.secondRivalSpawned = true;
-        shared.rivalAnnounce = { kind: secondKind, announcedAt: shared.zone.elapsedSec };
-        audioManager.play("boss_spawn");
+    // ── Descent champion spawn schedule ──────────────────────────────
+    // Champions spawn on layer-specific timers (LAYER_CONFIG.championScheduleSec).
+    // Each champion spawns 15-25u from player, behind them. Max 2 alive.
+    {
+      const lc = LAYER_CONFIG[shared.layer];
+      const schedule = lc.championScheduleSec;
+      if (shared.championSpawnIndex < schedule.length && shared.layerElapsedSec >= schedule[shared.championSpawnIndex]) {
+        const aliveChampions = enemies.filter((e) => e.state !== "dead" && (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue")).length;
+        if (aliveChampions < 2) {
+          // Pick champion kind based on index
+          const [r1, r2] = rivalOrderForClass(charClass);
+          const championKinds: Array<"rival_warrior" | "rival_mage" | "rival_rogue"> = shared.layer === 1
+            ? [r1, r2, r1, r2]   // 4 champions: alternate rival classes
+            : [r1, r2, r1];      // 3 champions
+          const kind = championKinds[shared.championSpawnIndex % championKinds.length];
+          // Spawn 15-25u from player, behind them
+          const behindAngle = p.angle + Math.PI + (Math.random() - 0.5) * 1.2;
+          const spawnDist = 15 + Math.random() * 10;
+          const sx = p.x + Math.sin(behindAngle) * spawnDist;
+          const sz = p.z + Math.cos(behindAngle) * spawnDist;
+          enemies.push(makeRivalChampion(kind, sx, sz));
+          onEnemiesChange(enemies.slice());
+          shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
+          shared.rivalAnnounce = { kind, announcedAt: shared.zone.elapsedSec };
+          shared.championSpawnIndex += 1;
+          audioManager.play("boss_spawn");
+        }
       }
     }
 
@@ -2166,6 +2137,7 @@ function ZoneTickLoop({
     const elapsedSec = (performance.now() - runStartMs.current) / 1000;
     const zone = computeZoneState(elapsedSec);
     shared.zone = zone;
+    shared.layerElapsedSec += delta;
 
     // Player vs safe-zone
     const p = playerRef.current;
@@ -2419,6 +2391,10 @@ function LabyrinthHUD({
     hasKey: false,
     nearLockedVault: false,
     rivalAnnounce: null as LabSharedState["rivalAnnounce"],
+    layer: 1 as 1 | 2 | 3,
+    championsKilled: 0,
+    championsToKill: 4,
+    layerComplete: false,
   });
 
   useEffect(() => {
@@ -2474,6 +2450,10 @@ function LabyrinthHUD({
         hasKey: s.hasKey,
         nearLockedVault: s.nearLockedVault,
         rivalAnnounce: s.rivalAnnounce,
+        layer: s.layer,
+        championsKilled: s.championsKilled,
+        championsToKill: s.championsToKill,
+        layerComplete: s.layerComplete,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -2614,8 +2594,36 @@ function LabyrinthHUD({
         </div>
       </div>
 
-      {/* Equipped-gear slots — three icons (weapon / armor / trinket)
-          with rarity-color borders. Rendered under the threat box. */}
+      {/* Layer + champion hunt tracker */}
+      {display.championsToKill > 0 && (
+        <div style={{ ...styles.threatBox, top: isMob ? 130 : 165, right: isMob ? 8 : 20, background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
+          <div style={{ fontSize: 9, letterSpacing: 2, color: "#cc88ff", fontWeight: 900, fontFamily: "monospace", marginBottom: 4 }}>
+            LAYER {display.layer} — CHAMPION HUNT
+          </div>
+          <div style={styles.threatRow}>
+            <span style={styles.threatLabel}>SLAIN</span>
+            <span style={{ ...styles.threatValueAccent, color: display.championsKilled >= display.championsToKill ? "#44ff88" : "#ff8844" }}>
+              {display.championsKilled}/{display.championsToKill}
+            </span>
+          </div>
+          {display.layerComplete && (
+            <div style={{ fontSize: 10, color: "#44ff88", fontWeight: 900, letterSpacing: 2, textAlign: "center" as const, marginTop: 4 }}>
+              PORTALS OPENED
+            </div>
+          )}
+        </div>
+      )}
+      {display.layer === 3 && display.championsToKill === 0 && (
+        <div style={{ ...styles.threatBox, top: isMob ? 130 : 165, right: isMob ? 8 : 20, background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
+          <div style={{ fontSize: 9, letterSpacing: 2, color: "#ff4488", fontWeight: 900, fontFamily: "monospace" }}>
+            LAYER 3 — THE ABYSS
+          </div>
+          <div style={{ fontSize: 10, color: "#ff88aa", letterSpacing: 1, marginTop: 2, fontFamily: "monospace" }}>
+            DEFEAT THE WARDEN
+          </div>
+        </div>
+      )}
+
       <GearSlotStrip equipped={display.equipped} />
 
       {/* Key icon — only visible once the champion has been slain.
@@ -2967,18 +2975,25 @@ function onRivalChampionKill(
   gearDrops: LabGearDropRuntime[],
 ): void {
   if (shared.rivalKillCount === 0) {
-    // First kill: drop the vault key (flag — HUD pill renders it).
-    // Persist the cross-run key-obtained counter here so Skeleton
-    // Key (7 total) fires the instant the 7th key is handed out
-    // — not delayed to run-end.
     shared.hasKey = true;
     useMetaStore.getState().recordLabyrinthKeyObtain();
   } else if (shared.rivalKillCount === 1) {
-    // Second kill: guaranteed rare gear drop at the rival's body.
     const gear = rollGearDrop("rare");
     spawnLabGearDrop(gearDrops, gear, e.x, e.z);
   }
   shared.rivalKillCount += 1;
+  shared.championsKilled += 1;
+  // Check layer completion: all champions dead (+ mini-boss on L2)
+  const lc = LAYER_CONFIG[shared.layer];
+  if (shared.championsKilled >= lc.championCount) {
+    if (shared.layer === 2 && !shared.miniBossSpawned) {
+      // L2: spawn mini-boss after all 3 champions killed (handled by caller)
+    } else if (shared.layer === 2 && shared.miniBossAlive) {
+      // L2: mini-boss still alive, wait
+    } else {
+      shared.layerComplete = true;
+    }
+  }
 }
 
 /** Per-rival banner display info. Class name + accent colour so the
