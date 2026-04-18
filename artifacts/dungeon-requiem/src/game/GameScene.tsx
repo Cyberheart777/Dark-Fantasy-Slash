@@ -2529,8 +2529,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         e.hp -= dmg;
         e.hitFlashTimer = 0.15;
         spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
-        // Crit hit juice — see melee swing for the same pattern
-        if (isCrit && e.hp > 0) { triggerShake(g, 0.22, 0.16); triggerFreeze(g, 22); }
         if (stats.lifesteal > 0) {
           healPlayer(p, stats, dmg * stats.lifesteal);
         }
