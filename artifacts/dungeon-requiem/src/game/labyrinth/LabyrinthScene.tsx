@@ -145,6 +145,7 @@ import {
   tickRangedAttack,
   tryFireMageOrb,
   tryFireRogueFan,
+  tryFireBardNote,
   type RangedAttackState,
 } from "./LabyrinthRangedAttack";
 import {
@@ -1732,6 +1733,10 @@ function CombatEnemyLoop({
         }
       } else if (isRogue) {
         if (tryFireRogueFan(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle)) {
+          audioManager.play("attack_dagger");
+        }
+      } else if (charClass === "bard") {
+        if (tryFireBardNote(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle)) {
           audioManager.play("attack_dagger");
         }
       }
