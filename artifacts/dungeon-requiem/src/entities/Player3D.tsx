@@ -31,6 +31,7 @@ export function Player3D({ gs }: PlayerProps) {
   if (charClass === "mage")       return <MageMeshAnimated  gs={gs} />;
   if (charClass === "rogue")      return <RogueMeshAnimated gs={gs} />;
   if (charClass === "necromancer") return <NecromancerMeshAnimated gs={gs} />;
+  if (charClass === "bard")       return <BardMeshAnimated gs={gs} />;
   return <WarriorMeshAnimated gs={gs} />;
 }
 
@@ -677,6 +678,141 @@ function NecromancerMeshAnimated({ gs }: PlayerProps) {
         <mesh ref={capeRef} castShadow position={[0, 0.95, -0.28]}>
           <boxGeometry args={[0.6, 0.95, 0.05]} />
           <meshBasicMaterial color={INNER} />
+        </mesh>
+      </group>
+      <pointLight ref={playerLtRef} />
+    </>
+  );
+}
+
+// ─── Bard — theatrical sniper with lute (meshBasicMaterial, iOS-safe) ────────
+
+function BardMeshAnimated({ gs }: PlayerProps) {
+  const groupRef    = useRef<THREE.Group>(null);
+  const bodyRef     = useRef<THREE.Mesh>(null);
+  const leftArmRef  = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const legsRef     = useRef<THREE.Group>(null);
+  const capeRef     = useRef<THREE.Mesh>(null);
+  const playerLtRef = useRef<THREE.PointLight>(null);
+  const t           = useRef(0);
+  const lastX       = useRef(0);
+  const lastZ       = useRef(0);
+
+  useFrame((_, delta) => {
+    if (!gs.current || !groupRef.current) return;
+    t.current += delta;
+    const p = gs.current.player;
+    groupRef.current.position.set(p.x, 0, p.z);
+    groupRef.current.rotation.y = p.angle;
+    applyRaceScale(gs, groupRef.current);
+    const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
+    lastX.current = p.x; lastZ.current = p.z;
+    if (leftArmRef.current && rightArmRef.current && legsRef.current) {
+      if (isMoving && !p.isDashing) {
+        const freq = 8, amp = 0.4;
+        leftArmRef.current.rotation.x  =  Math.sin(t.current * freq) * amp;
+        rightArmRef.current.rotation.x = -Math.sin(t.current * freq) * amp * 0.3;
+        const lg = legsRef.current.children;
+        if (lg[0]) (lg[0] as THREE.Group).rotation.x =  Math.sin(t.current * freq) * amp;
+        if (lg[1]) (lg[1] as THREE.Group).rotation.x = -Math.sin(t.current * freq) * amp;
+      } else {
+        leftArmRef.current.rotation.x  = Math.sin(t.current * 2) * 0.06;
+        rightArmRef.current.rotation.x = Math.sin(t.current * 2.5) * 0.04;
+        const lg = legsRef.current.children;
+        if (lg[0]) (lg[0] as THREE.Group).rotation.x = 0;
+        if (lg[1]) (lg[1] as THREE.Group).rotation.x = 0;
+      }
+    }
+    if (bodyRef.current) bodyRef.current.position.y = 0.95 + Math.sin(t.current * 1.8) * 0.02;
+    groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, p.isDashing ? -0.2 : 0, 0.2);
+    if (capeRef.current) capeRef.current.rotation.x = Math.sin(t.current * 2.2) * 0.06;
+    if (playerLtRef.current) {
+      playerLtRef.current.position.set(p.x, 2, p.z);
+      const invPct = Math.max(0, p.invTimer / GAME_CONFIG_INV_TIME);
+      playerLtRef.current.intensity = 1.0 + invPct * 3;
+      if (invPct > 0.1) playerLtRef.current.color.setRGB(1, 0.7, 0.2);
+      else playerLtRef.current.color.setRGB(0.8, 0.6, 0.2);
+    }
+  });
+
+  const ROBE = "#0a0808"; const TRIM = "#c8a020"; const HOOD = "#3a2810";
+  const SKIN = "#c0b0a0"; const EYE = "#ffaa22";
+  const LUTE_BODY = "#2a1a08"; const LUTE_STRING = "#ffc030";
+
+  return (
+    <>
+      <group ref={groupRef}>
+        {/* Legs */}
+        <group ref={legsRef}>
+          <group position={[-0.12, 0.38, 0]}>
+            <mesh castShadow><boxGeometry args={[0.16, 0.42, 0.16]} /><meshBasicMaterial color={ROBE} /></mesh>
+          </group>
+          <group position={[0.12, 0.38, 0]}>
+            <mesh castShadow><boxGeometry args={[0.16, 0.42, 0.16]} /><meshBasicMaterial color={ROBE} /></mesh>
+          </group>
+        </group>
+        {/* Robe body — wider at shoulders */}
+        <mesh ref={bodyRef} castShadow position={[0, 0.95, 0]}>
+          <boxGeometry args={[0.6, 0.8, 0.42]} />
+          <meshBasicMaterial color={ROBE} />
+        </mesh>
+        {/* Gold trim band at waist */}
+        <mesh position={[0, 0.6, 0]}>
+          <boxGeometry args={[0.55, 0.08, 0.4]} />
+          <meshBasicMaterial color={TRIM} />
+        </mesh>
+        {/* Shoulder accents */}
+        <mesh position={[-0.34, 1.22, 0]}>
+          <boxGeometry args={[0.14, 0.1, 0.32]} />
+          <meshBasicMaterial color={TRIM} />
+        </mesh>
+        <mesh position={[0.34, 1.22, 0]}>
+          <boxGeometry args={[0.14, 0.1, 0.32]} />
+          <meshBasicMaterial color={TRIM} />
+        </mesh>
+        {/* Hood */}
+        <mesh castShadow position={[0, 1.58, 0.04]}>
+          <boxGeometry args={[0.46, 0.44, 0.44]} />
+          <meshBasicMaterial color={HOOD} />
+        </mesh>
+        {/* Eyes — amber glow */}
+        <mesh position={[-0.09, 1.56, 0.24]}>
+          <boxGeometry args={[0.07, 0.04, 0.02]} />
+          <meshBasicMaterial color={EYE} />
+        </mesh>
+        <mesh position={[0.09, 1.56, 0.24]}>
+          <boxGeometry args={[0.07, 0.04, 0.02]} />
+          <meshBasicMaterial color={EYE} />
+        </mesh>
+        {/* Right arm */}
+        <group ref={rightArmRef} position={[0.38, 1.05, 0]}>
+          <mesh castShadow position={[0, -0.15, 0]}><boxGeometry args={[0.16, 0.48, 0.16]} /><meshBasicMaterial color={ROBE} /></mesh>
+          <mesh position={[0, -0.44, 0.03]}><boxGeometry args={[0.12, 0.12, 0.08]} /><meshBasicMaterial color={SKIN} /></mesh>
+        </group>
+        {/* Left arm — holds lute */}
+        <group ref={leftArmRef} position={[-0.38, 1.05, 0]}>
+          <mesh castShadow position={[0, -0.15, 0]}><boxGeometry args={[0.16, 0.48, 0.16]} /><meshBasicMaterial color={ROBE} /></mesh>
+          {/* Lute body */}
+          <mesh castShadow position={[-0.06, -0.35, 0.12]}>
+            <boxGeometry args={[0.22, 0.3, 0.08]} />
+            <meshBasicMaterial color={LUTE_BODY} />
+          </mesh>
+          {/* Lute neck */}
+          <mesh position={[-0.06, -0.08, 0.12]}>
+            <boxGeometry args={[0.05, 0.35, 0.04]} />
+            <meshBasicMaterial color={LUTE_BODY} />
+          </mesh>
+          {/* Lute strings — amber emissive */}
+          <mesh position={[-0.06, -0.22, 0.17]}>
+            <boxGeometry args={[0.12, 0.22, 0.01]} />
+            <meshBasicMaterial color={LUTE_STRING} />
+          </mesh>
+        </group>
+        {/* Cape */}
+        <mesh ref={capeRef} castShadow position={[0, 0.88, -0.24]}>
+          <boxGeometry args={[0.52, 0.78, 0.04]} />
+          <meshBasicMaterial color={ROBE} />
         </mesh>
       </group>
       <pointLight ref={playerLtRef} />

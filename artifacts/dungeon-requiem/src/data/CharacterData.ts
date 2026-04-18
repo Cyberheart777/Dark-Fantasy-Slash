@@ -3,7 +3,7 @@
  * Defines the four playable classes: Warrior, Mage, Rogue, Necromancer.
  */
 
-export type CharacterClass = "warrior" | "mage" | "rogue" | "necromancer";
+export type CharacterClass = "warrior" | "mage" | "rogue" | "necromancer" | "bard";
 
 export interface CharacterDef {
   id: CharacterClass;
@@ -148,5 +148,33 @@ export const CHARACTER_DATA: Record<CharacterClass, CharacterDef> = {
     accentColor: "#9944cc",
     auraColor: "#7030a0",
     image: "necromancer.png",
+  },
+
+  bard: {
+    id: "bard",
+    name: "BARD",
+    title: "Discordant Minstrel",
+    description: "Rapid-fire musical projectiles with distance falloff. Confuses enemies into attacking each other.",
+    lore: "The songs down here don't end. They twist.",
+    story: "You found a lute in the rubble of the last expedition. When you play it, the dead stop moving — not because they're at peace, but because they're listening. And what they hear makes them turn on each other.",
+    hp: 90,
+    damage: 45,
+    attackSpeed: 3.5,
+    moveSpeed: 10.5,
+    armor: 1,
+    dashCooldown: 1.8,
+    critChance: 0.06,
+    attackType: "projectile",
+    attackRange: 60,
+    projectileSpeed: 22,
+    projectilePiercing: false,
+    projectileCount: 1,
+    projectileSpread: 0,
+    projectileRadius: 0.25,
+    projectileLifetime: 3.0,
+    color: "#c8a020",
+    accentColor: "#ffd040",
+    auraColor: "#d4a830",
+    image: "bard.png",
   },
 };

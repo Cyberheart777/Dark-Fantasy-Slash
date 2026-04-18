@@ -3349,6 +3349,7 @@ function rivalOrderForClass(cls: CharacterClass): ["rival_warrior" | "rival_mage
   if (cls === "warrior")     return ["rival_mage",    "rival_rogue"];
   if (cls === "mage")        return ["rival_warrior", "rival_rogue"];
   if (cls === "necromancer") return ["rival_warrior", "rival_mage"];
+  if (cls === "bard")        return ["rival_mage",    "rival_warrior"];
   return                            ["rival_warrior", "rival_mage"];
 }
 

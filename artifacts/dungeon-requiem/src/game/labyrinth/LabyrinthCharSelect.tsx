@@ -23,7 +23,7 @@ import { RACE_DATA, RACES, type RaceType } from "../../data/RaceData";
 
 const clickSfx = () => audioManager.play("menu_click");
 
-const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue", "necromancer"];
+const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue", "necromancer", "bard"];
 
 /** Which classes are playable in the labyrinth today. All three
  *  unlocked as of step 4 commit G — mage + rogue get ranged
@@ -33,6 +33,7 @@ const LABYRINTH_CLASS_AVAILABLE: Record<CharacterClass, boolean> = {
   mage: true,
   rogue: true,
   necromancer: true,
+  bard: true,
 };
 
 const LABYRINTH_CLASS_COMING_SOON_HINT = "Playable in a future labyrinth update.";

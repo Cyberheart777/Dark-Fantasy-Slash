@@ -208,7 +208,7 @@ const DEFAULT_STATE = {
   milestones: {} as Record<string, boolean>,
   totalKills: 0,
   bestWaveEver: 0,
-  unlockedClasses: ["warrior", "necromancer"] as string[],
+  unlockedClasses: ["warrior", "necromancer", "bard"] as string[],
   unlockedRaces: ["human"] as string[],
   trialWins: {} as Record<string, string>,
   difficultyClears: { normal: 0, hard: 0, nightmare: 0 } as Record<DifficultyTier, number>,
@@ -348,15 +348,17 @@ export const useMetaStore = create<MetaState>()(
         if (wave >= 5) newMilestones["wave5"] = true;
         if (wave >= 10) newMilestones["wave10"] = true;
         if (wave >= 15) newMilestones["wave15"] = true;
+        if (wave >= 20) newMilestones["wave20"] = true;
         set({ bestWaveEver: wave, milestones: newMilestones });
       },
 
       checkUnlocks: () => {
         const s = get();
-        const classes: string[] = ["warrior", "necromancer"];
+        const classes: string[] = ["warrior", "necromancer", "bard"];
         if (s.milestones["wave5"]) classes.push("mage");
         if (s.milestones["kills100"]) classes.push("rogue");
         if (s.milestones["wave15"]) classes.push("necromancer");
+        if (s.milestones["wave20"]) classes.push("bard");
         const races: string[] = ["human"];
         if (s.milestones["boss_kill"]) races.push("dwarf");
         if (s.milestones["wave10"]) races.push("elf");

@@ -216,6 +216,26 @@ export interface PlayerStats {
   necroScytheDamageBonus: number;    // flat bonus scythe damage (0 base)
   necroMinionHpBonus: number;        // flat bonus minion HP (0 base)
   necroMinionDamageBonus: number;    // flat bonus bone projectile damage (0 base)
+  // ── Bard-specific ──────────────────────────────────────────────────────────
+  bardConfuseChance: number;         // 0.10 base
+  bardConfuseDuration: number;       // 5s base
+  bardConfuseCap: number;            // 2 base
+  bardMaxRange: number;              // 60 base
+  bardFalloff1: number;              // 1.00 (0-15u)
+  bardFalloff2: number;              // 0.75 (15-30u)
+  bardFalloff3: number;              // 0.50 (30-45u)
+  bardFalloff4: number;              // 0.25 (45-60u)
+  bardDissonancePct: number;         // 0 base — damage amp per stack (Vital Song)
+  bardDissonanceMaxStacks: number;   // 8
+  bardPierceCount: number;           // 0 base (Resonance: 3)
+  bardStaccatoEnabled: boolean;      // every 3rd shot fires 3-note spread
+  bardGrandFinaleEnabled: boolean;   // every 10th shot = 5× damage, no falloff
+  bardRhapsodyEnabled: boolean;      // continuous-fire damage ramp
+  bardSymphonyEnabled: boolean;      // confused enemies deal +100% dmg, take +30% dmg
+  bardDamageBonus: number;           // flat bonus from upgrades
+  bardAtkSpeedBonus: number;         // additive attack speed bonus
+  bardRangeBonus: number;            // additive max range bonus
+  bardHpBonus: number;               // flat HP bonus
   // ── Gear proc stat fields ──────────────────────────────────────────────────
   critDamageBonus: number;        // gear (+% crit damage), additive to critDamageMultiplier
   poisonDamageBonus: number;      // gear (+% poison damage), additive bonus to poison DPS
@@ -331,6 +351,26 @@ export function createDefaultStats(): PlayerStats {
     necroScytheDamageBonus: 0,
     necroMinionHpBonus: 0,
     necroMinionDamageBonus: 0,
+    // Bard
+    bardConfuseChance: 0.10,
+    bardConfuseDuration: 5,
+    bardConfuseCap: 2,
+    bardMaxRange: 60,
+    bardFalloff1: 1.00,
+    bardFalloff2: 0.75,
+    bardFalloff3: 0.50,
+    bardFalloff4: 0.25,
+    bardDissonancePct: 0,
+    bardDissonanceMaxStacks: 8,
+    bardPierceCount: 0,
+    bardStaccatoEnabled: false,
+    bardGrandFinaleEnabled: false,
+    bardRhapsodyEnabled: false,
+    bardSymphonyEnabled: false,
+    bardDamageBonus: 0,
+    bardAtkSpeedBonus: 0,
+    bardRangeBonus: 0,
+    bardHpBonus: 0,
     // Gear proc defaults (neutral — no equipped gear)
     critDamageBonus: 0,
     poisonDamageBonus: 0,

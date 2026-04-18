@@ -91,6 +91,10 @@ export interface PlayerRuntime {
   deathSurgeCooldown: number;    // seconds remaining on Death Surge cooldown
   necroPassiveSpawnTimer?: number; // passive skeleton spawn cooldown (5s)
   shadowStepVoids: { x: number; z: number; timer: number; }[];  // active void zones
+  // ── Bard runtime fields ─────────────────────────────────────────────────
+  bardShotCounter: number;         // tracks consecutive shots for Staccato + Grand Finale
+  bardRhapsodyTimer: number;       // seconds of continuous attacking (for Rhapsody ramp)
+  bardConfuseCount: number;        // current number of confused enemies (capped)
   // ── Gear proc runtime fields ──────────────────────────────────────────────
   arcSlashTimer: number;         // Arc Warblade: counts up to arcSlashInterval, then procs
   phantomWrapCdTimer: number;    // Phantom Wrap: cooldown remaining (seconds)
@@ -146,6 +150,9 @@ export interface EnemyRuntime {
    *  aimed-cone volley. Aimed projectiles punish ranged kiters who
    *  otherwise ignore the boss's AoE slam + radial burst from distance. */
   voidLanceTimer?: number;
+  confuseTimer?: number;          // bard: seconds remaining confused (target swap)
+  dissonanceStacks?: number;      // bard Vital Song: damage amp stacks
+  dissonanceTimer?: number;       // bard Vital Song: 3s falloff timer
 }
 
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
@@ -582,6 +589,10 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     // Necromancer runtime
     deathSurgeCooldown: 0,
     shadowStepVoids: [],
+    // Bard runtime
+    bardShotCounter: 0,
+    bardRhapsodyTimer: 0,
+    bardConfuseCount: 0,
     // Gear proc runtime
     arcSlashTimer: 0,
     phantomWrapCdTimer: 0,
@@ -1425,6 +1436,28 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               while (g.minions.length > cap) g.minions.shift();
             }
 
+          } else if (g.charClass === "bard") {
+            // ── Bard: Sonic Step — blink + shockwave at origin ──
+            const blinkDist = GAME_CONFIG.PLAYER.DASH_SPEED * GAME_CONFIG.PLAYER.DASH_DURATION;
+            const originX = p.x, originZ = p.z;
+            p.x = Math.max(-ARENA, Math.min(ARENA, p.x + dashDir.x * blinkDist));
+            p.z = Math.max(-ARENA, Math.min(ARENA, p.z + dashDir.z * blinkDist));
+            p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.15;
+            p.isDashing = false;
+            p.dashCooldown = stats.dashCooldown;
+            const SHOCKWAVE_R = 4;
+            const SHOCKWAVE_DMG = 8;
+            for (const e of g.enemies) {
+              if (e.dead) continue;
+              const sx = e.x - originX, sz = e.z - originZ;
+              if (Math.sqrt(sx * sx + sz * sz) <= SHOCKWAVE_R) {
+                e.hp -= SHOCKWAVE_DMG; e.hitFlashTimer = 0.15;
+                e.slowPct = Math.max(e.slowPct, 0.4); e.slowTimer = 2.0;
+                if (e.hp <= 0 && !e.dead) { e.dead = true; g.kills++; g.score += e.scoreValue; handleBossKillCleanup(e, g); }
+              }
+            }
+            triggerBootsOfSpeed(p, stats);
+
           } else {
             // ── Warrior: Knockback Charge — push enemies away ──
             p.isDashing = true;
@@ -1693,15 +1726,15 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           }
 
         } else {
-          audioManager.play(g.charClass === "mage" ? "attack_orb" : "attack_dagger");
-          // ── Projectile attack (Mage / Rogue) ───────────────────────────
+          audioManager.play(g.charClass === "mage" ? "attack_orb" : g.charClass === "bard" ? "attack_orb" : "attack_dagger");
+          // ── Projectile attack (Mage / Rogue / Bard) ────────────────────
           const def = CHARACTER_DATA[g.charClass];
           // Extra projectiles from upgrades
           const extraCount = g.charClass === "mage" ? stats.mageExtraOrbs
                            : g.charClass === "rogue" ? stats.rogueExtraDaggers : 0;
           const totalCount = def.projectileCount + extraCount;
-          const projStyle = g.charClass === "mage" ? "orb" as const : "dagger" as const;
-          const isPiercing = def.projectilePiercing;
+          const projStyle = g.charClass === "mage" ? "orb" as const : g.charClass === "bard" ? "dagger" as const : "dagger" as const;
+          const isPiercing = def.projectilePiercing || (g.charClass === "bard" && stats.bardPierceCount > 0);
           // War cry damage bonus (warrior only but just in case)
           const warCryMult = p.warCryTimer > 0 ? (1 + stats.warCryDmgBonus) : 1;
           const projDmg = Math.round(stats.damage * warCryMult);
@@ -1743,6 +1776,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 if (stats.overchargedOrbBonus > 0) { proj.spawnX = p.x; proj.spawnZ = p.z; proj.maxRange = projSpeed * projLifetime; }
                 if (stats.residualFieldEnabled) { proj.trailTimer = 0; }
                 if (stats.ricochetOrbEnabled) { proj.bouncesLeft = 3; proj.baseDamage = projDmg; }
+              }
+              // Bard: track spawn pos for distance falloff at hit time
+              if (g.charClass === "bard") {
+                proj.spawnX = p.x; proj.spawnZ = p.z;
+                if (stats.bardPierceCount > 0) { proj.bouncesLeft = stats.bardPierceCount; }
               }
               g.projectiles.push(proj);
               // Split Bolt: each orb spawns 2 extra mini-orbs (3 total) at 35% damage in cone
@@ -2473,6 +2511,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const dx = proj.x - proj.spawnX, dz = proj.z - (proj.spawnZ ?? 0);
           const traveled = Math.sqrt(dx * dx + dz * dz);
           dmg = Math.round(dmg * (1 + stats.overchargedOrbBonus * Math.min(traveled / proj.maxRange, 1)));
+        }
+        // Bard: distance-based falloff
+        if (g.charClass === "bard" && proj.spawnX !== undefined) {
+          const dx = proj.x - proj.spawnX, dz = proj.z - (proj.spawnZ ?? 0);
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          const mult = dist <= 15 ? stats.bardFalloff1 : dist <= 30 ? stats.bardFalloff2 : dist <= 45 ? stats.bardFalloff3 : stats.bardFalloff4;
+          dmg = Math.round(dmg * mult);
         }
         // Gear: Berserker Sigil low-HP bonus + Glacial Robe amp
         dmg = Math.round(dmg * getLowHpDamageMult(p, stats) * getGlacialAmp(stats, e));

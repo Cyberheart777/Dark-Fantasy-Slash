@@ -33,6 +33,12 @@ const CLASS_GROWTH: Record<CharacterClass, (s: PlayerStats) => void> = {
     s.armor      += 0.15;
     s.attackSpeed = parseFloat((s.attackSpeed + 0.008).toFixed(3));
   },
+  bard: (s) => {
+    s.damage     += 2;
+    s.maxHealth  += 1;
+    s.critChance  = parseFloat((s.critChance + 0.003).toFixed(4));
+    s.attackSpeed = parseFloat((s.attackSpeed + 0.025).toFixed(3));
+  },
 };
 
 export class ProgressionManager {
