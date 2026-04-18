@@ -2256,7 +2256,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       const ORBIT_SPEED = 1.5;
       const BONE_SPEED = 12;
       const BONE_LIFETIME = 2.0;
-      const BONE_RADIUS = 0.3;
+      const BONE_RADIUS = 0.15;
 
       for (let mi = g.minions.length - 1; mi >= 0; mi--) {
         const m = g.minions[mi];

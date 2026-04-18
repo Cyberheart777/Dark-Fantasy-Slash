@@ -318,7 +318,7 @@ export function createDefaultStats(): PlayerStats {
     necroRaiseChance: 0.30,
     necroMinionCap: 3,
     necroMinionHp: 30,
-    necroMinionDamage: 4,
+    necroMinionDamage: 6,
     necroMinionFireRate: 1.0,
     necroDeathSurgeDamageMult: 1.0,
     necroSoulHarvestHeal: 0,
