@@ -2293,7 +2293,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             hitIds: new Set(),
             color: "#44ff66",
             glowColor: "#22cc44",
-            style: "orb",
+            style: "dagger",
             dead: false,
           });
         }
