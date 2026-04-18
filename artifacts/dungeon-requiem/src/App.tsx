@@ -3,7 +3,7 @@
  * Phase-based state machine. GameScene handles all game logic.
  */
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useGameStore } from "./store/gameStore";
 import { audioManager } from "./audio/AudioManager";
 import type { SoundKey } from "./audio/SoundData";
@@ -38,6 +38,8 @@ function musicForPhase(phase: string): SoundKey | null {
 
 export default function App() {
   const phase = useGameStore((s) => s.phase);
+  const prevPhaseRef = useRef(phase);
+  useEffect(() => { if (phase !== "levelup") prevPhaseRef.current = phase; }, [phase]);
   const masterVolume = useGameStore((s) => s.masterVolume);
   const sfxVolume = useGameStore((s) => s.sfxVolume);
   const musicVolume = useGameStore((s) => s.musicVolume);
@@ -112,13 +114,14 @@ export default function App() {
       {phase === "charselect"           && <CharacterSelect />}
       {phase === "soulforge"            && <SoulForge />}
       {phase === "labyrinth_charselect" && <LabyrinthCharSelect />}
-      {phase === "labyrinth"            && <LabyrinthScene />}
+      {(phase === "labyrinth" || (phase === "levelup" && prevPhaseRef.current === "labyrinth")) && <LabyrinthScene />}
 
       {(phase !== "menu"
         && phase !== "charselect"
         && phase !== "soulforge"
         && phase !== "labyrinth"
-        && phase !== "labyrinth_charselect") && (
+        && phase !== "labyrinth_charselect"
+        && !(phase === "levelup" && prevPhaseRef.current === "labyrinth")) && (
         <GameScene onRestart={handleRestart} />
       )}
 
