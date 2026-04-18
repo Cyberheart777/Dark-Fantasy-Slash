@@ -2291,8 +2291,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             lifetime: BONE_LIFETIME,
             piercing: false,
             hitIds: new Set(),
-            color: "#d4c8a0",
-            glowColor: "#aa88cc",
+            color: "#44ff66",
+            glowColor: "#22cc44",
             style: "orb",
             dead: false,
           });
