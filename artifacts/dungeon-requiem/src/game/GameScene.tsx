@@ -2001,9 +2001,39 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     for (const e of g.enemies) {
       if (e.dead) continue;
       if (e.hitFlashTimer > 0) e.hitFlashTimer -= delta;
+      // Bard confuse: tick down + decrement count on expiry
+      if ((e.confuseTimer ?? 0) > 0) {
+        e.confuseTimer! -= delta;
+        if (e.confuseTimer! <= 0) { e.confuseTimer = 0; p.bardConfuseCount = Math.max(0, p.bardConfuseCount - 1); }
+      }
+      // Bard dissonance: tick down stacks
+      if ((e.dissonanceTimer ?? 0) > 0) {
+        e.dissonanceTimer! -= delta;
+        if (e.dissonanceTimer! <= 0) { e.dissonanceStacks = 0; e.dissonanceTimer = 0; }
+      }
 
-      const edx = p.x - e.x;
-      const edz = p.z - e.z;
+      // Target selection: confused enemies target nearest other entity
+      let targetX = p.x, targetZ = p.z;
+      if ((e.confuseTimer ?? 0) > 0) {
+        let nearDist = Infinity;
+        for (const other of g.enemies) {
+          if (other === e || other.dead) continue;
+          const ox = other.x - e.x, oz = other.z - e.z;
+          const od = ox * ox + oz * oz;
+          if (od < nearDist) { nearDist = od; targetX = other.x; targetZ = other.z; }
+        }
+        // Also check minions
+        for (const m of g.minions) {
+          const mx = m.x - e.x, mz = m.z - e.z;
+          const md = mx * mx + mz * mz;
+          if (md < nearDist) { nearDist = md; targetX = m.x; targetZ = m.z; }
+        }
+        // If nothing nearby, wander passively
+        if (nearDist > 400) { targetX = e.x; targetZ = e.z; }
+      }
+
+      const edx = targetX - e.x;
+      const edz = targetZ - e.z;
       const dist = Math.sqrt(edx * edx + edz * edz);
 
       // XP Goblin: flees player, despawns after 25s, taunts every ~3s
@@ -2571,9 +2601,25 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           if (stats.arcaneSurgeBlinkCdr > 0) p.dashCooldown = Math.max(0, p.dashCooldown - stats.arcaneSurgeBlinkCdr);
         }
         maybeApplySerpentsFang(e, stats);
-        e.hp -= dmg;
-        e.hitFlashTimer = 0.15;
-        spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
+        // Bard confuse: chance to confuse instead of dealing damage
+        const isChampOrBoss = e.type === "boss" || e.type.endsWith("_champion");
+        if (g.charClass === "bard" && !isChampOrBoss && Math.random() < stats.bardConfuseChance && p.bardConfuseCount < stats.bardConfuseCap && (e.confuseTimer ?? 0) <= 0) {
+          e.confuseTimer = stats.bardConfuseDuration;
+          p.bardConfuseCount++;
+          e.hitFlashTimer = 0.2;
+          spawnTextPopup(e.x, e.z, "CONFUSED", "#ffaa22", 1.2);
+        } else {
+          // Bard dissonance: damage amp per stack
+          if (g.charClass === "bard" && stats.bardDissonancePct > 0) {
+            const stacks = e.dissonanceStacks ?? 0;
+            if (stacks > 0) dmg = Math.round(dmg * (1 + stacks * stats.bardDissonancePct));
+            e.dissonanceStacks = Math.min((e.dissonanceStacks ?? 0) + 1, stats.bardDissonanceMaxStacks);
+            e.dissonanceTimer = 3.0;
+          }
+          e.hp -= dmg;
+          e.hitFlashTimer = 0.15;
+          spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
+        }
         if (stats.lifesteal > 0) {
           healPlayer(p, stats, dmg * stats.lifesteal);
         }
