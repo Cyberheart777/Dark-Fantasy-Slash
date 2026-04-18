@@ -2279,7 +2279,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         m.fireTimer -= delta;
         if (m.fireTimer <= 0 && nearE) {
           m.fireTimer = stats.necroMinionFireRate;
-          const boneDmg = stats.necroMinionDamage + stats.necroMinionDamageBonus;
+          const boneDmg = Math.round(stats.damage * 0.10) + stats.necroMinionDamageBonus;
           const boneAngle = Math.atan2(nearE.x - m.x, nearE.z - m.z);
           g.projectiles.push({
             id: `bone_${m.id}_${Date.now()}`,
@@ -2333,9 +2333,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
 
     // ── Necromancer: Passive minion spawn every 5s ───────────────────────
     if (g.charClass === "necromancer") {
-      p.necroPassiveSpawnTimer = (p.necroPassiveSpawnTimer ?? 5.0) - delta;
+      p.necroPassiveSpawnTimer = (p.necroPassiveSpawnTimer ?? 3.0) - delta;
       if (p.necroPassiveSpawnTimer <= 0) {
-        p.necroPassiveSpawnTimer = 5.0;
+        p.necroPassiveSpawnTimer = 3.0;
         const cap = stats.necroArmyOfDarkness ? 5 : stats.necroMinionCap;
         if (g.minions.length < cap) {
           const minionHp = stats.necroMinionHp + stats.necroMinionHpBonus;
