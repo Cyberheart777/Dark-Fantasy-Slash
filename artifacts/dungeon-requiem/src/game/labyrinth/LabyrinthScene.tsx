@@ -1521,8 +1521,9 @@ function CombatEnemyLoop({
     if ((shared.defeated || shared.extracted || shared.victory) && !ranSalvageRef.current) {
       ranSalvageRef.current = true;
       const total = salvageLabGear(gearStateRef.current, gearDropsRef.current);
-      if (total > 0) {
-        useMetaStore.getState().addShards(total);
+      const crystalTotal = total * shared.soulCrystalMult;
+      if (crystalTotal > 0) {
+        useMetaStore.getState().addShards(crystalTotal);
       }
     }
     // Evaluate single-run achievements exactly once per run — same
@@ -2772,22 +2773,37 @@ function LabyrinthHUD({
         </div>
       )}
 
-      {/* Warden-slain victory screen — takes precedence over everything */}
+      {/* Warden-slain victory screen — Layer 3 shows gear keep selection */}
       {display.victory && (
         <div style={styles.extractedOverlay}>
           <div style={styles.extractedPanel}>
             <div style={{ ...styles.extractedTitle, color: "#ff60ff" }}>
-              ⚔ WARDEN SLAIN
+              ⚔ WARDEN SLAIN — LAYER {display.layer}
             </div>
             <div style={styles.extractedSub}>
-              The vault's keeper is dead. The labyrinth is yours.
+              {display.layer === 3
+                ? "The Abyss is conquered. Choose one item to keep permanently."
+                : "The vault's keeper is dead. The labyrinth is yours."}
             </div>
-            <div style={styles.extractedStats}>
-              TIME · {formatZoneTime(display.elapsedSec)} · KILLS · {display.killCount}
-            </div>
-            <button style={styles.escBtn} onClick={exit}>
-              ⌂ RETURN TO MAIN MENU
-            </button>
+            {display.layer === 3 && (
+              <GearKeepSelection equipped={display.equipped} onKeep={(gear) => {
+                if (gear) {
+                  const kept = { ...gear, enhanceLevel: 0 };
+                  useMetaStore.getState().addGearToStash(kept as any);
+                }
+                exit();
+              }} />
+            )}
+            {display.layer !== 3 && (
+              <>
+                <div style={styles.extractedStats}>
+                  TIME · {formatZoneTime(display.elapsedSec)} · KILLS · {display.killCount}
+                </div>
+                <button style={styles.escBtn} onClick={exit}>
+                  ⌂ RETURN TO MAIN MENU
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -2889,7 +2905,46 @@ function LabyrinthHUD({
   );
 }
 
-/** Poison-stack pip bar shown under the HP bar while the shroud is active. */
+function GearKeepSelection({ equipped, onKeep }: {
+  equipped: { weapon: GearDef | null; armor: GearDef | null; trinket: GearDef | null };
+  onKeep: (gear: GearDef | null) => void;
+}) {
+  const slots = [
+    { label: "WEAPON", gear: equipped.weapon, icon: "⚔" },
+    { label: "ARMOR", gear: equipped.armor, icon: "🛡" },
+    { label: "TRINKET", gear: equipped.trinket, icon: "💎" },
+  ];
+  const hasAny = slots.some((s) => s.gear !== null);
+  return (
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 10, marginTop: 16, width: "100%" }}>
+      {slots.map((s) => s.gear ? (
+        <button key={s.label} style={{
+          display: "flex", alignItems: "center", gap: 14,
+          padding: "14px 18px", background: "rgba(40,15,70,0.7)",
+          border: "1px solid rgba(180,80,255,0.5)", borderRadius: 8,
+          cursor: "pointer", fontFamily: "monospace", textAlign: "left" as const,
+        }} onClick={() => onKeep(s.gear)}>
+          <span style={{ fontSize: 28 }}>{s.gear!.icon}</span>
+          <div>
+            <div style={{ color: "#ddaaff", fontSize: 14, fontWeight: "bold", letterSpacing: 1 }}>{s.gear!.name}</div>
+            <div style={{ color: "#aa88cc", fontSize: 10, letterSpacing: 2 }}>{s.label} · {s.gear!.rarity.toUpperCase()}</div>
+          </div>
+        </button>
+      ) : null)}
+      {!hasAny && (
+        <div style={{ color: "#888", fontSize: 12, textAlign: "center" as const, padding: 20 }}>No gear equipped to keep.</div>
+      )}
+      <button style={{
+        padding: "10px 16px", background: "rgba(30,30,30,0.8)",
+        border: "1px solid #444", borderRadius: 6, color: "#aaa",
+        cursor: "pointer", fontFamily: "monospace", fontSize: 11, letterSpacing: 2,
+      }} onClick={() => onKeep(null)}>
+        SKIP — RETURN TO MENU
+      </button>
+    </div>
+  );
+}
+
 /** Decides which two rival kinds spawn (and in what order) based on
  *  the player's selected class. First rival is the more ranged /
  *  complex counter; second is the opposite style. Deterministic so
