@@ -46,6 +46,10 @@ export const TRIAL_BUFFS: TrialBuff[] = [
   { class: "necromancer", difficulty: "normal",    label: "Shepherd's Vigor",    description: "+15 Max HP permanently",         stat: "maxHealth",   value: 15 },
   { class: "necromancer", difficulty: "hard",      label: "Shepherd's Command",  description: "+3 Damage permanently",          stat: "damage",      value: 3 },
   { class: "necromancer", difficulty: "nightmare", label: "Shepherd's Dominion", description: "+3 Armor permanently",           stat: "armor",       value: 3 },
+  // ── Bard champion rewards ──
+  { class: "bard",        difficulty: "normal",    label: "Minstrel's Tempo",    description: "+0.10 Attack Speed permanently",   stat: "attackSpeed", value: 0.10 },
+  { class: "bard",        difficulty: "hard",      label: "Minstrel's Verse",    description: "+4 Damage permanently",            stat: "damage",      value: 4 },
+  { class: "bard",        difficulty: "nightmare", label: "Minstrel's Opus",     description: "+4% Crit Chance permanently",      stat: "critChance",  value: 0.04 },
 ];
 
 /** Difficulty ranking for comparison. */

@@ -9,7 +9,7 @@
  *   orange= 50× (boss)
  */
 
-export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss" | "xp_goblin" | "warrior_champion" | "mage_champion" | "rogue_champion" | "necromancer_champion";
+export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss" | "xp_goblin" | "warrior_champion" | "mage_champion" | "rogue_champion" | "necromancer_champion" | "bard_champion";
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
 
 export interface EnemyDef {
@@ -197,6 +197,24 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     emissive: "#2a0840",
     scale: 1.8,
   },
+
+  bard_champion: {
+    type: "bard_champion",
+    displayName: "The Discordant Minstrel",
+    health: 1700,
+    damage: 30,
+    moveSpeed: 5.0,
+    xpReward: 0,
+    crystalTier: "orange",
+    attackRange: 40.0,
+    attackInterval: 0.5,
+    collisionRadius: 1.5,
+    scoreValue: 0,
+    color: "#c8a020",
+    emissive: "#4a3008",
+    scale: 1.8,
+  },
+  // FUTURE: enemy Bard variant ready for main dungeon enemy pool inclusion
 };
 
 export const SPAWN_TABLE: Array<[EnemyType, number][]> = [

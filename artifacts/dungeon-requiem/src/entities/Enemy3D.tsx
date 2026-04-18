@@ -1173,6 +1173,36 @@ function NecromancerChampionMesh({ color, emissive, flash, walkSpeed, attackTime
   );
 }
 
+// ─── Bard Champion ───────────────────────────────────────────────────────────
+
+function BardChampionMesh({ color, emissive, flash }: { color: string; emissive: string; flash: boolean }) {
+  const t = useRef(Math.random() * 100);
+  const groupRef = useRef<THREE.Group>(null);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (groupRef.current) {
+      groupRef.current.position.y = Math.sin(t.current * 2) * 0.03;
+    }
+  });
+
+  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 4 : 1.0 };
+  const dark = { color: flash ? "#ffffff" : "#0a0800", emissive: "#1a1000", emissiveIntensity: flash ? 3 : 0.5 };
+
+  return (
+    <group ref={groupRef}>
+      <mesh castShadow position={[0, 0.95, 0]}><boxGeometry args={[0.6, 0.8, 0.4]} /><meshStandardMaterial {...dark} /></mesh>
+      <mesh position={[0, 0.6, 0]}><boxGeometry args={[0.55, 0.08, 0.38]} /><meshStandardMaterial {...mat} /></mesh>
+      <mesh castShadow position={[0, 1.55, 0.04]}><boxGeometry args={[0.46, 0.44, 0.44]} /><meshStandardMaterial color={flash ? "#fff" : "#3a2810"} /></mesh>
+      <mesh position={[-0.09, 1.55, 0.28]}><boxGeometry args={[0.07, 0.04, 0.02]} /><meshStandardMaterial color="#ffaa22" emissive="#ffaa22" emissiveIntensity={6} /></mesh>
+      <mesh position={[0.09, 1.55, 0.28]}><boxGeometry args={[0.07, 0.04, 0.02]} /><meshStandardMaterial color="#ffaa22" emissive="#ffaa22" emissiveIntensity={6} /></mesh>
+      <mesh castShadow position={[-0.3, 0.7, 0.1]}><boxGeometry args={[0.2, 0.28, 0.07]} /><meshStandardMaterial color="#2a1a08" /></mesh>
+      <mesh position={[-0.3, 0.7, 0.15]}><boxGeometry args={[0.1, 0.2, 0.01]} /><meshStandardMaterial color="#ffc030" emissive="#ffc030" emissiveIntensity={2} /></mesh>
+      <mesh castShadow position={[0, 0.85, -0.22]}><boxGeometry args={[0.5, 0.7, 0.04]} /><meshStandardMaterial {...dark} /></mesh>
+    </group>
+  );
+}
+
 // ─── Status Effect Visuals ───────────────────────────────────────────────────
 
 const _poisonGeo = new THREE.SphereGeometry(0.06, 4, 4);
@@ -1526,6 +1556,7 @@ export function Enemy3D({ enemy }: EnemyProps) {
         {enemy.type === "mage_champion" && <MageChampionMesh {...meshProps} />}
         {enemy.type === "rogue_champion" && <RogueChampionMesh {...meshProps} walkSpeed={walkSpeed} />}
         {enemy.type === "necromancer_champion" && <NecromancerChampionMesh {...meshProps} walkSpeed={walkSpeed} {...attackProps} />}
+        {enemy.type === "bard_champion" && <BardChampionMesh {...meshProps} />}
       </group>
 
       {/* Status effect visuals */}

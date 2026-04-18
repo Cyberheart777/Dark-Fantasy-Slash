@@ -1096,7 +1096,7 @@ function spawnBoss(wave: number): EnemyRuntime {
 }
 
 function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult = 1): EnemyRuntime {
-  const type = `${cls}_champion` as "warrior_champion" | "mage_champion" | "rogue_champion" | "necromancer_champion";
+  const type = `${cls}_champion` as "warrior_champion" | "mage_champion" | "rogue_champion" | "necromancer_champion" | "bard_champion";
   const def = ENEMY_DATA[type];
   const hp = Math.round(def.health * hpMult);
   const finalDmg = Math.round(def.damage * dmgMult);
@@ -2194,7 +2194,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       }
 
       // Attack player (champions with custom AI handle damage themselves — skip generic melee)
-      const skipGenericMelee = e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "warrior_champion" || e.type === "necromancer_champion";
+      const skipGenericMelee = e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "warrior_champion" || e.type === "necromancer_champion" || e.type === "bard_champion";
       if (!skipGenericMelee && dist <= e.attackRange) {
         e.attackTimer -= delta;
         if (e.attackTimer <= 0) {
@@ -2957,7 +2957,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     // ── Champion AI (Trial of Champions) ──────────────────────────────────
     for (const e of g.enemies) {
       if (e.dead) continue;
-      const isChamp = e.type === "warrior_champion" || e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "necromancer_champion";
+      const isChamp = e.type === "warrior_champion" || e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "necromancer_champion" || e.type === "bard_champion";
       if (!isChamp) continue;
 
       // ── Enrage phases at 75/50/25% HP ─────────────────────────────────
@@ -3244,6 +3244,44 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             minion.z = e.z + Math.sin(sa) * sr;
             g.enemies.push(minion);
           }
+        }
+
+      } else if (e.type === "bard_champion") {
+        // ── Bard Champion: ranged kiter, rapid note projectiles ────
+        const keepDist = 15;
+        const cx = p.x - e.x, cz = p.z - e.z;
+        const clen = Math.sqrt(cx * cx + cz * cz) || 1;
+        if (cDist < keepDist - 2) {
+          e.x -= (cx / clen) * e.moveSpeed * delta;
+          e.z -= (cz / clen) * e.moveSpeed * delta;
+        } else if (cDist > keepDist + 3) {
+          e.x += (cx / clen) * e.moveSpeed * 0.6 * delta;
+          e.z += (cz / clen) * e.moveSpeed * 0.6 * delta;
+        }
+        e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
+        e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
+
+        e.radialTimer -= delta;
+        if (e.radialTimer <= 0) {
+          e.radialTimer = e.attackInterval;
+          const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
+          g.enemyProjectiles.push({
+            id: eprojId(), x: e.x, z: e.z,
+            vx: Math.sin(baseAngle) * 18,
+            vz: Math.cos(baseAngle) * 18,
+            damage: e.damage, lifetime: 3.0, dead: false, style: "dagger" as const,
+          });
+        }
+
+        e.minionTimer -= delta;
+        if (e.minionTimer <= 0) {
+          e.minionTimer = 5.0 - e.enragePhase * 0.8;
+          const blinkAngle = Math.random() * Math.PI * 2;
+          const blinkDist = 10 + Math.random() * 6;
+          e.x = Math.max(-ARENA, Math.min(ARENA, p.x + Math.sin(blinkAngle) * blinkDist));
+          e.z = Math.max(-ARENA, Math.min(ARENA, p.z + Math.cos(blinkAngle) * blinkDist));
+          e.hitFlashTimer = 0.2;
+          audioManager.play("dash");
         }
 
       }
