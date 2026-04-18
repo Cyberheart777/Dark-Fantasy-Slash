@@ -3140,6 +3140,21 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           }
         }
 
+        // Skeleton summon — spawns 1-2 scuttlers every 8s
+        e.minionTimer -= delta;
+        if (e.minionTimer <= 0) {
+          e.minionTimer = 8.0 - e.enragePhase * 1.5;
+          const count = 1 + (e.enragePhase >= 2 ? 1 : 0);
+          for (let i = 0; i < count; i++) {
+            const sa = Math.random() * Math.PI * 2;
+            const sr = 2 + Math.random() * 2;
+            const minion = spawnEnemy(g.wave, g.difficultyHpMult, g.difficultyDmgMult, g.difficultySpeedMult);
+            minion.x = e.x + Math.cos(sa) * sr;
+            minion.z = e.z + Math.sin(sa) * sr;
+            g.enemies.push(minion);
+          }
+        }
+
       }
     }
 

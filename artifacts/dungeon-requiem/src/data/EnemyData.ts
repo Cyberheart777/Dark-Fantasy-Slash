@@ -36,7 +36,7 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     type: "scuttler",
     displayName: "Bone Scuttler",
     health: 38,
-    damage: 10,
+    damage: 8,
     moveSpeed: 6.0,
     xpReward: GREEN_XP,          // 1× — green crystal
     crystalTier: "green",
@@ -52,7 +52,7 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     type: "brute",
     displayName: "Iron Brute",
     health: 175,
-    damage: 28,
+    damage: 22,
     moveSpeed: 2.5,
     xpReward: GREEN_XP * 10,     // 10× — blue crystal
     crystalTier: "blue",
@@ -68,7 +68,7 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     type: "wraith",
     displayName: "Shadow Wraith",
     health: 69,
-    damage: 18,
+    damage: 14,
     moveSpeed: 4.5,
     xpReward: GREEN_XP * 10,     // 10× — blue crystal
     crystalTier: "blue",
@@ -84,7 +84,7 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     type: "elite",
     displayName: "Voidclaw Champion",
     health: 525,
-    damage: 45,
+    damage: 36,
     moveSpeed: 3.5,
     xpReward: GREEN_XP * 30,     // 30× — purple crystal
     crystalTier: "purple",
@@ -169,7 +169,7 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     displayName: "The Shadow Blade",
     health: 1800,
     damage: 28,
-    moveSpeed: 7.5,
+    moveSpeed: 6.75,
     xpReward: 0,
     crystalTier: "orange",
     attackRange: 18.0,
