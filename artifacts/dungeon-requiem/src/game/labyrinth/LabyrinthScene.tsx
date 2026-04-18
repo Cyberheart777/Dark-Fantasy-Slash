@@ -1989,12 +1989,7 @@ function CombatEnemyLoop({
             ? [r1, r2, r1, r2]   // 4 champions: alternate rival classes
             : [r1, r2, r1];      // 3 champions
           const kind = championKinds[shared.championSpawnIndex % championKinds.length];
-          // Spawn 15-25u from player, behind them
-          const behindAngle = p.angle + Math.PI + (Math.random() - 0.5) * 1.2;
-          const spawnDist = 15 + Math.random() * 10;
-          const sx = p.x + Math.sin(behindAngle) * spawnDist;
-          const sz = p.z + Math.cos(behindAngle) * spawnDist;
-          enemies.push(makeRivalChampion(kind, sx, sz));
+          enemies.push(makeRivalChampion(kind, 0, 0));
           onEnemiesChange(enemies.slice());
           shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
           shared.rivalAnnounce = { kind, announcedAt: shared.zone.elapsedSec };
