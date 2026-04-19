@@ -2719,7 +2719,7 @@ function LabyrinthHUD({
         }}>
           {/* HP + LV module */}
           <div style={{
-            flex: "0 0 auto", width: 130, padding: "4px 6px",
+            flex: "1 1 0", padding: "4px 6px",
             background: "rgba(0,0,0,0.75)", borderRadius: "6px 0 0 6px",
             borderTop: "1px solid #333", borderLeft: "1px solid #333", borderBottom: "1px solid #333",
           }}>
@@ -2741,7 +2741,7 @@ function LabyrinthHUD({
 
           {/* Timer module */}
           <div style={{
-            flex: "0 0 auto", padding: "4px 8px",
+            flex: "0 0 68px", padding: "4px 4px",
             background: "rgba(10,5,25,0.8)", borderTop: "1px solid rgba(140,80,220,0.4)",
             borderBottom: "1px solid rgba(140,80,220,0.4)",
             textAlign: "center", fontFamily: "monospace",
@@ -2757,7 +2757,7 @@ function LabyrinthHUD({
 
           {/* Hunt / Threat module */}
           <div style={{
-            flex: "1 1 auto", padding: "4px 6px",
+            flex: "0 0 72px", padding: "4px 4px",
             background: "rgba(40,10,60,0.75)", borderRadius: "0 6px 6px 0",
             borderTop: "1px solid rgba(180,60,255,0.4)", borderRight: "1px solid rgba(180,60,255,0.4)",
             borderBottom: "1px solid rgba(180,60,255,0.4)",
