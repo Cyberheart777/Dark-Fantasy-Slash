@@ -2745,7 +2745,7 @@ function LabyrinthHUD({
         {/* Warrior passives readout — only shown when class is warrior
             so mage/rogue don't see stale zeros. War Cry flashes red
             while active; Blood Momentum stacks shown as pips. */}
-        {display.warrior && (
+        {display.warrior && !isMob && (
           <div style={styles.warriorBox}>
             <div style={styles.warriorRow}>
               <span style={{ color: "#ff7760", fontWeight: "bold", fontSize: 11 }}>
@@ -2795,23 +2795,25 @@ function LabyrinthHUD({
         </div>
       </div>
 
-      {/* Below the timer: threat readout (live enemies + kills) */}
-      <div style={{ ...styles.threatBox, minWidth: isMob ? 120 : 180, top: isMob ? 80 : 108, right: isMob ? 8 : 20, padding: isMob ? "4px 10px" : "8px 14px" }}>
-        <div style={styles.threatRow}>
-          <span style={styles.threatLabel}>THREATS</span>
-          <span style={styles.threatValue}>{display.enemyCount}</span>
+      {/* Below the timer: threat readout (desktop only — mobile merges into champion box) */}
+      {!isMob && (
+        <div style={{ ...styles.threatBox, minWidth: 180, top: 108, right: 20, padding: "8px 14px" }}>
+          <div style={styles.threatRow}>
+            <span style={styles.threatLabel}>THREATS</span>
+            <span style={styles.threatValue}>{display.enemyCount}</span>
+          </div>
+          <div style={styles.threatRow}>
+            <span style={styles.threatLabel}>KILLS</span>
+            <span style={styles.threatValueAccent}>{display.killCount}</span>
+          </div>
         </div>
-        <div style={styles.threatRow}>
-          <span style={styles.threatLabel}>KILLS</span>
-          <span style={styles.threatValueAccent}>{display.killCount}</span>
-        </div>
-      </div>
+      )}
 
-      {/* Layer + champion hunt tracker */}
+      {/* Layer + champion hunt tracker (mobile: includes threats inline) */}
       {display.championsToKill > 0 && (
-        <div style={{ ...styles.threatBox, top: isMob ? 130 : 165, right: isMob ? 8 : 20, background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
-          <div style={{ fontSize: 9, letterSpacing: 2, color: "#cc88ff", fontWeight: 900, fontFamily: "monospace", marginBottom: 4 }}>
-            LAYER {display.layer} — CHAMPION HUNT
+        <div style={{ ...styles.threatBox, top: isMob ? 110 : 165, right: isMob ? 8 : 20, minWidth: isMob ? 110 : 180, padding: isMob ? "4px 8px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
+          <div style={{ fontSize: isMob ? 8 : 9, letterSpacing: 2, color: "#cc88ff", fontWeight: 900, fontFamily: "monospace", marginBottom: 2 }}>
+            L{display.layer} HUNT
           </div>
           <div style={styles.threatRow}>
             <span style={styles.threatLabel}>SLAIN</span>
@@ -2819,6 +2821,12 @@ function LabyrinthHUD({
               {display.championsKilled}/{display.championsToKill}
             </span>
           </div>
+          {isMob && (
+            <div style={styles.threatRow}>
+              <span style={styles.threatLabel}>FOES</span>
+              <span style={styles.threatValue}>{display.enemyCount}</span>
+            </div>
+          )}
           {display.layerComplete && (
             <div style={{ fontSize: 10, color: "#44ff88", fontWeight: 900, letterSpacing: 2, textAlign: "center" as const, marginTop: 4 }}>
               PORTALS OPENED
@@ -2827,11 +2835,11 @@ function LabyrinthHUD({
         </div>
       )}
       {display.layer === 3 && display.championsToKill === 0 && (
-        <div style={{ ...styles.threatBox, top: isMob ? 130 : 165, right: isMob ? 8 : 20, background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
-          <div style={{ fontSize: 9, letterSpacing: 2, color: "#ff4488", fontWeight: 900, fontFamily: "monospace" }}>
-            LAYER 3 — THE ABYSS
+        <div style={{ ...styles.threatBox, top: isMob ? 110 : 165, right: isMob ? 8 : 20, minWidth: isMob ? 110 : 180, padding: isMob ? "4px 8px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
+          <div style={{ fontSize: isMob ? 8 : 9, letterSpacing: 2, color: "#ff4488", fontWeight: 900, fontFamily: "monospace" }}>
+            L3 — THE ABYSS
           </div>
-          <div style={{ fontSize: 10, color: "#ff88aa", letterSpacing: 1, marginTop: 2, fontFamily: "monospace" }}>
+          <div style={{ fontSize: isMob ? 9 : 10, color: "#ff88aa", letterSpacing: 1, marginTop: 2, fontFamily: "monospace" }}>
             DEFEAT THE WARDEN
           </div>
         </div>
@@ -4250,7 +4258,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   gearStrip: {
     position: "absolute" as const,
-    top: 155,
+    top: 175,
     right: 10,
     display: "flex",
     gap: 4,
