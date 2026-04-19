@@ -56,7 +56,7 @@ export class InputManager3D {
 
   private onKeyDown = (e: KeyboardEvent) => {
     this.keys.add(e.code);
-    if (e.code === "Space") { this._action = true; }
+    if (e.code === "Space") { e.preventDefault(); this._action = true; }
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") { this._dash = true; }
     if (e.code === "Escape") { this._pause = true; }
   };
