@@ -113,14 +113,16 @@ export function tryFireRogueFan(
   return true;
 }
 
-// ─── Bard — Musical Scale (5-note cluster along aim direction) ───────────────
+// ─── Bard — Musical Scale (5-note fan spread) ───────────────────────────────
 const BARD_BASE_DAMAGE = 15;
 const BARD_PROJECTILE_SPEED = 22;
 const BARD_PROJECTILE_LIFETIME = 2.5;
 const BARD_COOLDOWN = 0.67; // ~1.5 shots/sec
 const BARD_COLOR = "#ffd040";
 const BARD_GLOW = "#ffaa22";
-const BARD_OFFSETS = [5, 6, 7, 8, 9];
+const BARD_NOTE_COUNT = 5;
+const BARD_FAN_HALF = (25 / 2) * (Math.PI / 180);
+const BARD_SPAWN_DIST = 2;
 
 export function tryFireBardNote(
   state: RangedAttackState,
@@ -130,17 +132,19 @@ export function tryFireBardNote(
   angle: number,
 ): boolean {
   if (state.cooldownSec > 0) return false;
-  const dx = Math.sin(angle);
-  const dz = -Math.cos(angle);
-  for (const offset of BARD_OFFSETS) {
+  for (let i = 0; i < BARD_NOTE_COUNT; i++) {
+    const t = BARD_NOTE_COUNT > 1 ? (i / (BARD_NOTE_COUNT - 1)) * 2 - 1 : 0;
+    const fanAngle = angle + t * BARD_FAN_HALF;
+    const dx = Math.sin(fanAngle);
+    const dz = -Math.cos(fanAngle);
     spawnLabProjectile(projectiles, {
       owner: "player",
-      x: x + dx * offset,
-      z: z + dz * offset,
+      x: x + dx * BARD_SPAWN_DIST,
+      z: z + dz * BARD_SPAWN_DIST,
       vx: dx * BARD_PROJECTILE_SPEED,
       vz: dz * BARD_PROJECTILE_SPEED,
       damage: BARD_BASE_DAMAGE,
-      radius: 0.4,
+      radius: 0.3,
       lifetime: BARD_PROJECTILE_LIFETIME,
       piercing: true,
       color: BARD_COLOR,

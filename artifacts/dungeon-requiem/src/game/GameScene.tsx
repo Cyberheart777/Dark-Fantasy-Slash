@@ -185,7 +185,7 @@ export interface Projectile {
   hitIds: Set<string>;
   color: string;
   glowColor: string;
-  style: "orb" | "dagger";
+  style: "orb" | "dagger" | "note";
   dead: boolean;
   isFracture?: boolean; // prevents chain reaction from arcane fracture
   bouncesLeft?: number; // Ricochet Orb: bounces remaining (3, 2, 1, 0)
@@ -1727,30 +1727,33 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
 
         } else if (g.charClass === "bard") {
           audioManager.play("attack_orb");
-          // ── Bard: Musical Scale — 5-note cluster along aim direction ──
-          const BARD_OFFSETS = [5, 6, 7, 8, 9];
+          // ── Bard: Musical Scale — 5-note fan spread ──
+          const BARD_FAN_DEG = 25;
+          const BARD_SPAWN_DIST = 2;
           const BARD_PIERCE = 2;
           const bardDmg = Math.round((stats.damage + stats.bardDamageBonus) * getLowHpDamageMult(p, stats));
-          const aimDx = Math.sin(p.angle);
-          const aimDz = Math.cos(p.angle);
           const noteCount = stats.bardStaccatoEnabled && (p.bardShotCounter % 3 === 2) ? 7 : 5;
-          const offsets = noteCount === 7 ? [5, 6, 7, 8, 9, 10, 11] : BARD_OFFSETS;
           const projSpeed = CHARACTER_DATA.bard.projectileSpeed;
           const projLifetime = CHARACTER_DATA.bard.projectileLifetime;
+          const halfSpread = (BARD_FAN_DEG / 2) * (Math.PI / 180);
+          const totalSpread = noteCount === 7 ? halfSpread * 1.4 : halfSpread;
           for (let i = 0; i < noteCount; i++) {
-            const offset = offsets[i];
-            const sx = p.x + aimDx * offset;
-            const sz = p.z + aimDz * offset;
+            const t = noteCount > 1 ? (i / (noteCount - 1)) * 2 - 1 : 0;
+            const fanAngle = p.angle + t * totalSpread;
+            const dx = Math.sin(fanAngle);
+            const dz = Math.cos(fanAngle);
+            const sx = p.x + dx * BARD_SPAWN_DIST;
+            const sz = p.z + dz * BARD_SPAWN_DIST;
             const proj: Projectile = {
               id: projId(), x: sx, z: sz,
-              vx: aimDx * projSpeed, vz: aimDz * projSpeed,
+              vx: dx * projSpeed, vz: dz * projSpeed,
               damage: noteCount === 7 && i >= 5 ? Math.round(bardDmg * 0.8) : bardDmg,
-              radius: 0.4,
+              radius: 0.3,
               lifetime: projLifetime,
               piercing: true,
               hitIds: new Set(),
               color: "#ffd040", glowColor: "#ffaa22",
-              style: "orb", dead: false,
+              style: "note", dead: false,
               spawnX: sx, spawnZ: sz,
               bouncesLeft: stats.bardPierceCount > 0 ? undefined : BARD_PIERCE,
             };

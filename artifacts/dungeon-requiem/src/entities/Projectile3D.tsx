@@ -43,6 +43,10 @@ export function Projectile3D({ proj }: ProjectileProps) {
         ringRef.current.rotation.x = Math.PI / 2 + Math.sin(t.current * 1.8) * 0.4;
         ringRef.current.rotation.z = t.current * 1.5;
       }
+    } else if (proj.style === "note") {
+      // Note: billboard facing camera, gentle bob
+      groupRef.current.position.y = 0.8 + Math.sin(t.current * 3 + (proj.x * 0.5)) * 0.1;
+      groupRef.current.rotation.y = t.current * 1.5;
     } else {
       // Dagger: align to travel direction + spin along travel axis
       const angle = Math.atan2(proj.vx, proj.vz);
@@ -69,6 +73,28 @@ export function Projectile3D({ proj }: ProjectileProps) {
         : 1.5 + Math.sin(t.current * 8) * 0.3;
     }
   });
+
+  if (proj.style === "note") {
+    return (
+      <group ref={groupRef}>
+        {/* Note head — filled circle */}
+        <mesh rotation={[-Math.PI / 4, 0, 0]}>
+          <circleGeometry args={[0.18, 8]} />
+          <meshBasicMaterial color="#ffd040" side={THREE.DoubleSide} />
+        </mesh>
+        {/* Note stem — thin vertical line */}
+        <mesh position={[0.16, 0.22, 0]} rotation={[-Math.PI / 4, 0, 0]}>
+          <boxGeometry args={[0.03, 0.4, 0.01]} />
+          <meshBasicMaterial color="#ffaa22" />
+        </mesh>
+        {/* Flag at top of stem */}
+        <mesh position={[0.2, 0.38, 0]} rotation={[-Math.PI / 4, 0, 0.3]}>
+          <boxGeometry args={[0.12, 0.03, 0.01]} />
+          <meshBasicMaterial color="#ffaa22" />
+        </mesh>
+      </group>
+    );
+  }
 
   if (proj.style === "orb") {
     return (
