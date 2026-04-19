@@ -2695,14 +2695,14 @@ function LabyrinthHUD({
         </div>
       </div>
 
-      {/* Mobile pause button — top-right, above timer */}
+      {/* Mobile pause button — top-right corner */}
       {isMob && !display.defeated && !display.extracted && !display.victory && (
         <div
           style={{
-            position: "absolute", top: 6, right: 6, width: 36, height: 36,
-            borderRadius: 8, background: "rgba(10,5,20,0.8)", border: "1px solid rgba(140,100,200,0.4)",
+            position: "absolute", top: 4, right: 4, width: 32, height: 32,
+            borderRadius: 6, background: "rgba(10,5,20,0.85)", border: "1px solid rgba(140,100,200,0.4)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 20, color: "#c0a0e0", cursor: "pointer", pointerEvents: "auto",
+            fontSize: 16, color: "#c0a0e0", cursor: "pointer", pointerEvents: "auto",
             zIndex: 25, touchAction: "none",
           }}
           onTouchStart={(e) => { e.stopPropagation(); setEsc((v) => { if (v) setPauseView("main"); return !v; }); }}
@@ -2711,8 +2711,114 @@ function LabyrinthHUD({
         </div>
       )}
 
-      {/* Top-left: HP bar */}
-      <div style={{ ...styles.hpBox, width: isMob ? 140 : 220, padding: isMob ? "4px 8px" : "10px 14px", top: isMob ? 6 : 20, left: isMob ? 6 : 20 }}>
+      {/* ── Mobile: connected HUD strip ─────────────────────────────── */}
+      {isMob && (
+        <div style={{
+          position: "absolute", top: 4, left: 4, right: 40,
+          display: "flex", flexDirection: "row", pointerEvents: "none", zIndex: 20, gap: 0,
+        }}>
+          {/* HP + LV module */}
+          <div style={{
+            flex: "0 0 auto", width: 130, padding: "4px 6px",
+            background: "rgba(0,0,0,0.75)", borderRadius: "6px 0 0 6px",
+            borderTop: "1px solid #333", borderLeft: "1px solid #333", borderBottom: "1px solid #333",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 2 }}>
+              <span style={{ color: "#ff6666", fontWeight: "bold" }}>HP</span>
+              <span style={{ color: "#ccc", fontSize: 10 }}>{Math.ceil(display.hp)}/{display.maxHp}</span>
+            </div>
+            <div style={styles.hpTrack}>
+              <div style={{ ...styles.hpFill, width: `${hpPct}%`, background: hpColor, boxShadow: `0 0 6px ${hpColor}` }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginTop: 3 }}>
+              <span style={{ color: "#70d0ff", fontWeight: "bold" }}>LV {display.level}</span>
+              <span style={{ color: "#999", fontSize: 9 }}>{display.xp}/{display.xpToNext}</span>
+            </div>
+            <div style={styles.hpTrack}>
+              <div style={{ ...styles.hpFill, width: `${display.xpToNext > 0 ? Math.min(100, (display.xp / display.xpToNext) * 100) : 0}%`, background: "#50a0ff" }} />
+            </div>
+          </div>
+
+          {/* Timer module */}
+          <div style={{
+            flex: "0 0 auto", padding: "4px 8px",
+            background: "rgba(10,5,25,0.8)", borderTop: "1px solid rgba(140,80,220,0.4)",
+            borderBottom: "1px solid rgba(140,80,220,0.4)",
+            textAlign: "center", fontFamily: "monospace",
+          }}>
+            <div style={{ fontSize: 7, letterSpacing: 2, color: "rgba(170,140,220,0.8)", fontWeight: 900 }}>ZONE</div>
+            <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: 2, color: display.timeRemaining < 120 ? "#ff4444" : "#c080ff", marginTop: 1 }}>
+              {formatZoneTime(display.timeRemaining)}
+            </div>
+            <div style={{ fontSize: 7, letterSpacing: 1, color: "rgba(180,150,220,0.7)", marginTop: 1 }}>
+              {display.isPaused ? "PAUSED" : "SHRINKING"}
+            </div>
+          </div>
+
+          {/* Hunt / Threat module */}
+          <div style={{
+            flex: "1 1 auto", padding: "4px 6px",
+            background: "rgba(40,10,60,0.75)", borderRadius: "0 6px 6px 0",
+            borderTop: "1px solid rgba(180,60,255,0.4)", borderRight: "1px solid rgba(180,60,255,0.4)",
+            borderBottom: "1px solid rgba(180,60,255,0.4)",
+            fontFamily: "monospace",
+          }}>
+            {display.championsToKill > 0 ? (
+              <>
+                <div style={{ fontSize: 7, letterSpacing: 2, color: "#cc88ff", fontWeight: 900 }}>L{display.layer} HUNT</div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginTop: 2 }}>
+                  <span style={{ color: "#aa88cc" }}>SLAIN</span>
+                  <span style={{ color: display.championsKilled >= display.championsToKill ? "#44ff88" : "#ff8844", fontWeight: 900 }}>
+                    {display.championsKilled}/{display.championsToKill}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginTop: 1 }}>
+                  <span style={{ color: "#aa88cc" }}>FOES</span>
+                  <span style={{ color: "#ff6644", fontWeight: 900 }}>{display.enemyCount}</span>
+                </div>
+              </>
+            ) : display.layer === 3 ? (
+              <>
+                <div style={{ fontSize: 7, letterSpacing: 2, color: "#ff4488", fontWeight: 900 }}>L3 ABYSS</div>
+                <div style={{ fontSize: 9, color: "#ff88aa", marginTop: 2 }}>DEFEAT WARDEN</div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginTop: 2 }}>
+                  <span style={{ color: "#aa88cc" }}>THREATS</span>
+                  <span style={{ color: "#ff6644", fontWeight: 900 }}>{display.enemyCount}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginTop: 1 }}>
+                  <span style={{ color: "#aa88cc" }}>KILLS</span>
+                  <span style={{ color: "#44ffaa", fontWeight: 900 }}>{display.killCount}</span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile: gear strip under HP box ─────────────────────────── */}
+      {isMob && (
+        <div style={{ position: "absolute", top: 64, left: 6, display: "flex", gap: 3, padding: "3px", background: "rgba(10,5,20,0.7)", border: "1px solid rgba(140,100,200,0.35)", borderRadius: 5, pointerEvents: "none", zIndex: 20 }}>
+          {([["⚔", display.equipped.weapon], ["🛡", display.equipped.armor], ["◈", display.equipped.trinket]] as [string, any][]).map(([icon, g], i) => (
+            <div key={i} style={{
+              width: 28, height: 28, borderRadius: 4,
+              border: `1.5px solid ${g ? (g.rarity === "epic" ? "rgba(170,68,255,0.9)" : g.rarity === "rare" ? "rgba(68,136,221,0.85)" : "rgba(170,170,187,0.65)") : "rgba(60,60,80,0.5)"}`,
+              background: "rgba(10,8,22,0.8)", display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 14, color: g ? "#f0e0ff" : "rgba(120,120,140,0.6)",
+            }}>
+              {g?.icon ?? icon}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Desktop: original separate panels ───────────────────────── */}
+
+      {/* Top-left: HP bar (desktop only — mobile uses connected strip) */}
+      {!isMob && (
+      <div style={{ ...styles.hpBox, width: 220, padding: "10px 14px", top: 20, left: 20 }}>
         <div style={styles.hpLabel}>
           <span style={{ color: "#ff6666", fontWeight: "bold" }}>HP</span>
           <span style={{ color: "#ccc", fontSize: 13 }}>
@@ -2778,14 +2884,16 @@ function LabyrinthHUD({
           </div>
         )}
       </div>
+      )}
 
-      {/* Top-right: zone timer */}
-      <div style={{ ...styles.timerBox, minWidth: isMob ? 100 : 180, padding: isMob ? "4px 8px" : "10px 14px", top: isMob ? 6 : 20, right: isMob ? 48 : 20 }}>
+      {/* Top-right: zone timer (desktop only — mobile uses connected strip) */}
+      {!isMob && (
+      <div style={{ ...styles.timerBox, minWidth: 180, padding: "10px 14px", top: 20, right: 20 }}>
         <div style={styles.timerLabel}>ZONE CLOSES IN</div>
         <div style={{
           ...styles.timerValue,
-          fontSize: isMob ? 18 : 26,
-          letterSpacing: isMob ? 2 : 4,
+          fontSize: 26,
+          letterSpacing: 4,
           color: display.timeRemaining < 120 ? "#ff4444" : "#c080ff",
         }}>
           {formatZoneTime(display.timeRemaining)}
@@ -2794,8 +2902,9 @@ function LabyrinthHUD({
           {display.isPaused ? "◦ PAUSED" : "▼ SHRINKING"}
         </div>
       </div>
+      )}
 
-      {/* Below the timer: threat readout (desktop only — mobile merges into champion box) */}
+      {/* Below the timer: threat readout (desktop only) */}
       {!isMob && (
         <div style={{ ...styles.threatBox, minWidth: 180, top: 108, right: 20, padding: "8px 14px" }}>
           <div style={styles.threatRow}>
@@ -2809,8 +2918,8 @@ function LabyrinthHUD({
         </div>
       )}
 
-      {/* Layer + champion hunt tracker (mobile: includes threats inline) */}
-      {display.championsToKill > 0 && (
+      {/* Layer + champion hunt tracker (desktop only — mobile uses connected strip) */}
+      {!isMob && display.championsToKill > 0 && (
         <div style={{ ...styles.threatBox, top: isMob ? 55 : 165, right: isMob ? 6 : 20, minWidth: isMob ? 100 : 180, padding: isMob ? "3px 6px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
           <div style={{ fontSize: isMob ? 7 : 9, letterSpacing: 2, color: "#cc88ff", fontWeight: 900, fontFamily: "monospace", marginBottom: 1 }}>
             L{display.layer} HUNT
@@ -2834,7 +2943,7 @@ function LabyrinthHUD({
           )}
         </div>
       )}
-      {display.layer === 3 && display.championsToKill === 0 && (
+      {!isMob && display.layer === 3 && display.championsToKill === 0 && (
         <div style={{ ...styles.threatBox, top: isMob ? 55 : 165, right: isMob ? 6 : 20, minWidth: isMob ? 100 : 180, padding: isMob ? "3px 6px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
           <div style={{ fontSize: isMob ? 7 : 9, letterSpacing: 2, color: "#ff4488", fontWeight: 900, fontFamily: "monospace" }}>
             L3 — THE ABYSS
@@ -2845,7 +2954,7 @@ function LabyrinthHUD({
         </div>
       )}
 
-      <GearSlotStrip equipped={display.equipped} />
+      {!isMob && <GearSlotStrip equipped={display.equipped} />}
 
       {/* Key icon — only visible once the champion has been slain.
           Item 7 will add the loot-room unlock that consumes this. */}
