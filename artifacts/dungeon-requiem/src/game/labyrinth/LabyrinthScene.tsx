@@ -4485,6 +4485,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     backdropFilter: "blur(6px)",
+    zIndex: 100,
+    pointerEvents: "auto" as const,
   },
   // Abandon-run confirmation modal. Sits above the pause panel via
   // a higher backdrop alpha + stacked overlay. Blue accent matches
@@ -4497,7 +4499,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     backdropFilter: "blur(8px)",
-    zIndex: 30,
+    zIndex: 110,
+    pointerEvents: "auto" as const,
   },
   confirmPanel: {
     padding: "36px 48px",
