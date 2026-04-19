@@ -56,13 +56,13 @@ export const LABYRINTH_CONFIG = {
   ZONE_LATE_DAMAGE_PCT_PER_SEC: 0.10,
 
   // ─── Enemy counts ───────────────────────────────────────────────────────
-  CORRIDOR_GUARDIAN_COUNT: 20,
+  CORRIDOR_GUARDIAN_COUNT: 35,
   /** Stationary turret enemies that fire projectiles with line-of-sight. */
-  TRAP_SPAWNER_COUNT: 8,
+  TRAP_SPAWNER_COUNT: 12,
   /** Heavy enemies (ex-"champion" orange model, demoted to standard
    *  heavy). Spawn at run start alongside guardians + trap spawners. */
-  HEAVY_COUNT: 3,
-  SHADOW_STALKER_INTERVAL_SEC: 25,
+  HEAVY_COUNT: 5,
+  SHADOW_STALKER_INTERVAL_SEC: 18,
   WARDEN_MIDPOINT_RADIUS: 3,  // cells from center where warden spawns
 
   // ─── Environmental traps ────────────────────────────────────────────────

@@ -671,6 +671,7 @@ export function LabyrinthScene() {
         gearStateRef={gearStateRef}
         progressionRef={progressionRef}
         onUpgradeApplied={() => setUpgradeRevision((v) => v + 1)}
+        enemiesRef={enemiesRef}
       />
       <LabyrinthMobileControls inputRef={inputRef} aimOverrideRef={aimOverrideRef} />
       {/* Affix tap-to-inspect tooltip — wired so the labyrinth's
@@ -2531,6 +2532,7 @@ function LabyrinthHUD({
   gearStateRef,
   progressionRef,
   onUpgradeApplied,
+  enemiesRef,
 }: {
   maze: Maze;
   charClass: CharacterClass;
@@ -2540,6 +2542,7 @@ function LabyrinthHUD({
   gearStateRef: React.MutableRefObject<LabGearState>;
   progressionRef: React.MutableRefObject<LabProgressionState>;
   onUpgradeApplied: () => void;
+  enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
 }) {
   const setPhase = useGameStore((s) => s.setPhase);
   const [isMob, setIsMob] = useState(() => window.innerWidth < 900);
@@ -3010,7 +3013,7 @@ function LabyrinthHUD({
 
       {/* Fog-of-war minimap — bottom left, reveals as player explores */}
       {!display.defeated && !display.extracted && !display.victory && (
-        <LabyrinthMinimap maze={maze} playerRef={playerRef} />
+        <LabyrinthMinimap maze={maze} playerRef={playerRef} enemiesRef={enemiesRef} />
       )}
 
       {/* Nearest-portal edge arrow (gold/purple) — separate from the safe-zone arrow */}
@@ -3214,7 +3217,7 @@ function LayerBanner({ banner, elapsedSec }: { banner: LabSharedState["layerBann
   );
 }
 
-function LabyrinthMinimap({ maze, playerRef }: { maze: Maze; playerRef: React.MutableRefObject<LabPlayer> }) {
+function LabyrinthMinimap({ maze, playerRef, enemiesRef }: { maze: Maze; playerRef: React.MutableRefObject<LabPlayer>; enemiesRef: React.MutableRefObject<EnemyRuntime[]> }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const exploredRef = useRef(new Set<number>());
   const MINIMAP_SIZE = 140;
@@ -3265,6 +3268,24 @@ function LabyrinthMinimap({ maze, playerRef }: { maze: Maze; playerRef: React.Mu
         }
       }
 
+      // Champion red dots (always visible, even in unexplored areas)
+      for (const e of enemiesRef.current) {
+        if (e.state === "dead") continue;
+        const isChamp = e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue";
+        if (!isChamp) continue;
+        const ec = worldToCell(e.x, e.z);
+        const ex = ec.col * cellPx + cellPx / 2;
+        const ey = ec.row * cellPx + cellPx / 2;
+        ctx.fillStyle = "#ff2244";
+        ctx.beginPath();
+        ctx.arc(ex, ey, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ff6688";
+        ctx.beginPath();
+        ctx.arc(ex, ey, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       // Player dot
       const px = pc.col * cellPx + cellPx / 2;
       const py = pc.row * cellPx + cellPx / 2;
@@ -3274,7 +3295,7 @@ function LabyrinthMinimap({ maze, playerRef }: { maze: Maze; playerRef: React.Mu
       ctx.fill();
     }, 150);
     return () => clearInterval(iv);
-  }, [maze, playerRef, cellPx]);
+  }, [maze, playerRef, enemiesRef, cellPx]);
 
   return (
     <canvas
