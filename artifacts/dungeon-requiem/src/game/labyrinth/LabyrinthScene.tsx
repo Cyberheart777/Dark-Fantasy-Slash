@@ -307,13 +307,14 @@ export function LabyrinthScene() {
   // still reduces weapon range by 25% vs the main game — tighter
   // corridor combat.
   const LABYRINTH_RANGE_MULT = 0.75;
+  // Counter to force combatStats recalculation after power-up upgrades
+  const [upgradeRevision, setUpgradeRevision] = useState(0);
+
   const combatStats: LabCombatStats = useMemo(() => ({
     damage: labStats.damage,
     atkRange: labStats.attackRange * LABYRINTH_RANGE_MULT,
-    // attackSpeed is in swings-per-second; convert to
-    // seconds-per-swing for atkCooldown.
     atkCooldown: 1 / Math.max(0.01, labStats.attackSpeed),
-  }), [labStats]);
+  }), [labStats, upgradeRevision]);
 
   // InputManager lives at the scene level so both the R3F Canvas and the
   // mobile-touch overlay (which is outside Canvas) can share it.
@@ -669,6 +670,7 @@ export function LabyrinthScene() {
         sharedRef={sharedRef}
         gearStateRef={gearStateRef}
         progressionRef={progressionRef}
+        onUpgradeApplied={() => setUpgradeRevision((v) => v + 1)}
       />
       <LabyrinthMobileControls inputRef={inputRef} aimOverrideRef={aimOverrideRef} />
       {/* Affix tap-to-inspect tooltip — wired so the labyrinth's
@@ -2528,17 +2530,16 @@ function LabyrinthHUD({
   sharedRef,
   gearStateRef,
   progressionRef,
+  onUpgradeApplied,
 }: {
   maze: Maze;
   charClass: CharacterClass;
-  /** Resolved starting stats (class + race + Soul Forge + Trial).
-   *  Passed down to the Character view for display so "base" values
-   *  in the diagnostic already include meta upgrades. */
   labStats: PlayerStats;
   playerRef: React.MutableRefObject<LabPlayer>;
   sharedRef: React.MutableRefObject<LabSharedState>;
   gearStateRef: React.MutableRefObject<LabGearState>;
   progressionRef: React.MutableRefObject<LabProgressionState>;
+  onUpgradeApplied: () => void;
 }) {
   const setPhase = useGameStore((s) => s.setPhase);
   const [isMob, setIsMob] = useState(() => window.innerWidth < 900);
@@ -2677,8 +2678,9 @@ function LabyrinthHUD({
     upgrade.apply(labStats);
     const prog = progressionRef.current;
     prog.acquiredUpgrades.set(id as any, (prog.acquiredUpgrades.get(id as any) ?? 0) + 1);
+    onUpgradeApplied();
     useGameStore.getState().setPhase("labyrinth");
-  }, [labStats, progressionRef]);
+  }, [labStats, progressionRef, onUpgradeApplied]);
 
   const hpPct = Math.max(0, (display.hp / display.maxHp) * 100);
   const hpColor = hpPct > 60 ? "#22cc55" : hpPct > 30 ? "#ff8800" : "#cc2222";
@@ -2692,6 +2694,22 @@ function LabyrinthHUD({
           {maze.size}×{maze.size} maze · {maze.deadEnds.length} dead ends
         </div>
       </div>
+
+      {/* Mobile pause button — top-right, above timer */}
+      {isMob && !display.defeated && !display.extracted && !display.victory && (
+        <div
+          style={{
+            position: "absolute", top: 12, right: 8, width: 40, height: 40,
+            borderRadius: 8, background: "rgba(10,5,20,0.8)", border: "1px solid rgba(140,100,200,0.4)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 20, color: "#c0a0e0", cursor: "pointer", pointerEvents: "auto",
+            zIndex: 25, touchAction: "none",
+          }}
+          onTouchStart={(e) => { e.stopPropagation(); setEsc((v) => { if (v) setPauseView("main"); return !v; }); }}
+        >
+          ⏸
+        </div>
+      )}
 
       {/* Top-left: HP bar */}
       <div style={{ ...styles.hpBox, width: isMob ? 150 : 220, padding: isMob ? "6px 10px" : "10px 14px", top: isMob ? 12 : 20, left: isMob ? 10 : 20 }}>
@@ -2762,7 +2780,7 @@ function LabyrinthHUD({
       </div>
 
       {/* Top-right: zone timer */}
-      <div style={{ ...styles.timerBox, minWidth: isMob ? 120 : 180, padding: isMob ? "6px 10px" : "10px 14px", top: isMob ? 12 : 20, right: isMob ? 8 : 20 }}>
+      <div style={{ ...styles.timerBox, minWidth: isMob ? 120 : 180, padding: isMob ? "6px 10px" : "10px 14px", top: isMob ? 58 : 20, right: isMob ? 8 : 20 }}>
         <div style={styles.timerLabel}>ZONE CLOSES IN</div>
         <div style={{
           ...styles.timerValue,
