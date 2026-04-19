@@ -1725,16 +1725,49 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             }
           }
 
+        } else if (g.charClass === "bard") {
+          audioManager.play("attack_orb");
+          // ── Bard: Musical Scale — 5-note cluster along aim direction ──
+          const BARD_OFFSETS = [5, 6, 7, 8, 9];
+          const BARD_PIERCE = 2;
+          const bardDmg = Math.round((stats.damage + stats.bardDamageBonus) * getLowHpDamageMult(p, stats));
+          const aimDx = Math.sin(p.angle);
+          const aimDz = Math.cos(p.angle);
+          const noteCount = stats.bardStaccatoEnabled && (p.bardShotCounter % 3 === 2) ? 7 : 5;
+          const offsets = noteCount === 7 ? [5, 6, 7, 8, 9, 10, 11] : BARD_OFFSETS;
+          const projSpeed = CHARACTER_DATA.bard.projectileSpeed;
+          const projLifetime = CHARACTER_DATA.bard.projectileLifetime;
+          for (let i = 0; i < noteCount; i++) {
+            const offset = offsets[i];
+            const sx = p.x + aimDx * offset;
+            const sz = p.z + aimDz * offset;
+            const proj: Projectile = {
+              id: projId(), x: sx, z: sz,
+              vx: aimDx * projSpeed, vz: aimDz * projSpeed,
+              damage: noteCount === 7 && i >= 5 ? Math.round(bardDmg * 0.8) : bardDmg,
+              radius: 0.4,
+              lifetime: projLifetime,
+              piercing: true,
+              hitIds: new Set(),
+              color: "#ffd040", glowColor: "#ffaa22",
+              style: "orb", dead: false,
+              spawnX: sx, spawnZ: sz,
+              bouncesLeft: stats.bardPierceCount > 0 ? undefined : BARD_PIERCE,
+            };
+            g.projectiles.push(proj);
+          }
+          p.bardShotCounter++;
+
         } else {
-          audioManager.play(g.charClass === "mage" ? "attack_orb" : g.charClass === "bard" ? "attack_orb" : "attack_dagger");
-          // ── Projectile attack (Mage / Rogue / Bard) ────────────────────
+          audioManager.play(g.charClass === "mage" ? "attack_orb" : "attack_dagger");
+          // ── Projectile attack (Mage / Rogue) ───────────────────────────
           const def = CHARACTER_DATA[g.charClass];
           // Extra projectiles from upgrades
           const extraCount = g.charClass === "mage" ? stats.mageExtraOrbs
                            : g.charClass === "rogue" ? stats.rogueExtraDaggers : 0;
           const totalCount = def.projectileCount + extraCount;
-          const projStyle = g.charClass === "mage" ? "orb" as const : g.charClass === "bard" ? "dagger" as const : "dagger" as const;
-          const isPiercing = def.projectilePiercing || (g.charClass === "bard" && stats.bardPierceCount > 0);
+          const projStyle = g.charClass === "mage" ? "orb" as const : "dagger" as const;
+          const isPiercing = def.projectilePiercing;
           // War cry damage bonus (warrior only but just in case)
           const warCryMult = p.warCryTimer > 0 ? (1 + stats.warCryDmgBonus) : 1;
           const projDmg = Math.round(stats.damage * warCryMult);
@@ -1776,11 +1809,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
                 if (stats.overchargedOrbBonus > 0) { proj.spawnX = p.x; proj.spawnZ = p.z; proj.maxRange = projSpeed * projLifetime; }
                 if (stats.residualFieldEnabled) { proj.trailTimer = 0; }
                 if (stats.ricochetOrbEnabled) { proj.bouncesLeft = 3; proj.baseDamage = projDmg; }
-              }
-              // Bard: track spawn pos for distance falloff at hit time
-              if (g.charClass === "bard") {
-                proj.spawnX = p.x; proj.spawnZ = p.z;
-                if (stats.bardPierceCount > 0) { proj.bouncesLeft = stats.bardPierceCount; }
               }
               g.projectiles.push(proj);
               // Split Bolt: each orb spawns 2 extra mini-orbs (3 total) at 35% damage in cone

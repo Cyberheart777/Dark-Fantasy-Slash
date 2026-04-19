@@ -954,15 +954,15 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   bard_staccato: {
     id: "bard_staccato", name: "Staccato",
-    description: "Every 3rd shot fires 3 notes in a tight spread at 80% damage.",
+    description: "Every 3rd shot fires 7 notes in a wider scale cluster (2 extra at 10u and 11u offsets).",
     icon: "⚡", maxStacks: 1, rarity: "rare", classes: ["bard"],
     apply: (s) => { s.bardStaccatoEnabled = true; },
   },
   bard_resonance: {
     id: "bard_resonance", name: "Resonance",
-    description: "Notes pierce through up to 3 enemies.",
+    description: "Notes pierce through enemies infinitely — no pierce limit.",
     icon: "🔔", maxStacks: 1, rarity: "rare", classes: ["bard"],
-    apply: (s) => { s.bardPierceCount = 3; },
+    apply: (s) => { s.bardPierceCount = 999; },
   },
   bard_harmony: {
     id: "bard_harmony", name: "Harmony",
@@ -982,7 +982,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     id: "bard_crescendo", name: "Crescendo",
     description: "Attack speed +75%, damage +40%.",
     icon: "📈", maxStacks: 1, rarity: "epic", classes: ["bard"],
-    apply: (s) => { s.bardAtkSpeedBonus += 2.625; s.bardDamageBonus += Math.round(45 * 0.4); },
+    apply: (s) => { s.bardAtkSpeedBonus += 1.125; s.bardDamageBonus += Math.round(20 * 0.4); },
   },
   bard_symphony: {
     id: "bard_symphony", name: "Symphony of Chaos",

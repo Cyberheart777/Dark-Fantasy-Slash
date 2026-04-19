@@ -113,13 +113,14 @@ export function tryFireRogueFan(
   return true;
 }
 
-// ─── Bard — rapid single-note projectile ────────────────────────────────────
-const BARD_BASE_DAMAGE = 30;
+// ─── Bard — Musical Scale (5-note cluster along aim direction) ───────────────
+const BARD_BASE_DAMAGE = 15;
 const BARD_PROJECTILE_SPEED = 22;
 const BARD_PROJECTILE_LIFETIME = 2.5;
-const BARD_COOLDOWN = 0.29; // ~3.5 shots/sec
+const BARD_COOLDOWN = 0.67; // ~1.5 shots/sec
 const BARD_COLOR = "#ffd040";
 const BARD_GLOW = "#ffaa22";
+const BARD_OFFSETS = [5, 6, 7, 8, 9];
 
 export function tryFireBardNote(
   state: RangedAttackState,
@@ -131,19 +132,22 @@ export function tryFireBardNote(
   if (state.cooldownSec > 0) return false;
   const dx = Math.sin(angle);
   const dz = -Math.cos(angle);
-  spawnLabProjectile(projectiles, {
-    owner: "player",
-    x, z,
-    vx: dx * BARD_PROJECTILE_SPEED,
-    vz: dz * BARD_PROJECTILE_SPEED,
-    damage: BARD_BASE_DAMAGE,
-    radius: 0.25,
-    lifetime: BARD_PROJECTILE_LIFETIME,
-    piercing: false,
-    color: BARD_COLOR,
-    glowColor: BARD_GLOW,
-    style: "dagger",
-  });
+  for (const offset of BARD_OFFSETS) {
+    spawnLabProjectile(projectiles, {
+      owner: "player",
+      x: x + dx * offset,
+      z: z + dz * offset,
+      vx: dx * BARD_PROJECTILE_SPEED,
+      vz: dz * BARD_PROJECTILE_SPEED,
+      damage: BARD_BASE_DAMAGE,
+      radius: 0.4,
+      lifetime: BARD_PROJECTILE_LIFETIME,
+      piercing: true,
+      color: BARD_COLOR,
+      glowColor: BARD_GLOW,
+      style: "orb",
+    });
+  }
   state.cooldownSec = BARD_COOLDOWN;
   return true;
 }
