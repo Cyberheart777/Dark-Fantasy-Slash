@@ -2703,7 +2703,7 @@ function LabyrinthHUD({
             borderRadius: 6, background: "rgba(10,5,20,0.85)", border: "1px solid rgba(140,100,200,0.4)",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 16, color: "#c0a0e0", cursor: "pointer", pointerEvents: "auto",
-            zIndex: 25, touchAction: "none",
+            zIndex: 55, touchAction: "none",
           }}
           onTouchStart={(e) => { e.stopPropagation(); setEsc((v) => { if (v) setPauseView("main"); return !v; }); }}
         >
