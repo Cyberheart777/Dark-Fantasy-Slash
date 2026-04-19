@@ -53,11 +53,11 @@ export const LAB_INVENTORY_CAPACITY = 20;
  *  GEAR_DROP_RATES (GearData.ts:174-184). Also carries a per-kind
  *  drop-rate multiplier so tougher kinds drop more often. */
 const ENEMY_TYPE_FOR_ROLL: Record<string, { type: string; mult: number }> = {
-  corridor_guardian: { type: "elite",             mult: 1.0 },
-  trap_spawner:      { type: "wraith",            mult: 1.0 },
-  mimic:             { type: "scuttler",          mult: 1.4 },
-  shadow_stalker:    { type: "wraith",            mult: 1.2 },
-  warden:            { type: "boss",              mult: 3.0 },
+  corridor_guardian: { type: "elite",             mult: 3.0 },
+  trap_spawner:      { type: "wraith",            mult: 3.0 },
+  mimic:             { type: "elite",             mult: 4.0 },
+  shadow_stalker:    { type: "elite",             mult: 2.5 },
+  warden:            { type: "boss",              mult: 5.0 },
   champion:          { type: "warrior_champion",  mult: 2.0 },
 };
 

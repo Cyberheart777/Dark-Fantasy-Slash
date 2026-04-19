@@ -73,7 +73,7 @@ export const LABYRINTH_CONFIG = {
   /** Total chest count scattered around the maze. Bumped from 10 to
    *  18 alongside the higher per-kill drop rates — makes the labyrinth
    *  feel loot-rich even in short runs. */
-  LOOT_CHEST_COUNT: 18,
+  LOOT_CHEST_COUNT: 24,
 
   // ─── Progression tuning ────────────────────────────────────────────────
   XP_MULTIPLIER: 1.5,  // faster leveling since there are fewer enemies
