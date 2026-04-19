@@ -12,6 +12,7 @@ export interface InputState {
   right: boolean;
   attack: boolean;
   dash: boolean;
+  action: boolean;
   pause: boolean;
   mouseX: number;   // canvas coords (–1 to +1 NDC if needed)
   mouseY: number;
@@ -23,6 +24,7 @@ export class InputManager3D {
   private keys: Set<string> = new Set();
   private _attack = false;
   private _dash = false;
+  private _action = false;
   private _pause = false;
   private _mouseX = 0;
   private _mouseY = 0;
@@ -34,6 +36,7 @@ export class InputManager3D {
 
   private _attackConsumed = false;
   private _dashConsumed = false;
+  private _actionConsumed = false;
   private _pauseConsumed = false;
 
   // ── Mobile overrides ────────────────────────────────────────────────────
@@ -53,14 +56,14 @@ export class InputManager3D {
 
   private onKeyDown = (e: KeyboardEvent) => {
     this.keys.add(e.code);
-    if (e.code === "Space") { this._attack = true; }
+    if (e.code === "Space") { this._action = true; }
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") { this._dash = true; }
     if (e.code === "Escape") { this._pause = true; }
   };
 
   private onKeyUp = (e: KeyboardEvent) => {
     this.keys.delete(e.code);
-    if (e.code === "Space") { this._attackConsumed = false; }
+    if (e.code === "Space") { this._actionConsumed = false; }
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") { this._dashConsumed = false; }
     if (e.code === "Escape") { this._pauseConsumed = false; }
   };
@@ -105,6 +108,11 @@ export class InputManager3D {
     this._dashConsumed = false;
   }
 
+  triggerMobileAction() {
+    this._action = true;
+    this._actionConsumed = false;
+  }
+
   // ── State getter ────────────────────────────────────────────────────────
 
   get state(): InputState {
@@ -116,6 +124,7 @@ export class InputManager3D {
       right:  this.keys.has("KeyD") || this.keys.has("ArrowRight") || this._mRight,
       attack,
       dash:   this._dash && !this._dashConsumed,
+      action: this._action && !this._actionConsumed,
       pause:  this._pause && !this._pauseConsumed,
       mouseX: this._mouseX,
       mouseY: this._mouseY,
@@ -129,6 +138,7 @@ export class InputManager3D {
     this._attack = false;
     this._mAttack = false;
   }
+  consumeAction() { this._actionConsumed = true; this._action = false; }
   consumeDash()   { this._dashConsumed = true;   this._dash = false; }
   consumePause()  { this._pauseConsumed = true;  this._pause = false; }
 

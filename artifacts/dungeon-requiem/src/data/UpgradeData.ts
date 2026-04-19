@@ -35,7 +35,7 @@ export type UpgradeId =
   | "blood_momentum"
   | "earthbreaker"
   | "iron_reprisal"
-  | "war_cry"
+  // war_cry removed — replaced by action ability system
   | "bloodforge"
   | "weakening_blows"
   | "concussive_charge"
@@ -207,6 +207,8 @@ export interface PlayerStats {
   plagueDaggerEnabled: boolean;   // gear (Plague Dagger) kill spawns poison puddle
   orbitalStaffEnabled: boolean;   // gear (Orbital Staff) adds orbiting damage orbs
   ricochetOrbEnabled: boolean;    // gear (Ricochet Orb) mage orbs ricochet off walls
+  actionCooldown: number;         // base 60s cooldown for class action ability
+  actionCdrPct: number;           // 0..1 percentage reduction on action cooldown (gear)
 }
 
 export function createDefaultStats(): PlayerStats {
@@ -305,6 +307,8 @@ export function createDefaultStats(): PlayerStats {
     plagueDaggerEnabled: false,
     orbitalStaffEnabled: false,
     ricochetOrbEnabled: false,
+    actionCooldown: 60,
+    actionCdrPct: 0,
   };
 }
 
@@ -462,12 +466,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "💢", maxStacks: 1, rarity: "rare", classes: ["warrior"],
     apply: (s) => { s.ironReprisalEnabled = true; },
   },
-  war_cry: {
-    id: "war_cry", name: "Battle Roar",
-    description: "War Cry damage bonus increased to +35% for 6 seconds.",
-    icon: "📯", maxStacks: 1, rarity: "rare", classes: ["warrior"],
-    apply: (s) => { s.warCryDmgBonus = 0.35; },  // upgrades baseline 0.15 → 0.35
-  },
+  // war_cry removed — replaced by action ability system
   bloodforge: {
     id: "bloodforge", name: "Bloodforge",
     description: "Each kill grants +1 max HP (capped at +20).",

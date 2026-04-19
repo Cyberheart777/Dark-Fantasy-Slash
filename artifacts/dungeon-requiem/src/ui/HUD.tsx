@@ -30,6 +30,7 @@ export function HUD({ onExtract }: HUDProps) {
     playerHP, playerMaxHP, xp, xpToNext, level,
     wave, score, kills, survivalTime,
     acquiredUpgrades, isDashing,
+    actionCooldownTimer, actionCooldownMax, actionReady, selectedClass,
     bossHP, bossMaxHP, bossName, bossAlive, bossSpecialWarn,
     nemesisAnnounce,
     highestBossWaveCleared, trialMode,
@@ -178,6 +179,7 @@ export function HUD({ onExtract }: HUDProps) {
           <span>WASD Move</span>
           <span>Mouse Aim &amp; auto-attack</span>
           <span>Shift Dash</span>
+          <span>Space Action</span>
           <span>ESC Pause</span>
         </div>
       )}
@@ -197,6 +199,10 @@ export function HUD({ onExtract }: HUDProps) {
           <div style={styles.tutorialRow}>
             <span style={styles.tutorialKey}>Shift</span>
             <span style={styles.tutorialLabel}>Dash — brief invincibility</span>
+          </div>
+          <div style={styles.tutorialRow}>
+            <span style={styles.tutorialKey}>Space</span>
+            <span style={styles.tutorialLabel}>Action ability — powerful class skill</span>
           </div>
           <div style={styles.tutorialRow}>
             <span style={styles.tutorialKey}>ESC</span>
@@ -247,6 +253,66 @@ export function HUD({ onExtract }: HUDProps) {
       {!isMobile && (
         <div style={{ ...styles.actionIndicator, opacity: isDashing ? 1 : 0.3 }}>
           <span style={{ color: isDashing ? "#88aaff" : "#666" }}>◈ DASH</span>
+        </div>
+      )}
+
+      {/* Action ability indicator — desktop only */}
+      {!isMobile && (
+        <div style={{
+          position: "absolute",
+          bottom: 40,
+          right: 20,
+          display: "flex",
+          flexDirection: "column" as const,
+          alignItems: "center",
+          gap: 4,
+          padding: "8px 14px",
+          background: actionReady ? "rgba(20,60,20,0.85)" : "rgba(20,20,40,0.75)",
+          border: `1px solid ${actionReady ? "#44cc44" : "#444"}`,
+          borderRadius: 10,
+          transition: "all 0.3s",
+          boxShadow: actionReady ? "0 0 12px rgba(60,200,60,0.4)" : "none",
+        }}>
+          <span style={{
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 2,
+            color: actionReady ? "#88ff88" : "#888",
+            fontFamily: "monospace",
+          }}>
+            {selectedClass === "warrior" ? "WAR CRY" :
+             selectedClass === "mage" ? "ARCANE BARRAGE" :
+             selectedClass === "rogue" ? "FAN OF KNIVES" :
+             selectedClass === "necromancer" ? "ARMY OF DEAD" :
+             "DISCORD"}
+          </span>
+          {!actionReady && (
+            <span style={{
+              fontSize: 13,
+              fontWeight: "bold",
+              color: "#ffaa44",
+              fontFamily: "monospace",
+            }}>
+              {Math.ceil(actionCooldownTimer)}s
+            </span>
+          )}
+          {actionReady && (
+            <span style={{
+              fontSize: 10,
+              color: "#66cc66",
+              fontFamily: "monospace",
+            }}>
+              READY
+            </span>
+          )}
+          <span style={{
+            fontSize: 9,
+            color: "rgba(180,180,180,0.5)",
+            letterSpacing: 1,
+            fontFamily: "monospace",
+          }}>
+            SPACE
+          </span>
         </div>
       )}
 

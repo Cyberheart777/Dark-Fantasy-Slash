@@ -172,6 +172,7 @@ export function formatBonuses(bonuses: Record<string, number>): string {
       case "onKillHeal": parts.push(`+${val.toFixed(0)} heal on kill`); break;
       case "poisonDamageBonus": parts.push(`+${(val * 100).toFixed(0)}% poison dmg`); break;
       case "lowHpDamageBonus": parts.push(`+${(val * 100).toFixed(0)}% dmg <50% HP`); break;
+      case "actionCdrPct": parts.push(`-${(val * 100).toFixed(0)}% action CD`); break;
       default: parts.push(`+${val} ${key}`); break;
     }
   }
@@ -236,6 +237,7 @@ export const GEAR_POOL: GearDef[] = [
   { id: "crown_of_thorns",  name: "Crown of Thorns",    slot: "trinket", rarity: "epic",   icon: "👑", description: "+3 dmg, +3% crit chance, +1% lifesteal",                                            bonuses: { damage: 3, critChance: 0.03, lifesteal: 0.01 } },
   { id: "shard_of_infinity",name: "Shard of Infinity",  slot: "trinket", rarity: "epic",   icon: "✨", description: "+8% XP, +5% atk speed, +10 HP",                                                    bonuses: { xpMultiplier: 0.08, attackSpeed: 0.05, maxHealth: 10 } },
   { id: "venom_shroud",     name: "Venom Shroud",       slot: "trinket", rarity: "epic",   icon: "🧪", description: "−25 base dmg, +100% poison dmg",                                                   bonuses: { damage: -25, poisonDamageBonus: 1.00 }, class: "rogue", proc: "venom_shroud_poison" },
+  { id: "warhorn_depths",   name: "Warhorn of the Depths", slot: "trinket", rarity: "rare", icon: "📯", description: "−15% action ability cooldown",                                                      bonuses: { actionCdrPct: 0.15 } },
 ];
 
 /** True if `gear` is eligible to drop for `playerClass`. */

@@ -186,6 +186,17 @@ export const META_UPGRADES: MetaUpgradeDef[] = [
     modifiers: (rank) => flatModifiers({ xpMultiplier: 0.08 * rank }, `meta:scholars_tome:${rank}`),
     statLine: (r) => `+${8 * r}% XP Gain`,
   },
+  {
+    id: "battle_instinct",
+    name: "Battle Instinct",
+    title: "Honed Reflexes",
+    icon: "⚡",
+    description: "-5s action ability cooldown per rank.",
+    maxRanks: 4,
+    costs: [300, 600, 1000, 1600],
+    modifiers: (rank) => flatModifiers({ actionCooldown: -5 * rank }, `meta:battle_instinct:${rank}`),
+    statLine: (r) => `-${5 * r}s Action CD`,
+  },
 ];
 
 /** Map for O(1) lookup by id. */
