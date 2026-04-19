@@ -2699,7 +2699,7 @@ function LabyrinthHUD({
       {isMob && !display.defeated && !display.extracted && !display.victory && (
         <div
           style={{
-            position: "absolute", top: 12, right: 8, width: 40, height: 40,
+            position: "absolute", top: 6, right: 6, width: 36, height: 36,
             borderRadius: 8, background: "rgba(10,5,20,0.8)", border: "1px solid rgba(140,100,200,0.4)",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 20, color: "#c0a0e0", cursor: "pointer", pointerEvents: "auto",
@@ -2712,7 +2712,7 @@ function LabyrinthHUD({
       )}
 
       {/* Top-left: HP bar */}
-      <div style={{ ...styles.hpBox, width: isMob ? 150 : 220, padding: isMob ? "6px 10px" : "10px 14px", top: isMob ? 12 : 20, left: isMob ? 10 : 20 }}>
+      <div style={{ ...styles.hpBox, width: isMob ? 140 : 220, padding: isMob ? "4px 8px" : "10px 14px", top: isMob ? 6 : 20, left: isMob ? 6 : 20 }}>
         <div style={styles.hpLabel}>
           <span style={{ color: "#ff6666", fontWeight: "bold" }}>HP</span>
           <span style={{ color: "#ccc", fontSize: 13 }}>
@@ -2780,7 +2780,7 @@ function LabyrinthHUD({
       </div>
 
       {/* Top-right: zone timer */}
-      <div style={{ ...styles.timerBox, minWidth: isMob ? 120 : 180, padding: isMob ? "6px 10px" : "10px 14px", top: isMob ? 58 : 20, right: isMob ? 8 : 20 }}>
+      <div style={{ ...styles.timerBox, minWidth: isMob ? 100 : 180, padding: isMob ? "4px 8px" : "10px 14px", top: isMob ? 6 : 20, right: isMob ? 48 : 20 }}>
         <div style={styles.timerLabel}>ZONE CLOSES IN</div>
         <div style={{
           ...styles.timerValue,
@@ -2811,8 +2811,8 @@ function LabyrinthHUD({
 
       {/* Layer + champion hunt tracker (mobile: includes threats inline) */}
       {display.championsToKill > 0 && (
-        <div style={{ ...styles.threatBox, top: isMob ? 110 : 165, right: isMob ? 8 : 20, minWidth: isMob ? 110 : 180, padding: isMob ? "4px 8px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
-          <div style={{ fontSize: isMob ? 8 : 9, letterSpacing: 2, color: "#cc88ff", fontWeight: 900, fontFamily: "monospace", marginBottom: 2 }}>
+        <div style={{ ...styles.threatBox, top: isMob ? 55 : 165, right: isMob ? 6 : 20, minWidth: isMob ? 100 : 180, padding: isMob ? "3px 6px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
+          <div style={{ fontSize: isMob ? 7 : 9, letterSpacing: 2, color: "#cc88ff", fontWeight: 900, fontFamily: "monospace", marginBottom: 1 }}>
             L{display.layer} HUNT
           </div>
           <div style={styles.threatRow}>
@@ -2835,8 +2835,8 @@ function LabyrinthHUD({
         </div>
       )}
       {display.layer === 3 && display.championsToKill === 0 && (
-        <div style={{ ...styles.threatBox, top: isMob ? 110 : 165, right: isMob ? 8 : 20, minWidth: isMob ? 110 : 180, padding: isMob ? "4px 8px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
-          <div style={{ fontSize: isMob ? 8 : 9, letterSpacing: 2, color: "#ff4488", fontWeight: 900, fontFamily: "monospace" }}>
+        <div style={{ ...styles.threatBox, top: isMob ? 55 : 165, right: isMob ? 6 : 20, minWidth: isMob ? 100 : 180, padding: isMob ? "3px 6px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
+          <div style={{ fontSize: isMob ? 7 : 9, letterSpacing: 2, color: "#ff4488", fontWeight: 900, fontFamily: "monospace" }}>
             L3 — THE ABYSS
           </div>
           <div style={{ fontSize: isMob ? 9 : 10, color: "#ff88aa", letterSpacing: 1, marginTop: 2, fontFamily: "monospace" }}>
@@ -4258,8 +4258,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   gearStrip: {
     position: "absolute" as const,
-    top: 175,
-    right: 10,
+    top: 115,
+    right: 6,
     display: "flex",
     gap: 4,
     padding: "4px",

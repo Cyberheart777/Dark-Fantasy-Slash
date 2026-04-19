@@ -26,7 +26,7 @@ const DEAD_ZONE = 0.12;
 // Dash button — same position as before so muscle memory carries.
 const DASH_BUTTON_SIZE = 78;
 const DASH_BUTTON_RIGHT = 180;
-const DASH_BUTTON_BOTTOM = 168;
+const DASH_BUTTON_BOTTOM = 80;
 const DASH_HIT_PAD = 12;
 
 function checkMobile() {
