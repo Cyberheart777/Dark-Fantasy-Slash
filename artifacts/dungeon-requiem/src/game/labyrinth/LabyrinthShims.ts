@@ -242,8 +242,16 @@ function visualsForKind(kind: LabEnemy["kind"]): {
   }
 }
 
-export function createEnemyShim(labEnemy: LabEnemy): EnemyRuntime {
+export function createEnemyShim(labEnemy: LabEnemy, layer: number = 1): EnemyRuntime {
   const visuals = visualsForKind(labEnemy.kind);
+  // Roll affix on Layer 2+ enemies (20% chance, non-rival only)
+  let affix: "none" | "shielded" | "vampiric" | "berserker" = "none";
+  let shieldHp = 0;
+  if (layer >= 2 && !labEnemy.kind.startsWith("rival") && labEnemy.kind !== "warden" && Math.random() < 0.20) {
+    const AFFIX_POOL: Array<"shielded" | "vampiric" | "berserker"> = ["shielded", "vampiric", "berserker"];
+    affix = AFFIX_POOL[Math.floor(Math.random() * AFFIX_POOL.length)];
+    if (affix === "shielded") shieldHp = 1;
+  }
   return {
     id: labEnemy.id,
     type: enemyTypeForKind(labEnemy.kind),
@@ -286,8 +294,8 @@ export function createEnemyShim(labEnemy: LabEnemy): EnemyRuntime {
     markTimer: 0,
     convergenceHits: 0,
     convergenceTimer: 0,
-    affix: "none",
-    shieldHp: 0,
+    affix: affix,
+    shieldHp: shieldHp,
     affixPulseTimer: 0,
   };
 }

@@ -41,9 +41,11 @@ interface PlayerPositionRef {
 export function LabyrinthEnemies3D({
   enemies,
   playerRef,
+  layer = 1,
 }: {
   enemies: readonly LabEnemy[];
   playerRef: PlayerPositionRef;
+  layer?: number;
 }) {
   // Split enemies: non-rivals go through the main-game Enemy3D shim;
   // rivals render via LabyrinthRivalChampion3D (class-mesh reuse).
@@ -63,7 +65,7 @@ export function LabyrinthEnemies3D({
       seen.add(lab.id);
       let shim = map.get(lab.id);
       if (!shim) {
-        shim = createEnemyShim(lab);
+        shim = createEnemyShim(lab, layer);
         map.set(lab.id, shim);
       }
       out.push(shim);

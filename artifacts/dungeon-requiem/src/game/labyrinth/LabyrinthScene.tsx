@@ -856,7 +856,7 @@ function LabyrinthWorld({
           it fails, enemies are invisible (a known degradation) but
           walls, player, and HUD still render. */}
       <LabyrinthCanvasErrorBoundary label="Enemies3D" fallback={null}>
-        <LabyrinthEnemies3D enemies={enemyList} playerRef={playerRef} />
+        <LabyrinthEnemies3D enemies={enemyList} playerRef={playerRef} layer={sharedRef.current.layer} />
       </LabyrinthCanvasErrorBoundary>
       {/* Death-burst renderer — independent of Enemies3D so even if the
           enemy visuals error out, the kill-feedback particles still play
