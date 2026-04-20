@@ -14,6 +14,7 @@ import { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useGameStore } from "../../store/gameStore";
+import { DamagePopups3D } from "../../ui/DamagePopups3D";
 import { useAchievementStore } from "../../store/achievementStore";
 import { AffixTooltip } from "../../ui/AffixTooltip";
 import { AffixBanner } from "../../ui/AffixBanner";
@@ -873,6 +874,9 @@ function LabyrinthWorld({
       <LabyrinthCanvasErrorBoundary label="Portals3D" fallback={null}>
         <LabyrinthPortals3D portals={portalList} />
       </LabyrinthCanvasErrorBoundary>
+      <LabyrinthCanvasErrorBoundary label="DamagePopups3D" fallback={null}>
+        <DamagePopups3D />
+      </LabyrinthCanvasErrorBoundary>
       {/* Enemy renderer is wrapped in an error boundary so a shim-side
           crash can't cascade and blank out the rest of the Canvas. If
           it fails, enemies are invisible (a known degradation) but
@@ -1712,7 +1716,12 @@ function CombatEnemyLoop({
             if (e.state === "dead") continue;
             if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange)) {
               const dmg = modifyOutgoingDamage(warriorStateRef.current, effectiveStats.damage, effectiveCrit);
+              const isCrit = warriorStateRef.current.lastHitWasCrit;
               const killed = damageEnemy(e, dmg);
+              useGameStore.getState().addDamagePopup({
+                id: `dmg_${e.id}_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
+                x: e.x, z: e.z, value: dmg, isCrit, isPlayer: false, spawnTime: performance.now(),
+              });
               registerHit(warriorStateRef.current);
               if (killed) {
                 shared.killCount++;
@@ -1833,6 +1842,12 @@ function CombatEnemyLoop({
       segments,
       wallThickness: LABYRINTH_CONFIG.WALL_THICKNESS,
       playerDamageAccum: dmgAccum,
+      onEnemyHit: (e, dmg) => {
+        useGameStore.getState().addDamagePopup({
+          id: `dmg_${e.id}_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
+          x: e.x, z: e.z, value: dmg, isCrit: false, isPlayer: false, spawnTime: performance.now(),
+        });
+      },
       onEnemyKilled: (e) => {
         shared.killCount++;
         audioManager.play("enemy_death");
@@ -1875,6 +1890,10 @@ function CombatEnemyLoop({
     //    damage, auto-pop War Cry if HP dropped into the trigger band.
     if (dmgAccum.value > 0) {
       const wasAlive = p.hp > 0;
+      useGameStore.getState().addDamagePopup({
+        id: `player_hit_${performance.now()}`,
+        x: p.x, z: p.z, value: Math.round(dmgAccum.value), isCrit: false, isPlayer: true, spawnTime: performance.now(),
+      });
       p.hp = Math.max(0, p.hp - dmgAccum.value);
       if (p.hp <= 0) {
         shared.defeated = true;
