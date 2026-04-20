@@ -109,6 +109,16 @@ export interface EnemyRuntime {
    *  leave this undefined so the runtime stays lean. All timers count
    *  DOWN. */
   rival?: RivalAbilityState;
+  /** Poison stacks currently applied by the rogue's Venom Stack (and
+   *  friends). Ticks hp down each frame while > 0. Optional — only
+   *  allocated when a projectile applies poison. */
+  poisonStacks?: number;
+  /** Per-stack DPS snapshot at application time (matches
+   *  GameScene.tsx:1034 semantics). */
+  poisonDps?: number;
+  /** Seconds remaining while confused (bard Discordant Chord). While
+   *  > 0 the enemy stops pursuing the player. Counted down externally. */
+  confuseTimer?: number;
 }
 
 export interface RivalAbilityState {
@@ -720,6 +730,25 @@ export function updateEnemy(
 ): void {
   if (enemy.state === "dead") {
     enemy.deathFadeSec += delta;
+    return;
+  }
+
+  // ─── Poison DoT tick (rogue Venom Stack / Deep Wounds) ─────────────
+  // Mirrors the main game's enemy poison tick at
+  // GameScene.tsx:1540-1541: `e.hp -= e.poisonStacks * e.poisonDps * delta`.
+  if ((enemy.poisonStacks ?? 0) > 0 && (enemy.poisonDps ?? 0) > 0) {
+    enemy.hp = Math.max(0, enemy.hp - enemy.poisonStacks! * enemy.poisonDps! * delta);
+    if (enemy.hp <= 0) {
+      enemy.state = "dead";
+      enemy.hitFlashTimer = 0.35;
+      return;
+    }
+  }
+
+  // ─── Confuse tick (bard Discordant Chord) ─────────────────────────
+  // While confuseTimer > 0, enemies stop pursuing — skip AI update.
+  if ((enemy.confuseTimer ?? 0) > 0) {
+    enemy.confuseTimer = Math.max(0, enemy.confuseTimer! - delta);
     return;
   }
 

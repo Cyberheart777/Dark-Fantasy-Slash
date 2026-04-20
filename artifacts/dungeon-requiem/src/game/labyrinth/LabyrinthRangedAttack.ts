@@ -14,6 +14,7 @@
  */
 
 import { spawnLabProjectile, type LabProjectile } from "./LabyrinthProjectile";
+import type { PlayerStats } from "../../data/UpgradeData";
 
 // Labyrinth mode tightens ranged attacks by 25% to match the melee
 // range reduction applied in LabyrinthScene (see LABYRINTH_RANGE_MULT).
@@ -50,65 +51,177 @@ export function tickRangedAttack(state: RangedAttackState, delta: number): void 
   if (state.cooldownSec > 0) state.cooldownSec = Math.max(0, state.cooldownSec - delta);
 }
 
-/** Try to fire a mage orb. Returns true if the shot went off. */
+/** Try to fire a mage orb. Returns true if the shot went off.
+ *
+ *  Mirrors the main-game orb spawn path (GameScene.tsx ~1902-2015):
+ *    - mageExtraOrbs: +N orbs in a fan (±8° per extra orb)
+ *    - splitBoltActive: +1 orb at -25% damage (labyrinth variant of
+ *      the main game's split-into-3 cone — tightened for corridor combat)
+ *    - projectileRadiusBonus: flat bonus to collision radius
+ *    - spellEchoChance: chance to double-cast entire volley
+ *    - overchargedOrbBonus: tag proj with spawn/maxRange so the tick
+ *      can scale damage by travel distance
+ */
 export function tryFireMageOrb(
   state: RangedAttackState,
   projectiles: LabProjectile[],
   x: number,
   z: number,
   angle: number,
+  labStats: PlayerStats,
 ): boolean {
   if (state.cooldownSec > 0) return false;
-  // Match player facing: angle convention is atan2(dx, -dz), so forward
-  // vector is (sin(angle), -cos(angle)).
-  const dx = Math.sin(angle);
-  const dz = -Math.cos(angle);
-  spawnLabProjectile(projectiles, {
-    owner: "player",
-    x, z,
-    vx: dx * MAGE_PROJECTILE_SPEED,
-    vz: dz * MAGE_PROJECTILE_SPEED,
-    damage: MAGE_BASE_DAMAGE,
-    radius: 0.5,
-    lifetime: MAGE_PROJECTILE_LIFETIME,
-    piercing: true, // arcane orb passes through enemies
-    color: MAGE_COLOR,
-    glowColor: MAGE_GLOW,
-    style: "orb",
-  });
+  const baseDmg = Math.round(labStats.damage > 0 ? labStats.damage : MAGE_BASE_DAMAGE);
+  const radius = 0.5 + labStats.projectileRadiusBonus;
+  const speed = MAGE_PROJECTILE_SPEED;
+  const life = MAGE_PROJECTILE_LIFETIME;
+  const maxRange = speed * life;
+  const overchargedEnabled = labStats.overchargedOrbBonus > 0;
+
+  // Build fan: base orb + mageExtraOrbs spread at ±8° per extra
+  const totalOrbs = 1 + Math.max(0, labStats.mageExtraOrbs);
+  const SPREAD_STEP = (8 * Math.PI) / 180; // 8 degrees per extra orb
+
+  const fireVolley = (jitter: number): void => {
+    for (let i = 0; i < totalOrbs; i++) {
+      // Center the fan; for totalOrbs=1 offset is 0.
+      const offset = totalOrbs > 1 ? (i - (totalOrbs - 1) / 2) * SPREAD_STEP : 0;
+      const a = angle + offset + jitter;
+      const dx = Math.sin(a);
+      const dz = -Math.cos(a);
+      spawnLabProjectile(projectiles, {
+        owner: "player",
+        x, z,
+        vx: dx * speed,
+        vz: dz * speed,
+        damage: baseDmg,
+        baseDamage: baseDmg,
+        radius,
+        lifetime: life,
+        initialLifetime: life,
+        piercing: true,
+        color: MAGE_COLOR,
+        glowColor: MAGE_GLOW,
+        style: "orb",
+        spawnX: overchargedEnabled ? x : undefined,
+        spawnZ: overchargedEnabled ? z : undefined,
+        maxRange: overchargedEnabled ? maxRange : undefined,
+      });
+    }
+    // Split Bolt: +1 extra orb at -25% damage, slight angle jitter.
+    if (labStats.splitBoltActive) {
+      const splitDmg = Math.round(baseDmg * 0.75);
+      const splitA = angle + jitter + SPREAD_STEP * 0.5;
+      const dx = Math.sin(splitA);
+      const dz = -Math.cos(splitA);
+      spawnLabProjectile(projectiles, {
+        owner: "player",
+        x, z,
+        vx: dx * speed,
+        vz: dz * speed,
+        damage: splitDmg,
+        baseDamage: splitDmg,
+        radius,
+        lifetime: life,
+        initialLifetime: life,
+        piercing: true,
+        color: MAGE_COLOR,
+        glowColor: MAGE_GLOW,
+        style: "orb",
+        spawnX: overchargedEnabled ? x : undefined,
+        spawnZ: overchargedEnabled ? z : undefined,
+        maxRange: overchargedEnabled ? maxRange : undefined,
+      });
+    }
+  };
+
+  fireVolley(0);
+  // Spell Echo: chance to double-cast with slight jitter
+  if (labStats.spellEchoChance > 0 && Math.random() < labStats.spellEchoChance) {
+    fireVolley((Math.random() - 0.5) * 0.15);
+  }
   state.cooldownSec = MAGE_COOLDOWN;
   return true;
 }
 
-/** Try to fire a rogue fan (3 daggers in a spread). Returns true if
- *  the shot went off. */
+/** Try to fire a rogue fan. Returns true if the shot went off.
+ *
+ *  Mirrors the main-game dagger spawn path:
+ *    - rogueExtraDaggers: +N daggers widen the fan (proportional spread)
+ *    - phantomBladesEnabled: 2 extra spectral daggers at ±0.5 rad,
+ *      80% speed, 50% damage, 70% lifetime
+ *    - projectileRadiusBonus: flat bonus to collision radius
+ */
 export function tryFireRogueFan(
   state: RangedAttackState,
   projectiles: LabProjectile[],
   x: number,
   z: number,
   angle: number,
+  labStats: PlayerStats,
 ): boolean {
   if (state.cooldownSec > 0) return false;
-  const offsets = [-ROGUE_SPREAD_RAD, 0, ROGUE_SPREAD_RAD];
-  for (const da of offsets) {
-    const a = angle + da;
+  const baseDmg = Math.round(labStats.damage > 0 ? labStats.damage : ROGUE_BASE_DAMAGE);
+  const radius = 0.35 + labStats.projectileRadiusBonus;
+  const speed = ROGUE_PROJECTILE_SPEED;
+  const life = ROGUE_PROJECTILE_LIFETIME;
+
+  const baseCount = 3;
+  const totalDaggers = baseCount + Math.max(0, labStats.rogueExtraDaggers);
+  // Keep the total fan width at a constant ROGUE_SPREAD_RAD per side
+  // (so more daggers = tighter fill-in rather than wider cone).
+  const halfSpread = ROGUE_SPREAD_RAD;
+
+  for (let i = 0; i < totalDaggers; i++) {
+    const t = totalDaggers > 1 ? (i / (totalDaggers - 1)) * 2 - 1 : 0;
+    const a = angle + t * halfSpread;
     const dx = Math.sin(a);
     const dz = -Math.cos(a);
     spawnLabProjectile(projectiles, {
       owner: "player",
       x, z,
-      vx: dx * ROGUE_PROJECTILE_SPEED,
-      vz: dz * ROGUE_PROJECTILE_SPEED,
-      damage: ROGUE_BASE_DAMAGE,
-      radius: 0.35,
-      lifetime: ROGUE_PROJECTILE_LIFETIME,
+      vx: dx * speed,
+      vz: dz * speed,
+      damage: baseDmg,
+      baseDamage: baseDmg,
+      radius,
+      lifetime: life,
+      initialLifetime: life,
       piercing: false,
       color: ROGUE_COLOR,
       glowColor: ROGUE_GLOW,
       style: "dagger",
     });
   }
+
+  // Phantom Blades: 2 extra spectral daggers at wide angles
+  if (labStats.phantomBladesEnabled) {
+    const phantomDmg = Math.round(baseDmg * 0.5);
+    const phantomSpeed = speed * 0.8;
+    const phantomLife = life * 0.7;
+    const phantomRadius = 0.35 * 0.7 + labStats.projectileRadiusBonus;
+    for (const offset of [-0.5, 0.5]) {
+      const a = angle + offset;
+      const dx = Math.sin(a);
+      const dz = -Math.cos(a);
+      spawnLabProjectile(projectiles, {
+        owner: "player",
+        x, z,
+        vx: dx * phantomSpeed,
+        vz: dz * phantomSpeed,
+        damage: phantomDmg,
+        baseDamage: phantomDmg,
+        radius: phantomRadius,
+        lifetime: phantomLife,
+        initialLifetime: phantomLife,
+        piercing: false,
+        color: "#80ffcc",
+        glowColor: "#40cc88",
+        style: "dagger",
+      });
+    }
+  }
+
   state.cooldownSec = ROGUE_COOLDOWN;
   return true;
 }

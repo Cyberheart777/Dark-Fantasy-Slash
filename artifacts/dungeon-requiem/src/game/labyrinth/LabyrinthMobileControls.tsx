@@ -18,6 +18,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { InputManager3D } from "../InputManager3D";
+import { useGameStore } from "../../store/gameStore";
+import type { CharacterClass } from "../../data/CharacterData";
+
+const ACTION_LABEL: Record<CharacterClass, string> = {
+  warrior: "WAR CRY",
+  mage: "BARRAGE",
+  rogue: "KNIVES",
+  necromancer: "ARMY",
+  bard: "DISCORD",
+};
 
 const JOYSTICK_RADIUS = 56;
 const KNOB_RADIUS = 24;
@@ -28,6 +38,12 @@ const DASH_BUTTON_SIZE = 78;
 const DASH_BUTTON_RIGHT = 180;
 const DASH_BUTTON_BOTTOM = 80;
 const DASH_HIT_PAD = 12;
+
+// Action button — above the dash button, slightly offset.
+const ACTION_BUTTON_SIZE = 72;
+const ACTION_BUTTON_RIGHT = 180;
+const ACTION_BUTTON_BOTTOM = 175;
+const ACTION_HIT_PAD = 12;
 
 function checkMobile() {
   return "ontouchstart" in window || navigator.maxTouchPoints > 0 || window.innerWidth < 900;
@@ -41,6 +57,17 @@ function isDashTouch(cx: number, cy: number): boolean {
   const dx = cx - centerX;
   const dy = cy - centerY;
   const r = DASH_BUTTON_SIZE / 2 + DASH_HIT_PAD;
+  return dx * dx + dy * dy <= r * r;
+}
+
+function isActionTouch(cx: number, cy: number): boolean {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const centerX = w - ACTION_BUTTON_RIGHT - ACTION_BUTTON_SIZE / 2;
+  const centerY = h - ACTION_BUTTON_BOTTOM - ACTION_BUTTON_SIZE / 2;
+  const dx = cx - centerX;
+  const dy = cy - centerY;
+  const r = ACTION_BUTTON_SIZE / 2 + ACTION_HIT_PAD;
   return dx * dx + dy * dy <= r * r;
 }
 
@@ -66,12 +93,17 @@ interface StickState {
 
 export function LabyrinthMobileControls({ inputRef, aimOverrideRef }: Props) {
   const [visible, setVisible] = useState(checkMobile);
+  const actionReady = useGameStore((s) => s.actionReady);
+  const actionCooldownTimer = useGameStore((s) => s.actionCooldownTimer);
+  const selectedClass = useGameStore((s) => s.selectedClass);
   const [moveStick, setMoveStick] = useState<StickState | null>(null);
   const moveTouchId = useRef<number | null>(null);
   const [aimStick, setAimStick] = useState<StickState | null>(null);
   const aimTouchId = useRef<number | null>(null);
   const dashTouchId = useRef<number | null>(null);
   const [dashPressed, setDashPressed] = useState(false);
+  const actionTouchId = useRef<number | null>(null);
+  const [actionPressed, setActionPressed] = useState(false);
 
   useEffect(() => {
     const onResize = () => setVisible(checkMobile());
@@ -102,7 +134,14 @@ export function LabyrinthMobileControls({ inputRef, aimOverrideRef }: Props) {
         });
         continue;
       }
-      // Right half — dash button first, then aim stick.
+      // Right half — action button, then dash button, then aim stick.
+      if (isActionTouch(t.clientX, t.clientY)) {
+        if (actionTouchId.current !== null) continue;
+        actionTouchId.current = t.identifier;
+        setActionPressed(true);
+        inputRef.current?.triggerMobileAction();
+        continue;
+      }
       if (isDashTouch(t.clientX, t.clientY)) {
         if (dashTouchId.current !== null) continue;
         dashTouchId.current = t.identifier;
@@ -183,6 +222,10 @@ export function LabyrinthMobileControls({ inputRef, aimOverrideRef }: Props) {
         dashTouchId.current = null;
         setDashPressed(false);
       }
+      if (t.identifier === actionTouchId.current) {
+        actionTouchId.current = null;
+        setActionPressed(false);
+      }
     }
   };
 
@@ -253,6 +296,28 @@ export function LabyrinthMobileControls({ inputRef, aimOverrideRef }: Props) {
       >
         ↯
       </div>
+      {/* Action button */}
+      <div
+        style={{
+          ...styles.actionHint,
+          background: actionPressed
+            ? "rgba(180,255,150,0.55)"
+            : actionReady
+              ? "rgba(60,140,50,0.5)"
+              : "rgba(40,40,50,0.4)",
+          borderColor: actionPressed
+            ? "rgba(220,255,200,0.95)"
+            : actionReady
+              ? "rgba(140,240,120,0.8)"
+              : "rgba(100,100,120,0.5)",
+          boxShadow: actionReady
+            ? "0 0 16px rgba(120,240,100,0.6)"
+            : "none",
+          color: actionReady ? "rgba(230,255,220,0.95)" : "rgba(200,200,220,0.6)",
+        }}
+      >
+        {actionReady ? ACTION_LABEL[selectedClass] ?? "ACT" : `${Math.ceil(actionCooldownTimer)}s`}
+      </div>
     </div>
   );
 }
@@ -283,6 +348,26 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     pointerEvents: "none",
+    transition: "background 0.1s, box-shadow 0.1s, border-color 0.1s",
+  },
+  actionHint: {
+    position: "absolute",
+    right: ACTION_BUTTON_RIGHT,
+    bottom: ACTION_BUTTON_BOTTOM,
+    width: ACTION_BUTTON_SIZE,
+    height: ACTION_BUTTON_SIZE,
+    borderRadius: "50%",
+    border: "3px solid rgba(140,240,120,0.8)",
+    background: "rgba(60,140,50,0.5)",
+    color: "rgba(230,255,220,0.95)",
+    fontSize: 12,
+    fontWeight: 900,
+    letterSpacing: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    pointerEvents: "none",
+    fontFamily: "monospace",
     transition: "background 0.1s, box-shadow 0.1s, border-color 0.1s",
   },
   anchor: {

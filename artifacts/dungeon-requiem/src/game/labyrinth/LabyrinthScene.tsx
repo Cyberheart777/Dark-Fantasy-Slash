@@ -207,6 +207,21 @@ interface LabPlayer {
    *  animation and tells MovementLoop to apply dash velocity instead
    *  of joystick-derived velocity. Mutated each frame by MovementLoop. */
   isDashing: boolean;
+  // ── Action ability runtime ──────────────────────────────────────
+  /** Cooldown until the next action can be used (seconds). */
+  actionCooldownTimer: number;
+  /** While > 0, class-specific action buff is active. */
+  actionActiveTimer: number;
+  /** Temporary armor from the warrior action buff. */
+  actionArmorBuff: number;
+  /** Temporary outgoing damage multiplier from action (warrior). */
+  actionDmgMult: number;
+  /** Temporary attack speed multiplier from action (mage). */
+  actionAtkSpeedMult: number;
+  /** Temporary projectile size multiplier from action (mage). */
+  actionOrbSizeMult: number;
+  /** Timer marking enemies as 20% more vulnerable (bard Discord). */
+  actionVulnerabilityTimer: number;
 }
 
 /** Shared state read by HUD (polling) and mutated by Canvas useFrame. */
@@ -332,6 +347,13 @@ export function LabyrinthScene() {
     x: 0, z: 0, angle: 0, vx: 0, vz: 0,
     hp: labStats.maxHealth, maxHp: labStats.maxHealth,
     isDashing: false,
+    actionCooldownTimer: 0,
+    actionActiveTimer: 0,
+    actionArmorBuff: 0,
+    actionDmgMult: 1,
+    actionAtkSpeedMult: 1,
+    actionOrbSizeMult: 1,
+    actionVulnerabilityTimer: 0,
   });
   const labDashRef = useRef<LabDashState>(makeLabDashState());
   const sharedRef = useRef<LabSharedState>({
@@ -1663,9 +1685,9 @@ function CombatEnemyLoop({
     // — no need for the combatStats useMemo to invalidate.
     const gearBonuses = gearStateRef.current.bonuses;
     const baseAtkSpeed = 1 / Math.max(0.01, combatStats.atkCooldown);
-    const effectiveAtkSpeed = Math.max(0.1, baseAtkSpeed + (gearBonuses.attackSpeed ?? 0));
+    const effectiveAtkSpeed = Math.max(0.1, (baseAtkSpeed + (gearBonuses.attackSpeed ?? 0)) * playerRef.current.actionAtkSpeedMult);
     const effectiveStats: LabCombatStats = {
-      damage: combatStats.damage + (gearBonuses.damage ?? 0),
+      damage: Math.round((combatStats.damage + (gearBonuses.damage ?? 0)) * playerRef.current.actionDmgMult),
       atkRange: combatStats.atkRange,
       atkCooldown: 1 / effectiveAtkSpeed,
     };
@@ -1689,6 +1711,88 @@ function CombatEnemyLoop({
     //    attack on desktop (spacebar / click) — that keeps keyboard
     //    play snappy even though the button is no longer required.
     const inputState = input.state;
+
+    // ── Action ability ────────────────────────────────────────────
+    if (p.actionCooldownTimer > 0) p.actionCooldownTimer = Math.max(0, p.actionCooldownTimer - delta);
+    if (p.actionActiveTimer > 0) {
+      p.actionActiveTimer -= delta;
+      if (p.actionActiveTimer <= 0) {
+        p.actionActiveTimer = 0;
+        p.actionArmorBuff = 0;
+        p.actionDmgMult = 1;
+        p.actionAtkSpeedMult = 1;
+        p.actionOrbSizeMult = 1;
+      }
+    }
+    if (p.actionVulnerabilityTimer > 0) p.actionVulnerabilityTimer = Math.max(0, p.actionVulnerabilityTimer - delta);
+
+    if (inputState.action && p.actionCooldownTimer <= 0) {
+      input.consumeAction();
+      const baseCd = (labStats.actionCooldown || 60) * (1 - (labStats.actionCdrPct || 0));
+      p.actionCooldownTimer = baseCd;
+      if (charClass === "warrior") {
+        p.actionActiveTimer = 3.0;
+        p.actionArmorBuff = 8;
+        p.actionDmgMult = 1.25;
+        audioManager.play("dash");
+      } else if (charClass === "mage") {
+        p.actionActiveTimer = 5.0;
+        p.actionAtkSpeedMult = 3.0;
+        p.actionOrbSizeMult = 2.0;
+        audioManager.play("attack_melee");
+      } else if (charClass === "rogue") {
+        const FAN_COUNT = 12;
+        const FAN_DMG = Math.round(effectiveStats.damage * 1.2);
+        const FAN_SPEED = 18;
+        const FAN_LIFETIME = 0.5;
+        const FAN_RADIUS = 0.4;
+        for (let i = 0; i < FAN_COUNT; i++) {
+          const ang = (i / FAN_COUNT) * Math.PI * 2;
+          projectilesRef.current.push({
+            id: `fan_${Date.now()}_${i}`,
+            owner: "player",
+            x: p.x + Math.sin(ang) * 1.2, z: p.z + Math.cos(ang) * 1.2,
+            vx: Math.sin(ang) * FAN_SPEED, vz: Math.cos(ang) * FAN_SPEED,
+            damage: FAN_DMG, radius: FAN_RADIUS, lifetime: FAN_LIFETIME,
+            piercing: false, hitIds: new Set<string>(), dead: false,
+            color: "#a0ffff", glowColor: "#20c870", style: "dagger",
+          });
+        }
+        audioManager.play("attack_melee");
+      } else if (charClass === "necromancer") {
+        p.actionActiveTimer = 5.0;
+        p.actionDmgMult = 2.0;
+        p.actionAtkSpeedMult = 1.6;
+        audioManager.play("dash");
+      } else if (charClass === "bard") {
+        p.actionVulnerabilityTimer = 6.0;
+        const DISCORD_RADIUS = 8;
+        for (const e of enemies) {
+          if (e.state === "dead") continue;
+          const dx = e.x - p.x, dz = e.z - p.z;
+          if (dx * dx + dz * dz <= DISCORD_RADIUS * DISCORD_RADIUS) {
+            e.confuseTimer = 6.0;
+          }
+        }
+        audioManager.play("attack_melee");
+      }
+    }
+
+    if (charClass === "warrior" && p.actionActiveTimer > 0) {
+      for (const e of enemies) {
+        if (e.state === "dead") continue;
+        const sx = p.x - e.x, sz = p.z - e.z;
+        const sd = Math.sqrt(sx * sx + sz * sz);
+        if (sd <= 10 && sd > 0.5) {
+          const pullStr = 8 * delta;
+          e.x += (sx / sd) * pullStr;
+          e.z += (sz / sd) * pullStr;
+        }
+      }
+    }
+
+    useGameStore.getState().setActionState(p.actionCooldownTimer, labStats.actionCooldown || 60);
+
     const autoAimRange = isMelee
       ? effectiveStats.atkRange * 1.15
       : RANGED_AUTO_RANGE;
@@ -1716,7 +1820,9 @@ function CombatEnemyLoop({
           for (const e of enemies) {
             if (e.state === "dead") continue;
             if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange)) {
-              const dmg = modifyOutgoingDamage(warriorStateRef.current, effectiveStats.damage, effectiveCrit);
+              let dmg = modifyOutgoingDamage(warriorStateRef.current, effectiveStats.damage, effectiveCrit);
+              dmg = Math.round(dmg * p.actionDmgMult);
+              if (p.actionVulnerabilityTimer > 0) dmg = Math.round(dmg * 1.2);
               const isCrit = warriorStateRef.current.lastHitWasCrit;
               const killed = damageEnemy(e, dmg);
               useGameStore.getState().addDamagePopup({
@@ -1763,11 +1869,11 @@ function CombatEnemyLoop({
           }
         }
       } else if (isMage) {
-        if (tryFireMageOrb(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle)) {
+        if (tryFireMageOrb(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats)) {
           audioManager.play("attack_orb");
         }
       } else if (isRogue) {
-        if (tryFireRogueFan(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle)) {
+        if (tryFireRogueFan(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats)) {
           audioManager.play("attack_dagger");
         }
       } else if (charClass === "bard") {
@@ -1843,6 +1949,7 @@ function CombatEnemyLoop({
       segments,
       wallThickness: LABYRINTH_CONFIG.WALL_THICKNESS,
       playerDamageAccum: dmgAccum,
+      labStats,
       onEnemyHit: (e, dmg) => {
         useGameStore.getState().addDamagePopup({
           id: `dmg_${e.id}_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
@@ -1891,11 +1998,13 @@ function CombatEnemyLoop({
     //    damage, auto-pop War Cry if HP dropped into the trigger band.
     if (dmgAccum.value > 0) {
       const wasAlive = p.hp > 0;
+      // Action armor buff (warrior War Cry) reduces incoming damage flat.
+      const incoming = Math.max(0, dmgAccum.value - p.actionArmorBuff);
       useGameStore.getState().addDamagePopup({
         id: `player_hit_${performance.now()}`,
-        x: p.x, z: p.z, value: Math.round(dmgAccum.value), isCrit: false, isPlayer: true, spawnTime: performance.now(),
+        x: p.x, z: p.z, value: Math.round(incoming), isCrit: false, isPlayer: true, spawnTime: performance.now(),
       });
-      p.hp = Math.max(0, p.hp - dmgAccum.value);
+      p.hp = Math.max(0, p.hp - incoming);
       if (p.hp <= 0) {
         shared.defeated = true;
         if (wasAlive) audioManager.play("player_death");
@@ -3007,6 +3116,9 @@ function LabyrinthHUD({
 
       {!isMob && <GearSlotStrip equipped={display.equipped} />}
 
+      {/* Desktop action ability indicator — bottom-right */}
+      {!isMob && <ActionCooldownIndicator charClass={charClass} />}
+
       {/* Key icon — only visible once the champion has been slain.
           Item 7 will add the loot-room unlock that consumes this. */}
       {display.hasKey && (
@@ -4023,6 +4135,46 @@ function GearSlotStrip({ equipped }: {
       {renderSlot(equipped.weapon, "⚔", "weapon")}
       {renderSlot(equipped.armor, "🛡", "armor")}
       {renderSlot(equipped.trinket, "◈", "trinket")}
+    </div>
+  );
+}
+
+function ActionCooldownIndicator({ charClass }: { charClass: CharacterClass }) {
+  const actionReady = useGameStore((s) => s.actionReady);
+  const actionCooldownTimer = useGameStore((s) => s.actionCooldownTimer);
+  const name =
+    charClass === "warrior" ? "WAR CRY" :
+    charClass === "mage" ? "ARCANE BARRAGE" :
+    charClass === "rogue" ? "FAN OF KNIVES" :
+    charClass === "necromancer" ? "ARMY OF DEAD" :
+    "DISCORD";
+  return (
+    <div style={{
+      position: "absolute",
+      bottom: 40,
+      right: 20,
+      display: "flex",
+      flexDirection: "column" as const,
+      alignItems: "center",
+      gap: 4,
+      padding: "8px 14px",
+      background: actionReady ? "rgba(20,60,20,0.85)" : "rgba(20,20,40,0.75)",
+      border: `1px solid ${actionReady ? "#44cc44" : "#444"}`,
+      borderRadius: 10,
+      transition: "all 0.3s",
+      boxShadow: actionReady ? "0 0 12px rgba(60,200,60,0.4)" : "none",
+      pointerEvents: "none",
+    }}>
+      <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 2, color: actionReady ? "#88ff88" : "#888", fontFamily: "monospace" }}>
+        {name}
+      </span>
+      {actionReady ? (
+        <span style={{ fontSize: 10, color: "#66cc66", fontFamily: "monospace" }}>READY · SPACE</span>
+      ) : (
+        <span style={{ fontSize: 13, fontWeight: "bold", color: "#ffaa44", fontFamily: "monospace" }}>
+          {Math.ceil(actionCooldownTimer)}s
+        </span>
+      )}
     </div>
   );
 }
