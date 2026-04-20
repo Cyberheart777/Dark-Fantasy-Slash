@@ -295,7 +295,7 @@ const RIVAL_ROGUE_ATTACK_COOLDOWN = 0.7;
 const RIVAL_ROGUE_COLLISION_RADIUS = 0.9;
 const RIVAL_ROGUE_DAGGER_SPREAD = 3;
 const RIVAL_ROGUE_DAGGER_SPEED = 16;
-const RIVAL_ROGUE_DAGGER_LIFETIME = 1.5;
+const RIVAL_ROGUE_DAGGER_LIFETIME = 0.75; // halved from 1.5
 /** Dash cooldown (seconds). */
 const RIVAL_ROGUE_DASH_CD = 4.0;
 /** Dash peak speed (world units / sec). */
@@ -1250,7 +1250,7 @@ function runRivalMageAI(
       vz: dirZ * RIVAL_MAGE_PROJECTILE_SPEED,
       damage: RIVAL_MAGE_PROJECTILE_DAMAGE,
       radius: 0.35,
-      lifetime: 2.0,
+      lifetime: 1.0, // halved from 2.0
       piercing: false,
       hitIds: new Set(),
       color: "#b844ff",
@@ -1354,7 +1354,7 @@ function runRivalNecromancerAI(
       vz: dirZ * RIVAL_NECROMANCER_PROJECTILE_SPEED,
       damage: RIVAL_NECROMANCER_PROJECTILE_DAMAGE,
       radius: 0.4,
-      lifetime: 2.0,
+      lifetime: 1.0, // halved from 2.0
       piercing: false,
       hitIds: new Set(),
       color: "#88ff44",
@@ -1378,7 +1378,7 @@ function runRivalNecromancerAI(
         vz: Math.cos(angle) * RIVAL_NECROMANCER_BURST_SPEED,
         damage: RIVAL_NECROMANCER_BURST_DAMAGE,
         radius: 0.35,
-        lifetime: 2.0,
+        lifetime: 1.0, // halved from 2.0
         piercing: false,
         hitIds: new Set(),
         color: "#ccff66",
@@ -1475,7 +1475,7 @@ function runRivalBardAI(
       vz: dirZ * RIVAL_BARD_PROJECTILE_SPEED,
       damage: RIVAL_BARD_PROJECTILE_DAMAGE,
       radius: 0.35,
-      lifetime: 2.0,
+      lifetime: 1.0, // halved from 2.0
       piercing: false,
       hitIds: new Set(),
       color: "#ffcc44",

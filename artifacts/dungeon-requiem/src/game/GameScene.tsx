@@ -661,15 +661,16 @@ function spawnGoblin(): EnemyRuntime {
 // Handles Death's Bargain relic — call this wherever player hp drops to 0.
 
 function handlePlayerFatalDmg(p: PlayerRuntime, g: GameState): boolean {
-  const stats = g.progression.stats;
-  if (stats.deathBargainActive === 1) {
-    p.hp = 1;
-    stats.deathBargainActive = 0;
-    p.invTimer = 1.5; // 1.5s of post-bargain invincibility
-    audioManager.play("player_hurt");
-    useAchievementStore.getState().tryUnlock("deaths_bargain_save");
-    return false; // survived
-  }
+  // REMOVED: Death's Bargain relic consumption
+  // const stats = g.progression.stats;
+  // if (stats.deathBargainActive === 1) {
+  //   p.hp = 1;
+  //   stats.deathBargainActive = 0;
+  //   p.invTimer = 1.5;
+  //   audioManager.play("player_hurt");
+  //   useAchievementStore.getState().tryUnlock("deaths_bargain_save");
+  //   return false; // survived
+  // }
   p.hp = 0; p.dead = true;
   audioManager.play("player_death");
   audioManager.stopMusic();
@@ -1352,9 +1353,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             p.x = Math.max(-ARENA, Math.min(ARENA, p.x + dashDir.x * blinkDist));
             p.z = Math.max(-ARENA, Math.min(ARENA, p.z + dashDir.z * blinkDist));
             p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.15;
-            // Afterimage: slow enemies at origin (baseline), damage if volatile blink upgrade
-            const blinkDmg = stats.volatileBlinkEnabled ? Math.round(stats.damage * 1.0) : Math.round(stats.damage * 0.4);
-            const blinkRadius = stats.volatileBlinkEnabled ? 5.0 : 3.5;
+            // Afterimage: slow enemies at origin (baseline)
+            // REMOVED: volatile blink upgrade — now always uses baseline values
+            const blinkDmg = Math.round(stats.damage * 0.4);
+            const blinkRadius = 3.5;
             for (const e of g.enemies) {
               if (e.dead) continue;
               const bx = e.x - originX, bz = e.z - originZ;
@@ -2787,8 +2789,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           e.hp -= dmg;
           e.hitFlashTimer = 0.15;
           spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
-          // Crit hit juice — see melee swing for the same pattern
-          if (isCrit && e.hp > 0) { triggerShake(g, 0.22, 0.16); triggerFreeze(g, 22); }
+          // REMOVED: projectile crit shake/freeze — causes lag on mage orb hits
+          // Melee crits still shake (see melee swing section).
+          // if (isCrit && e.hp > 0) { triggerShake(g, 0.22, 0.16); triggerFreeze(g, 22); }
         }
         if (stats.lifesteal > 0) {
           healPlayer(p, stats, dmg * stats.lifesteal);

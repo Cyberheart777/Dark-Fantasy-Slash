@@ -44,9 +44,18 @@ const WARDEN_COLLISION_RADIUS = 1.8;
 const STARBURST_PROJECTILE_COUNT = 8;
 const STARBURST_PROJECTILE_DAMAGE = 22;
 const STARBURST_PROJECTILE_SPEED = 10;
-const STARBURST_PROJECTILE_LIFETIME = 2.8;
+const STARBURST_PROJECTILE_LIFETIME = 1.4; // reduced from 2.8 for tight corridors
 const STARBURST_WARN_SEC = 0.6;
 const STARBURST_COOLDOWN_SEC = 5.0;
+
+// Void Lance — aimed 3-shot cone (mirrors main-game boss pattern).
+// Reduced range via shorter lifetime for labyrinth corridors.
+const VOID_LANCE_SPEED = 14;
+const VOID_LANCE_SPREAD = 0.12;       // radians between each lance
+const VOID_LANCE_SPAWN_DIST = 2.5;    // closer spawn for tight spaces
+const VOID_LANCE_DAMAGE = 18;
+const VOID_LANCE_LIFETIME = 1.2;      // short range — corridor-friendly
+const VOID_LANCE_COOLDOWN_SEC = 6.0;
 
 const MINION_SPAWN_INTERVAL_SEC = 10;
 const MINIONS_PER_BURST = 2;
@@ -66,6 +75,8 @@ export interface WardenState {
   starburstWarning: number;
   /** Seconds until next minion-summon (phase 3). */
   minionCooldown: number;
+  /** Seconds until next void-lance volley (all phases). */
+  voidLanceCooldown: number;
 }
 
 /** Storage: we piggyback on the enemy's fireTimer/aiTimer fields and a

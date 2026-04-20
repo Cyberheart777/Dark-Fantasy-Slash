@@ -247,6 +247,7 @@ interface LabSharedState {
   shroudDamageTaken: number;
   gearPickupsThisRun: number;
   achievementsEvaluated: boolean;
+  crystalsEarned: number;
   rivalAnnounce: { kind: "rival_warrior" | "rival_mage" | "rival_rogue" | "rival_necromancer" | "rival_bard"; announcedAt: number } | null;
   wardenHud: {
     alive: boolean;
@@ -383,6 +384,7 @@ export function LabyrinthScene() {
     shroudDamageTaken: 0,
     gearPickupsThisRun: 0,
     achievementsEvaluated: false,
+    crystalsEarned: 0,
     rivalAnnounce: null,
     outsideZone: false,
     safeDirX: 0, safeDirZ: 0,
@@ -1702,6 +1704,7 @@ function CombatEnemyLoop({
       ranSalvageRef.current = true;
       const total = salvageLabGear(gearStateRef.current, gearDropsRef.current);
       const crystalTotal = total * shared.soulCrystalMult;
+      shared.crystalsEarned = crystalTotal + (shared.layer === 3 && shared.victory ? 500 : 0);
       if (crystalTotal > 0) {
         useMetaStore.getState().addShards(crystalTotal);
       }
@@ -1905,10 +1908,10 @@ function CombatEnemyLoop({
                   p.hp = Math.min(p.maxHp, p.hp + gained);
                 }
                 if (e.kind === "warden") {
-                  shared.victory = true;
                   shared.layerComplete = true;
                   clearWardenState(e.id);
                   audioManager.play("wave_clear");
+                  shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
                 }
                 if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue" || e.kind === "rival_necromancer" || e.kind === "rival_bard") {
                   onRivalChampionKill(e, shared, gearDropsRef.current);
@@ -2031,9 +2034,10 @@ function CombatEnemyLoop({
           }
         }
         if (e.kind === "warden") {
-          shared.victory = true;
+          shared.layerComplete = true;
           clearWardenState(e.id);
           audioManager.play("wave_clear");
+          shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
         }
         if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue" || e.kind === "rival_necromancer" || e.kind === "rival_bard") {
           onRivalChampionKill(e, shared, gearDropsRef.current);
@@ -2808,6 +2812,7 @@ function LabyrinthHUD({
     layerComplete: false,
     layerBanner: null as LabSharedState["layerBanner"],
     pendingPortalDecision: null as LabSharedState["pendingPortalDecision"],
+    crystalsEarned: 0,
   });
 
   useEffect(() => {
@@ -2869,6 +2874,7 @@ function LabyrinthHUD({
         layerComplete: s.layerComplete,
         layerBanner: s.layerBanner,
         pendingPortalDecision: s.pendingPortalDecision,
+        crystalsEarned: s.crystalsEarned,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -2904,6 +2910,11 @@ function LabyrinthHUD({
       if (portal) {
         p.x = portal.x;
         p.z = portal.z;
+      }
+      if (s.layer === 3) {
+        // Layer 3 victory: 500 bonus crystals
+        useMetaStore.getState().addShards(500);
+        s.victory = true;
       }
       s.extracted = true;
     } else {
@@ -3343,8 +3354,14 @@ function LabyrinthHUD({
             </div>
             <div style={styles.extractedSub}>
               {display.layer === 3
-                ? "The Abyss is conquered. Choose one item to keep permanently."
+                ? "The Abyss is conquered. You have earned 500 bonus crystals!"
                 : "The vault's keeper is dead. The labyrinth is yours."}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#ffcc44", fontFamily: "monospace", letterSpacing: 2, marginTop: 8, textShadow: "0 0 12px #ffaa00" }}>
+              💎 {display.crystalsEarned} CRYSTALS EARNED
+            </div>
+            <div style={styles.extractedStats}>
+              TIME · {formatZoneTime(display.elapsedSec)} · KILLS · {display.killCount}
             </div>
             {display.layer === 3 && (
               <GearKeepSelection equipped={display.equipped} onKeep={(gear) => {
@@ -3356,14 +3373,9 @@ function LabyrinthHUD({
               }} />
             )}
             {display.layer !== 3 && (
-              <>
-                <div style={styles.extractedStats}>
-                  TIME · {formatZoneTime(display.elapsedSec)} · KILLS · {display.killCount}
-                </div>
-                <button style={styles.escBtn} onClick={exit}>
-                  ⌂ RETURN TO MAIN MENU
-                </button>
-              </>
+              <button style={styles.escBtn} onClick={exit}>
+                ⌂ RETURN TO MAIN MENU
+              </button>
             )}
           </div>
         </div>
@@ -3376,6 +3388,9 @@ function LabyrinthHUD({
             <div style={styles.extractedTitle}>⬭ EXTRACTED</div>
             <div style={styles.extractedSub}>
               You escaped the labyrinth. The vault lets you pass.
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: "#ffcc44", fontFamily: "monospace", letterSpacing: 2, marginTop: 6, textShadow: "0 0 10px #ffaa00" }}>
+              💎 {display.crystalsEarned} CRYSTALS EARNED
             </div>
             <div style={styles.extractedStats}>
               TIME SURVIVED · {formatZoneTime(display.elapsedSec)}

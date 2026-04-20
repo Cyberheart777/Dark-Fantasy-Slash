@@ -54,7 +54,7 @@ export type UpgradeId =
   | "overcharged_orbs"
   | "residual_field"
   | "extra_orb"
-  | "volatile_blink"
+  // REMOVED | "volatile_blink"
   | "projectile_size"
   | "split_bolt"
   | "arcane_surge"
@@ -110,7 +110,7 @@ export type UpgradeId =
   | "relic_soulfire"
   | "relic_vampiric"
   | "relic_phantom_echo"
-  | "relic_deaths_bargain"
+  // REMOVED | "relic_deaths_bargain"
   | "relic_abyss_crown"
   | "relic_blood_covenant"
   | "relic_iron_oath"
@@ -685,12 +685,13 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "🟣", maxStacks: 3, rarity: "rare", classes: ["mage"],
     apply: (s) => { s.mageExtraOrbs += 1; },
   },
-  volatile_blink: {
-    id: "volatile_blink", name: "Volatile Blink",
-    description: "Blink afterimage now explodes for 1× damage in a wide radius.",
-    icon: "💥", maxStacks: 1, rarity: "epic", classes: ["mage"],
-    apply: (s) => { s.volatileBlinkEnabled = true; },
-  },
+  // REMOVED — volatile_blink
+  // volatile_blink: {
+  //   id: "volatile_blink", name: "Volatile Blink",
+  //   description: "Blink afterimage now explodes for 1× damage in a wide radius.",
+  //   icon: "💥", maxStacks: 1, rarity: "epic", classes: ["mage"],
+  //   apply: (s) => { s.volatileBlinkEnabled = true; },
+  // },
   projectile_size: {
     id: "projectile_size", name: "Amplified Orbs",
     description: "+20% orb size.",
@@ -1025,12 +1026,13 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "👁️", maxStacks: 1, rarity: "epic", classes: ["warrior"], isRelic: true,
     apply: (s) => { s.phantomEchoEvery = 5; },  // damage reduced 70→50% in GameScene
   },
-  relic_deaths_bargain: {
-    id: "relic_deaths_bargain", name: "Death's Bargain",
-    description: "Once per run, survive a lethal blow with 1 HP. 1.5s invincibility.",
-    icon: "💀", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
-    apply: (s) => { s.deathBargainActive = 1; },  // was 2s, now 1.5s in GameScene
-  },
+  // REMOVED — relic_deaths_bargain
+  // relic_deaths_bargain: {
+  //   id: "relic_deaths_bargain", name: "Death's Bargain",
+  //   description: "Once per run, survive a lethal blow with 1 HP. 1.5s invincibility.",
+  //   icon: "💀", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
+  //   apply: (s) => { s.deathBargainActive = 1; },  // was 2s, now 1.5s in GameScene
+  // },
   relic_abyss_crown: {
     id: "relic_abyss_crown", name: "Abyss Crown",
     description: "+35% XP gain. Cursed: you take 15% more damage.",
@@ -1076,7 +1078,8 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
 // ─── Relic ID list ─────────────────────────────────────────────────────────────
 
 const RELIC_IDS: UpgradeId[] = [
-  "relic_soulfire", "relic_vampiric", "relic_phantom_echo", "relic_deaths_bargain",
+  "relic_soulfire", "relic_vampiric", "relic_phantom_echo",
+  // REMOVED "relic_deaths_bargain",
   "relic_abyss_crown", "relic_blood_covenant", "relic_iron_oath", "relic_convergence_blade",
 ];
 
