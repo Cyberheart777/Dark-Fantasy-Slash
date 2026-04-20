@@ -86,6 +86,9 @@ import {
   findStalkerSpawnCell,
   makeCorridorGuardianAt,
   makeRivalChampion,
+  makeMiniBoss,
+  updateMiniBoss,
+  clearMiniBossState,
   findOuterRingSpawnCell,
   findMidRingSpawnCell,
   type EnemyRuntime,
@@ -1913,6 +1916,14 @@ function CombatEnemyLoop({
                   audioManager.play("wave_clear");
                   shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
                 }
+                if (e.kind === "mini_boss") {
+                  shared.miniBossAlive = false;
+                  clearMiniBossState(e.id);
+                  // All champions + mini-boss dead → open portals
+                  shared.layerComplete = true;
+                  shared.layerBanner = { text: "PORTALS OPENED — CHOOSE YOUR PATH", sub: shared.layer < 3 ? "DESCEND DEEPER OR EXTRACT" : "THE ABYSS IS CONQUERED", color: "#44ff88", at: shared.zone.elapsedSec };
+                  audioManager.play("wave_clear");
+                }
                 if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue" || e.kind === "rival_necromancer" || e.kind === "rival_bard") {
                   onRivalChampionKill(e, shared, gearDropsRef.current);
                   audioManager.play("wave_clear");
@@ -1954,6 +1965,8 @@ function CombatEnemyLoop({
           projectilesRef.current,
           (mx, mz) => enemies.push(makeCorridorGuardianAt(mx, mz)),
         );
+      } else if (e.kind === "mini_boss") {
+        updateMiniBoss(e, p.x, p.z, delta, dmgAccum, projectilesRef.current);
       } else {
         updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum, projectilesRef.current, rivalPoisonAccum);
       }
@@ -2588,6 +2601,21 @@ function ZoneTickLoop({
         specialWarn: false,
       };
       audioManager.play("boss_spawn");
+    }
+
+    // ── Mini-boss spawn (layer 2) ──────────────────────────────────────
+    // When all champions are killed on a layer with hasMiniBoss, the
+    // kill handler sets miniBossSpawned + miniBossAlive. We lazily
+    // spawn the entity here on the next frame.
+    if (shared.miniBossSpawned && shared.miniBossAlive) {
+      const hasMiniBossEntity = enemiesRef.current.some((e) => e.kind === "mini_boss" && e.state !== "dead");
+      if (!hasMiniBossEntity) {
+        const mb = makeMiniBoss(p.x + 8, p.z + 8);
+        enemiesRef.current.push(mb);
+        onEnemiesChange(enemiesRef.current.slice());
+        shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
+        audioManager.play("boss_spawn");
+      }
     }
 
     // ── Portal milestones ──────────────────────────────────────────────
@@ -4024,10 +4052,15 @@ function onRivalChampionKill(
     shared.layerBanner = { text: "ONE CHAMPION REMAINS", sub: "FINISH THE HUNT", color: "#ff8844", at: shared.zone.elapsedSec };
   }
   if (shared.championsKilled >= lc.championCount) {
-    // Mini-boss stage not implemented yet — completing champions opens portals
-    // directly. Re-gate behind miniBossAlive once the mini-boss is wired in.
-    shared.layerComplete = true;
-    shared.layerBanner = { text: "PORTALS OPENED — CHOOSE YOUR PATH", sub: shared.layer < 3 ? "DESCEND DEEPER OR EXTRACT" : "THE ABYSS IS CONQUERED", color: "#44ff88", at: shared.zone.elapsedSec };
+    if (lc.hasMiniBoss && !shared.miniBossSpawned) {
+      // Spawn mini-boss at the last champion's death position
+      shared.miniBossSpawned = true;
+      shared.miniBossAlive = true;
+      shared.layerBanner = { text: "A CHAMPION BOSS EMERGES", sub: "DEFEAT IT TO OPEN PORTALS", color: "#ff4488", at: shared.zone.elapsedSec };
+    } else if (!lc.hasMiniBoss || !shared.miniBossAlive) {
+      shared.layerComplete = true;
+      shared.layerBanner = { text: "PORTALS OPENED — CHOOSE YOUR PATH", sub: shared.layer < 3 ? "DESCEND DEEPER OR EXTRACT" : "THE ABYSS IS CONQUERED", color: "#44ff88", at: shared.zone.elapsedSec };
+    }
   }
 }
 

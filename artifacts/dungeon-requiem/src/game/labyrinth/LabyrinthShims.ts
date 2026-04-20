@@ -206,6 +206,7 @@ export function enemyTypeForKind(kind: LabEnemy["kind"]): string {
     case "mimic": return "scuttler";
     case "shadow_stalker": return "wraith";
     case "warden": return "boss";
+    case "mini_boss": return "boss";
     // Heavy (ex-champion) — keeps the elite silhouette, but
     // demoted to a standard heavy patrol per item 9. Scale/palette
     // adjusted in visualsForKind below so it reads as a regular
@@ -238,6 +239,8 @@ function visualsForKind(kind: LabEnemy["kind"]): {
       return { scale: 0.9, color: "#101018", emissive: "#3a2a5a" };
     case "warden":
       return { scale: 1.8, color: "#2a0a2a", emissive: "#a020ff" };
+    case "mini_boss":
+      return { scale: 1.5, color: "#3a0a20", emissive: "#ff4488" };
     // Heavy — keeps the original orange/red champion palette but
     // scaled down from the old 1.5 to 1.2 so it reads as a heavy
     // patrol rather than a mini-boss.

@@ -628,6 +628,163 @@ export function makeRivalChampion(
   };
 }
 
+// ─── Mini-boss constants ──────────────────────────────────────────────────────
+// Layer 2 boss: randomly picks a rival class, but has 2-3x HP and fires
+// both a starburst and aimed daggers for mixed attacks.
+const MINI_BOSS_HP_MULT = 2.5;  // times the base rival HP
+const MINI_BOSS_STARBURST_CD = 5.0;
+const MINI_BOSS_STARBURST_COUNT = 10;
+const MINI_BOSS_STARBURST_SPEED = 10;
+const MINI_BOSS_STARBURST_DAMAGE = 18;
+const MINI_BOSS_STARBURST_LIFETIME = 1.2; // short for corridors
+const MINI_BOSS_LANCE_CD = 4.0;
+const MINI_BOSS_LANCE_SPEED = 14;
+const MINI_BOSS_LANCE_DAMAGE = 15;
+const MINI_BOSS_LANCE_LIFETIME = 1.0;
+const MINI_BOSS_LANCE_SPREAD = 0.15;
+
+let miniBossIdCounter = 0;
+
+/** Create a layer 2 mini-boss. Picks a random rival class's appearance
+ *  but with boosted HP and a mixed attack pattern (starburst + lances). */
+export function makeMiniBoss(x: number, z: number): EnemyRuntime {
+  const kinds: Array<"rival_warrior" | "rival_mage" | "rival_rogue" | "rival_necromancer" | "rival_bard"> = [
+    "rival_warrior", "rival_mage", "rival_rogue", "rival_necromancer", "rival_bard",
+  ];
+  const baseKind = kinds[Math.floor(Math.random() * kinds.length)];
+  const baseHp =
+    baseKind === "rival_warrior"     ? RIVAL_WARRIOR_HP :
+    baseKind === "rival_mage"        ? RIVAL_MAGE_HP :
+    baseKind === "rival_necromancer" ? RIVAL_NECROMANCER_HP :
+    baseKind === "rival_bard"        ? RIVAL_BARD_HP :
+                                       RIVAL_ROGUE_HP;
+  const hp = Math.round(baseHp * MINI_BOSS_HP_MULT);
+  return {
+    id: `mini_boss-${miniBossIdCounter++}`,
+    kind: "mini_boss",
+    x, z,
+    angle: 0,
+    hp,
+    maxHp: hp,
+    state: "chase",
+    aiTimer: 0,
+    attackCooldown: 0,
+    deathFadeSec: 0,
+    hitFlashTimer: 0,
+    patrolTargetX: null,
+    patrolTargetZ: null,
+    lastMoveX: 0,
+    lastMoveZ: 0,
+    fireTimer: 0,
+    rival: makeRivalState(),
+  };
+}
+
+/** Mini-boss AI state — similar to warden side-table approach. */
+interface MiniBossState {
+  starburstCd: number;
+  lanceCd: number;
+}
+const miniBossStates = new Map<string, MiniBossState>();
+
+function getMiniBossState(id: string): MiniBossState {
+  let s = miniBossStates.get(id);
+  if (!s) {
+    s = { starburstCd: MINI_BOSS_STARBURST_CD, lanceCd: MINI_BOSS_LANCE_CD };
+    miniBossStates.set(id, s);
+  }
+  return s;
+}
+
+export function clearMiniBossState(id: string): void {
+  miniBossStates.delete(id);
+}
+
+/** Per-frame mini-boss AI: chase + melee + starburst + aimed lances. */
+export function updateMiniBoss(
+  boss: EnemyRuntime,
+  playerX: number,
+  playerZ: number,
+  delta: number,
+  playerDamage: { value: number },
+  projectiles: LabProjectile[],
+): void {
+  const ms = getMiniBossState(boss.id);
+  const dx = playerX - boss.x;
+  const dz = playerZ - boss.z;
+  const dist = Math.sqrt(dx * dx + dz * dz) || 0.0001;
+
+  // Melee
+  if (boss.attackCooldown > 0) boss.attackCooldown = Math.max(0, boss.attackCooldown - delta);
+  if (boss.hitFlashTimer > 0) boss.hitFlashTimer = Math.max(0, boss.hitFlashTimer - delta);
+  const meleeRange = 2.4;
+  const meleeDmg = 28;
+  if (dist <= meleeRange && boss.attackCooldown <= 0) {
+    playerDamage.value += meleeDmg;
+    boss.attackCooldown = 1.4;
+  }
+
+  // Chase
+  if (dist > meleeRange * 0.85) {
+    const speed = 4.0;
+    const nx = dx / dist;
+    const nz = dz / dist;
+    boss.x += nx * speed * delta;
+    boss.z += nz * speed * delta;
+    boss.lastMoveX = nx;
+    boss.lastMoveZ = nz;
+  }
+  boss.angle = Math.atan2(dx / dist, -dz / dist);
+
+  // Starburst — radial ring of projectiles (corridor-safe lifetime)
+  ms.starburstCd -= delta;
+  if (ms.starburstCd <= 0) {
+    ms.starburstCd = MINI_BOSS_STARBURST_CD;
+    for (let i = 0; i < MINI_BOSS_STARBURST_COUNT; i++) {
+      const a = (i / MINI_BOSS_STARBURST_COUNT) * Math.PI * 2;
+      spawnLabProjectile(projectiles, {
+        owner: "enemy",
+        x: boss.x,
+        z: boss.z,
+        vx: Math.cos(a) * MINI_BOSS_STARBURST_SPEED,
+        vz: Math.sin(a) * MINI_BOSS_STARBURST_SPEED,
+        damage: MINI_BOSS_STARBURST_DAMAGE,
+        radius: 0.4,
+        lifetime: MINI_BOSS_STARBURST_LIFETIME,
+        piercing: false,
+        color: "#ff6040",
+        glowColor: "#cc3020",
+        style: "orb",
+      });
+    }
+  }
+
+  // Aimed lance volley — 3-shot cone at the player
+  ms.lanceCd -= delta;
+  if (ms.lanceCd <= 0) {
+    ms.lanceCd = MINI_BOSS_LANCE_CD;
+    const baseAngle = Math.atan2(dx, dz);
+    for (let i = -1; i <= 1; i++) {
+      const a = baseAngle + i * MINI_BOSS_LANCE_SPREAD;
+      const spawnDist = 2.0;
+      spawnLabProjectile(projectiles, {
+        owner: "enemy",
+        x: boss.x + Math.sin(a) * spawnDist,
+        z: boss.z + Math.cos(a) * spawnDist,
+        vx: Math.sin(a) * MINI_BOSS_LANCE_SPEED,
+        vz: Math.cos(a) * MINI_BOSS_LANCE_SPEED,
+        damage: MINI_BOSS_LANCE_DAMAGE,
+        radius: 0.35,
+        lifetime: MINI_BOSS_LANCE_LIFETIME,
+        piercing: false,
+        color: "#ff4488",
+        glowColor: "#cc2060",
+        style: "orb",
+      });
+    }
+  }
+}
+
 /** Pick an outer-ring dead-end far from the player. Uses Chebyshev
  *  distance from maze center ≥ minRing to ensure the outer band;
  *  falls back to any far-from-player dead-end if no outer-ring
@@ -1629,6 +1786,7 @@ export function enemyCollisionRadius(kind: EnemyKind): number {
     case "mimic": return MIMIC_COLLISION_RADIUS;
     case "shadow_stalker": return STALKER_COLLISION_RADIUS;
     case "warden": return 1.8;
+    case "mini_boss": return 1.4;
     case "heavy": return HEAVY_COLLISION_RADIUS;
     case "rival_warrior": return RIVAL_WARRIOR_COLLISION_RADIUS;
     case "rival_mage": return RIVAL_MAGE_COLLISION_RADIUS;
