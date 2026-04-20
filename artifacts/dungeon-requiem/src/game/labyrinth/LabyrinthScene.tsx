@@ -290,6 +290,9 @@ interface LabSharedState {
   soulCrystalMult: number;
   descentPortalsSpawned: boolean;
   pendingLayerChange: 2 | 3 | null;
+  /** Portal-confirmation gate. Set on portal collision; cleared by
+   *  the HUD dialog when the player accepts or cancels. */
+  pendingPortalDecision: { type: "extract" | "descent"; portalId: string } | null;
   layerBanner: { text: string; sub: string; color: string; at: number } | null;
 }
 
@@ -403,6 +406,7 @@ export function LabyrinthScene() {
     soulCrystalMult: LAYER_CONFIG[1].crystalMult,
     descentPortalsSpawned: false,
     pendingLayerChange: null,
+    pendingPortalDecision: null,
     layerBanner: { text: "DEFEAT 4 CHAMPIONS TO DESCEND", sub: "THE HUNT BEGINS", color: "#cc88ff", at: 0 },
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
@@ -1869,15 +1873,15 @@ function CombatEnemyLoop({
           }
         }
       } else if (isMage) {
-        if (tryFireMageOrb(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats)) {
+        if (tryFireMageOrb(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats, p.actionAtkSpeedMult, p.actionOrbSizeMult)) {
           audioManager.play("attack_orb");
         }
       } else if (isRogue) {
-        if (tryFireRogueFan(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats)) {
+        if (tryFireRogueFan(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats, p.actionAtkSpeedMult)) {
           audioManager.play("attack_dagger");
         }
       } else if (charClass === "bard") {
-        if (tryFireBardNote(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle)) {
+        if (tryFireBardNote(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats, p.actionAtkSpeedMult)) {
           audioManager.play("attack_dagger");
         }
       }
@@ -2587,18 +2591,18 @@ function ZoneTickLoop({
     }
 
     // ── Portal collision (extraction or descent) ─────────────────────
-    for (const portal of shared.portals) {
-      if (portalCollision(p.x, p.z, portal)) {
-        if (portal.id.startsWith("descent_") && shared.layer < 3) {
-          // Flag the layer change — parent will regen the maze + reset state
-          shared.pendingLayerChange = (shared.layer + 1) as 2 | 3;
-          shared.portals = [];
-          portalsChanged = true;
-          break;
-        } else {
-          shared.extracted = true;
-          p.x = portal.x;
-          p.z = portal.z;
+    // Instead of immediately advancing / extracting, we flag a pending
+    // decision that the HUD renders as a confirmation dialog. Only one
+    // pending decision at a time; re-triggering on the same portal is
+    // a no-op until the player accepts or cancels.
+    if (!shared.pendingPortalDecision) {
+      for (const portal of shared.portals) {
+        if (portalCollision(p.x, p.z, portal)) {
+          if (portal.id.startsWith("descent_") && shared.layer < 3) {
+            shared.pendingPortalDecision = { type: "descent", portalId: portal.id };
+          } else {
+            shared.pendingPortalDecision = { type: "extract", portalId: portal.id };
+          }
           break;
         }
       }
@@ -2750,6 +2754,7 @@ function LabyrinthHUD({
     championsToKill: 4,
     layerComplete: false,
     layerBanner: null as LabSharedState["layerBanner"],
+    pendingPortalDecision: null as LabSharedState["pendingPortalDecision"],
   });
 
   useEffect(() => {
@@ -2810,6 +2815,7 @@ function LabyrinthHUD({
         championsToKill: s.championsToKill,
         layerComplete: s.layerComplete,
         layerBanner: s.layerBanner,
+        pendingPortalDecision: s.pendingPortalDecision,
       });
     }, 100);
     return () => clearInterval(iv);

@@ -36,7 +36,7 @@ export interface LabProjectile {
   hitIds: Set<string>;  // enemy/player ids already hit this projectile
   color: string;
   glowColor: string;
-  style: "orb" | "dagger" | "crescent";
+  style: "orb" | "dagger" | "crescent" | "note";
   dead: boolean;
   // ── Upgrade-driven optional fields ────────────────────────────────
   /** Overcharged Orbs + ricochet wall-bounce: spawn origin. */

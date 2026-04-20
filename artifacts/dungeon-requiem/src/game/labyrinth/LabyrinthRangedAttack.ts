@@ -69,10 +69,14 @@ export function tryFireMageOrb(
   z: number,
   angle: number,
   labStats: PlayerStats,
+  /** Action-ability buff multipliers (mage Arcane Barrage).
+   *  atkSpeedMult shortens the cooldown; orbSizeMult scales radius. */
+  atkSpeedMult: number = 1,
+  orbSizeMult: number = 1,
 ): boolean {
   if (state.cooldownSec > 0) return false;
   const baseDmg = Math.round(labStats.damage > 0 ? labStats.damage : MAGE_BASE_DAMAGE);
-  const radius = 0.5 + labStats.projectileRadiusBonus;
+  const radius = (0.5 + labStats.projectileRadiusBonus) * orbSizeMult;
   const speed = MAGE_PROJECTILE_SPEED;
   const life = MAGE_PROJECTILE_LIFETIME;
   const maxRange = speed * life;
@@ -140,7 +144,7 @@ export function tryFireMageOrb(
   if (labStats.spellEchoChance > 0 && Math.random() < labStats.spellEchoChance) {
     fireVolley((Math.random() - 0.5) * 0.15);
   }
-  state.cooldownSec = MAGE_COOLDOWN;
+  state.cooldownSec = MAGE_COOLDOWN / Math.max(0.1, atkSpeedMult);
   return true;
 }
 
@@ -159,6 +163,7 @@ export function tryFireRogueFan(
   z: number,
   angle: number,
   labStats: PlayerStats,
+  atkSpeedMult: number = 1,
 ): boolean {
   if (state.cooldownSec > 0) return false;
   const baseDmg = Math.round(labStats.damage > 0 ? labStats.damage : ROGUE_BASE_DAMAGE);
@@ -222,7 +227,7 @@ export function tryFireRogueFan(
     }
   }
 
-  state.cooldownSec = ROGUE_COOLDOWN;
+  state.cooldownSec = ROGUE_COOLDOWN / Math.max(0.1, atkSpeedMult);
   return true;
 }
 
@@ -243,8 +248,12 @@ export function tryFireBardNote(
   x: number,
   z: number,
   angle: number,
+  labStats: PlayerStats,
+  atkSpeedMult: number = 1,
 ): boolean {
   if (state.cooldownSec > 0) return false;
+  // Match the main-game bard: damage scales with stats + bardDamageBonus.
+  const bardDmg = Math.round((labStats.damage + labStats.bardDamageBonus) || BARD_BASE_DAMAGE);
   for (let i = 0; i < BARD_NOTE_COUNT; i++) {
     const t = BARD_NOTE_COUNT > 1 ? (i / (BARD_NOTE_COUNT - 1)) * 2 - 1 : 0;
     const fanAngle = angle + t * BARD_FAN_HALF;
@@ -256,15 +265,15 @@ export function tryFireBardNote(
       z: z + dz * BARD_SPAWN_DIST,
       vx: dx * BARD_PROJECTILE_SPEED,
       vz: dz * BARD_PROJECTILE_SPEED,
-      damage: BARD_BASE_DAMAGE,
+      damage: bardDmg,
       radius: 0.3,
       lifetime: BARD_PROJECTILE_LIFETIME,
       piercing: true,
       color: BARD_COLOR,
       glowColor: BARD_GLOW,
-      style: "orb",
+      style: "note",
     });
   }
-  state.cooldownSec = BARD_COOLDOWN;
+  state.cooldownSec = BARD_COOLDOWN / Math.max(0.1, atkSpeedMult);
   return true;
 }
