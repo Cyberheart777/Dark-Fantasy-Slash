@@ -2865,8 +2865,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const kx = e.x - p.x, kz = e.z - p.z;
           const kd = Math.sqrt(kx * kx + kz * kz);
           if (kd > 0.1) {
-            e.x = Math.max(-ARENA, Math.min(ARENA, e.x + (kx / kd) * 2));
-            e.z = Math.max(-ARENA, Math.min(ARENA, e.z + (kz / kd) * 2));
+            e.x = Math.max(-ARENA, Math.min(ARENA, e.x + (kx / kd) * 4));
+            e.z = Math.max(-ARENA, Math.min(ARENA, e.z + (kz / kd) * 4));
           }
           e.poisonStacks = Math.min((e.poisonStacks || 0) + 3, getMaxPoisonStacks(stats));
           e.poisonDps = Math.max(e.poisonDps || 0, (stats.venomStackDps || 3) * (stats.deepWoundsMultiplier || 1) * (1 + stats.poisonDamageBonus));

@@ -48,13 +48,15 @@ export type EnemyKind =
   // player class meshes (see LabyrinthRivalChampion3D.tsx).
   | "rival_warrior"
   | "rival_mage"
-  | "rival_rogue";
+  | "rival_rogue"
+  | "rival_necromancer"
+  | "rival_bard";
 
 /** Rival-champion kind predicate. Used to exclude rivals from the
  *  standard-enemy damage multiplier + any other "rivals are special"
  *  logic that needs to discriminate on kind. */
 function isRivalKind(kind: EnemyKind): boolean {
-  return kind === "rival_warrior" || kind === "rival_mage" || kind === "rival_rogue";
+  return kind === "rival_warrior" || kind === "rival_mage" || kind === "rival_rogue" || kind === "rival_necromancer" || kind === "rival_bard";
 }
 
 // ─── Damage multiplier ──────────────────────────────────────────────────────
@@ -287,10 +289,13 @@ const RIVAL_MAGE_COLLISION_RADIUS = 0.9;
 
 export const RIVAL_ROGUE_HP = 320;
 const RIVAL_ROGUE_SPEED = 6.0;
-const RIVAL_ROGUE_ATTACK_RANGE = 2.0;
-const RIVAL_ROGUE_ATTACK_DAMAGE = 18;
-const RIVAL_ROGUE_ATTACK_COOLDOWN = 0.9;
+const RIVAL_ROGUE_ATTACK_RANGE = 10;
+const RIVAL_ROGUE_ATTACK_DAMAGE = 12;
+const RIVAL_ROGUE_ATTACK_COOLDOWN = 0.7;
 const RIVAL_ROGUE_COLLISION_RADIUS = 0.9;
+const RIVAL_ROGUE_DAGGER_SPREAD = 3;
+const RIVAL_ROGUE_DAGGER_SPEED = 16;
+const RIVAL_ROGUE_DAGGER_LIFETIME = 1.5;
 /** Dash cooldown (seconds). */
 const RIVAL_ROGUE_DASH_CD = 4.0;
 /** Dash peak speed (world units / sec). */
@@ -746,10 +751,11 @@ export function updateEnemy(
   }
 
   // ─── Confuse tick (bard Discordant Chord) ─────────────────────────
-  // While confuseTimer > 0, enemies stop pursuing — skip AI update.
-  if ((enemy.confuseTimer ?? 0) > 0) {
+  // While confuseTimer > 0, enemies wander randomly instead of chasing.
+  // They still take damage and their timers/flash still tick normally.
+  const isConfused = (enemy.confuseTimer ?? 0) > 0;
+  if (isConfused) {
     enemy.confuseTimer = Math.max(0, enemy.confuseTimer! - delta);
-    return;
   }
 
   // ─── Rival ability timers + transitions ────────────────────────────
@@ -861,23 +867,28 @@ export function updateEnemy(
   const distSq = dx * dx + dz * dz;
   const dist = Math.sqrt(distSq);
 
-  // State transitions
-  switch (enemy.state) {
-    case "patrol":
-      if (dist < tuning.detect) enemy.state = "chase";
-      break;
-    case "chase":
-      if (dist > tuning.leash) {
-        enemy.state = "patrol";
-        enemy.patrolTargetX = null;
-        enemy.patrolTargetZ = null;
-      } else if (dist <= tuning.range) {
-        enemy.state = "attack";
-      }
-      break;
-    case "attack":
-      if (dist > tuning.range + 0.4) enemy.state = "chase";
-      break;
+  // Confused enemies force-patrol (wander aimlessly) and can't attack.
+  if (isConfused) {
+    enemy.state = "patrol";
+  } else {
+    // Normal state transitions
+    switch (enemy.state) {
+      case "patrol":
+        if (dist < tuning.detect) enemy.state = "chase";
+        break;
+      case "chase":
+        if (dist > tuning.leash) {
+          enemy.state = "patrol";
+          enemy.patrolTargetX = null;
+          enemy.patrolTargetZ = null;
+        } else if (dist <= tuning.range) {
+          enemy.state = "attack";
+        }
+        break;
+      case "attack":
+        if (dist > tuning.range + 0.4) enemy.state = "chase";
+        break;
+    }
   }
 
   // Cooldown decay is always on
@@ -912,25 +923,42 @@ export function updateEnemy(
       }
     }
   } else if (enemy.state === "attack") {
-    // Face the player and swing on cooldown. Rival-specific on-hit
-    // modifiers layer on here: warrior's War Cry damage multiplier +
-    // rogue's poison-on-hit stack application.
     if (enemy.attackCooldown <= 0) {
-      let dmg = tuning.damage;
-      if (enemy.kind === "rival_warrior" && enemy.rival?.buffActive) {
-        dmg *= RIVAL_WARRIOR_WARCRY_MULT;
-      }
-      // Standard-enemy damage multiplier (item 4 of combat pass).
-      // Applied to all non-rival standard enemies. Rivals are
-      // excluded because they're tuned on their own constants.
-      if (!isRivalKind(enemy.kind)) {
-        dmg *= LAB_ENEMY_DAMAGE_MULT;
-      }
-      playerDamage.value += dmg;
-      enemy.attackCooldown = tuning.cd;
-      if (enemy.kind === "rival_rogue" && enemy.rival?.poisonArmed) {
-        poisonStacks.value += RIVAL_ROGUE_POISON_STACKS_PER_HIT;
-        enemy.rival.poisonArmed = false;
+      if (enemy.kind === "rival_rogue") {
+        // Rival rogue fires a fan of daggers instead of melee.
+        const aimAngle = Math.atan2(dx, dz);
+        for (let d = 0; d < RIVAL_ROGUE_DAGGER_SPREAD; d++) {
+          const spread = (d - (RIVAL_ROGUE_DAGGER_SPREAD - 1) / 2) * 0.15;
+          const a = aimAngle + spread;
+          spawnLabProjectile(projectiles, {
+            owner: "enemy",
+            x: enemy.x, z: enemy.z,
+            vx: Math.sin(a) * RIVAL_ROGUE_DAGGER_SPEED,
+            vz: Math.cos(a) * RIVAL_ROGUE_DAGGER_SPEED,
+            damage: tuning.damage,
+            radius: 0.3,
+            lifetime: RIVAL_ROGUE_DAGGER_LIFETIME,
+            piercing: false,
+            color: "#40e8a0", glowColor: "#00dd66",
+            style: "dagger",
+          });
+        }
+        enemy.attackCooldown = tuning.cd;
+        if (enemy.rival?.poisonArmed) {
+          poisonStacks.value += RIVAL_ROGUE_POISON_STACKS_PER_HIT;
+          enemy.rival.poisonArmed = false;
+        }
+      } else {
+        // Melee attackers (warrior, standard enemies).
+        let dmg = tuning.damage;
+        if (enemy.kind === "rival_warrior" && enemy.rival?.buffActive) {
+          dmg *= RIVAL_WARRIOR_WARCRY_MULT;
+        }
+        if (!isRivalKind(enemy.kind)) {
+          dmg *= LAB_ENEMY_DAMAGE_MULT;
+        }
+        playerDamage.value += dmg;
+        enemy.attackCooldown = tuning.cd;
       }
     }
   }
