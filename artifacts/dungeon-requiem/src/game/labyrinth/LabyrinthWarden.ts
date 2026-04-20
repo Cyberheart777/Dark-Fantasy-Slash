@@ -92,6 +92,7 @@ export function getWardenState(id: string): WardenState {
       starburstCooldown: STARBURST_COOLDOWN_SEC,
       starburstWarning: 0,
       minionCooldown: MINION_SPAWN_INTERVAL_SEC,
+      voidLanceCooldown: VOID_LANCE_COOLDOWN_SEC,
     };
     wardenStates.set(id, s);
   }
@@ -197,6 +198,35 @@ export function updateWarden(
       if (state.starburstCooldown <= 0) {
         state.starburstWarning = STARBURST_WARN_SEC;
       }
+    }
+  }
+
+  // Void Lance — aimed 3-shot cone at the player (all phases).
+  // Mirrors the main-game boss void lance but with reduced range for
+  // tight labyrinth corridors. Tightens with phase: 6s → 4s → 3s.
+  state.voidLanceCooldown -= delta;
+  if (state.voidLanceCooldown <= 0) {
+    const lanceCd = state.phase === 3 ? 3.0 : state.phase === 2 ? 4.0 : VOID_LANCE_COOLDOWN_SEC;
+    state.voidLanceCooldown = lanceCd;
+    const baseAngle = Math.atan2(dx, dz);
+    for (let i = -1; i <= 1; i++) {
+      const a = baseAngle + i * VOID_LANCE_SPREAD;
+      const spawnX = warden.x + Math.sin(a) * VOID_LANCE_SPAWN_DIST;
+      const spawnZ = warden.z + Math.cos(a) * VOID_LANCE_SPAWN_DIST;
+      spawnLabProjectile(projectiles, {
+        owner: "enemy",
+        x: spawnX,
+        z: spawnZ,
+        vx: Math.sin(a) * VOID_LANCE_SPEED,
+        vz: Math.cos(a) * VOID_LANCE_SPEED,
+        damage: VOID_LANCE_DAMAGE,
+        radius: 0.4,
+        lifetime: VOID_LANCE_LIFETIME,
+        piercing: false,
+        color: "#aa20ff",
+        glowColor: "#6610aa",
+        style: "orb",
+      });
     }
   }
 

@@ -41,6 +41,9 @@ export type EnemyKind =
   // spawns in the run but no longer gates the vault key. Tuning
   // dropped from boss-tier to heavy-tier. See HEAVY_* constants.
   | "heavy"
+  // Layer 2 mini-boss: beefed-up champion that spawns after all layer
+  // champions are killed. Must be defeated before portals open.
+  | "mini_boss"
   // Rival champions: dark-mirror versions of the two classes the
   // player did NOT pick. Exactly two per run, one of each non-player
   // class. First kill drops the vault key, second kill drops a
