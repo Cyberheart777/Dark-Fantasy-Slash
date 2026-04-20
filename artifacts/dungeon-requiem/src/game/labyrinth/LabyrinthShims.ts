@@ -214,6 +214,8 @@ export function enemyTypeForKind(kind: LabEnemy["kind"]): string {
     case "rival_warrior":
     case "rival_mage":
     case "rival_rogue":
+    case "rival_necromancer":
+    case "rival_bard":
       // These never pass through the Enemy3D shim. Kept here only
       // so the exhaustive-switch TS check passes.
       return "elite";
@@ -247,6 +249,8 @@ function visualsForKind(kind: LabEnemy["kind"]): {
     case "rival_warrior":
     case "rival_mage":
     case "rival_rogue":
+    case "rival_necromancer":
+    case "rival_bard":
       return { scale: 1.0, color: "#402020", emissive: "#804040" };
   }
 }

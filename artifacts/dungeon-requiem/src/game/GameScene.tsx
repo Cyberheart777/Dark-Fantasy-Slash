@@ -3574,10 +3574,15 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           g.goblinWaveSpawned = g.wave;
           g.enemies.push(spawnGoblin());
         }
-        // Nemesis: 15% chance per wave after wave 10, max 1 per run
+        // Nemesis: 15% chance per wave after wave 10, max 1 per run.
+        // Picks from ALL champion classes (including necromancer/bard)
+        // excluding the player's own class, so the nemesis is always a
+        // different archetype than the player.
         if (g.wave >= 10 && !g.nemesisSpawned && Math.random() < 0.15) {
           g.nemesisSpawned = true;
-          const nemesis = spawnNemesis(g.charClass, g.difficultyHpMult, g.difficultyDmgMult, g.difficultySpeedMult);
+          const nemesisPool: CharacterClass[] = (["warrior", "mage", "rogue", "necromancer", "bard"] as CharacterClass[]).filter(c => c !== g.charClass);
+          const nemesisCls = nemesisPool[Math.floor(Math.random() * nemesisPool.length)];
+          const nemesis = spawnNemesis(nemesisCls, g.difficultyHpMult, g.difficultyDmgMult, g.difficultySpeedMult);
           g.nemesisId = nemesis.id;
           g.enemies.push(nemesis);
           store.setNemesisState(true, "YOUR NEMESIS APPROACHES!");

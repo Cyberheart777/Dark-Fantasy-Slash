@@ -48,18 +48,22 @@ const RIVAL_BAR_Y = 3.6;           // above the class mesh (~2.4 tall)
 /** Dark-tint colour per rival kind. Chosen to desaturate + darken
  *  the base class palette while staying class-legible. */
 const RIVAL_TINT: Record<string, THREE.Color> = {
-  rival_warrior: new THREE.Color("#3a0a0a"),  // dark crimson
-  rival_mage:    new THREE.Color("#1a0535"),  // void purple
-  rival_rogue:   new THREE.Color("#0a2818"),  // venomous green
+  rival_warrior:     new THREE.Color("#3a0a0a"),  // dark crimson
+  rival_mage:        new THREE.Color("#1a0535"),  // void purple
+  rival_rogue:       new THREE.Color("#0a2818"),  // venomous green
+  rival_necromancer: new THREE.Color("#0a3010"),  // sickly green-black
+  rival_bard:        new THREE.Color("#2a1a05"),  // tarnished gold
 };
 
 /** Emissive tint — a subtle glow in the same family so the mesh
  *  reads as "corrupted" (not just dim). Intensity stays low so it
  *  doesn't wash out in bright scenes. */
 const RIVAL_EMISSIVE: Record<string, THREE.Color> = {
-  rival_warrior: new THREE.Color("#660a0a"),
-  rival_mage:    new THREE.Color("#300770"),
-  rival_rogue:   new THREE.Color("#105030"),
+  rival_warrior:     new THREE.Color("#660a0a"),
+  rival_mage:        new THREE.Color("#300770"),
+  rival_rogue:       new THREE.Color("#105030"),
+  rival_necromancer: new THREE.Color("#20aa30"),
+  rival_bard:        new THREE.Color("#aa8820"),
 };
 
 const DARKEN_FACTOR = 0.35;   // multiply original color by this
@@ -68,9 +72,11 @@ const EMISSIVE_INTENSITY = 0.35;
 
 /** Map a rival enemy kind → the character class its mesh should
  *  borrow. The mapping is 1-1 by design. */
-function classForRivalKind(kind: LabEnemy["kind"]): "warrior" | "mage" | "rogue" {
+function classForRivalKind(kind: LabEnemy["kind"]): "warrior" | "mage" | "rogue" | "necromancer" | "bard" {
   if (kind === "rival_warrior") return "warrior";
   if (kind === "rival_mage") return "mage";
+  if (kind === "rival_necromancer") return "necromancer";
+  if (kind === "rival_bard") return "bard";
   return "rogue";
 }
 

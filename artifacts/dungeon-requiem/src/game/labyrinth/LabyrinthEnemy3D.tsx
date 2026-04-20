@@ -30,7 +30,7 @@ import { LabyrinthRivalChampions3D } from "./LabyrinthRivalChampion3D";
  *  labyrinth-local class-mesh renderer. Split here so each call site
  *  only sees its own enemies. */
 function isRivalKind(kind: LabEnemy["kind"]): boolean {
-  return kind === "rival_warrior" || kind === "rival_mage" || kind === "rival_rogue";
+  return kind === "rival_warrior" || kind === "rival_mage" || kind === "rival_rogue" || kind === "rival_necromancer" || kind === "rival_bard";
 }
 
 /** Minimal duck-typed player shape the stalker phasing check needs. */

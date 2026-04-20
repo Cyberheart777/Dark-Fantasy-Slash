@@ -242,7 +242,7 @@ interface LabSharedState {
   shroudDamageTaken: number;
   gearPickupsThisRun: number;
   achievementsEvaluated: boolean;
-  rivalAnnounce: { kind: "rival_warrior" | "rival_mage" | "rival_rogue"; announcedAt: number } | null;
+  rivalAnnounce: { kind: "rival_warrior" | "rival_mage" | "rival_rogue" | "rival_necromancer" | "rival_bard"; announcedAt: number } | null;
   wardenHud: {
     alive: boolean;
     hp: number;
@@ -1860,7 +1860,7 @@ function CombatEnemyLoop({
                   clearWardenState(e.id);
                   audioManager.play("wave_clear");
                 }
-                if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue") {
+                if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue" || e.kind === "rival_necromancer" || e.kind === "rival_bard") {
                   onRivalChampionKill(e, shared, gearDropsRef.current);
                   audioManager.play("wave_clear");
                 }
@@ -1985,7 +1985,7 @@ function CombatEnemyLoop({
           clearWardenState(e.id);
           audioManager.play("wave_clear");
         }
-        if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue") {
+        if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue" || e.kind === "rival_necromancer" || e.kind === "rival_bard") {
           onRivalChampionKill(e, shared, gearDropsRef.current);
           audioManager.play("wave_clear");
         }
@@ -2194,13 +2194,13 @@ function CombatEnemyLoop({
       const lc = LAYER_CONFIG[shared.layer];
       const schedule = lc.championScheduleSec;
       if (shared.championSpawnIndex < schedule.length && shared.layerElapsedSec >= schedule[shared.championSpawnIndex]) {
-        const aliveChampions = enemies.filter((e) => e.state !== "dead" && (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue")).length;
+        const aliveChampions = enemies.filter((e) => e.state !== "dead" && (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue" || e.kind === "rival_necromancer" || e.kind === "rival_bard")).length;
         if (aliveChampions < 2) {
           // Pick champion kind based on index
-          const [r1, r2] = rivalOrderForClass(charClass);
-          const championKinds: Array<"rival_warrior" | "rival_mage" | "rival_rogue"> = shared.layer === 1
-            ? [r1, r2, r1, r2]   // 4 champions: alternate rival classes
-            : [r1, r2, r1];      // 3 champions
+          const [r1, r2, r3, r4] = rivalOrderForClass(charClass);
+          const championKinds: Array<"rival_warrior" | "rival_mage" | "rival_rogue" | "rival_necromancer" | "rival_bard"> = shared.layer === 1
+            ? [r1, r2, r3, r4]   // 4 champions: cycle all rival classes
+            : [r1, r2, r3];      // 3 champions
           const kind = championKinds[shared.championSpawnIndex % championKinds.length];
           enemies.push(makeRivalChampion(kind, 0, 0));
           onEnemiesChange(enemies.slice());
@@ -3431,7 +3431,7 @@ function LabyrinthMinimap({ maze, playerRef, enemiesRef }: { maze: Maze; playerR
       // Champion red dots (always visible, even in unexplored areas)
       for (const e of enemiesRef.current) {
         if (e.state === "dead") continue;
-        const isChamp = e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue";
+        const isChamp = e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue" || e.kind === "rival_necromancer" || e.kind === "rival_bard";
         if (!isChamp) continue;
         const ec = worldToCell(e.x, e.z);
         const ex = ec.col * cellPx + cellPx / 2;
@@ -3666,12 +3666,14 @@ function evaluateLabRunAchievements(
   }
 }
 
-function rivalOrderForClass(cls: CharacterClass): ["rival_warrior" | "rival_mage" | "rival_rogue", "rival_warrior" | "rival_mage" | "rival_rogue"] {
-  if (cls === "warrior")     return ["rival_mage",    "rival_rogue"];
-  if (cls === "mage")        return ["rival_warrior", "rival_rogue"];
-  if (cls === "necromancer") return ["rival_warrior", "rival_mage"];
-  if (cls === "bard")        return ["rival_mage",    "rival_warrior"];
-  return                            ["rival_warrior", "rival_mage"];
+type RivalKind = "rival_warrior" | "rival_mage" | "rival_rogue" | "rival_necromancer" | "rival_bard";
+function rivalOrderForClass(cls: CharacterClass): [RivalKind, RivalKind, RivalKind, RivalKind] {
+  if (cls === "warrior")     return ["rival_mage",        "rival_rogue",       "rival_necromancer", "rival_bard"];
+  if (cls === "mage")        return ["rival_warrior",     "rival_rogue",       "rival_necromancer", "rival_bard"];
+  if (cls === "rogue")       return ["rival_warrior",     "rival_mage",        "rival_necromancer", "rival_bard"];
+  if (cls === "necromancer") return ["rival_warrior",     "rival_mage",        "rival_rogue",       "rival_bard"];
+  if (cls === "bard")        return ["rival_warrior",     "rival_mage",        "rival_rogue",       "rival_necromancer"];
+  return                            ["rival_warrior",     "rival_mage",        "rival_necromancer", "rival_bard"];
 }
 
 /** Rival-kill reward handler. Centralised so both kill paths (melee
@@ -3710,19 +3712,21 @@ function onRivalChampionKill(
 /** Per-rival banner display info. Class name + accent colour so the
  *  player sees which rival just entered and reads the threat type. */
 const RIVAL_BANNER_INFO: Record<
-  "rival_warrior" | "rival_mage" | "rival_rogue",
+  RivalKind,
   { label: string; color: string; glow: string }
 > = {
-  rival_warrior: { label: "A RIVAL WARRIOR ENTERS THE LABYRINTH", color: "#ff6866", glow: "rgba(255,100,80,0.6)" },
-  rival_mage:    { label: "A RIVAL MAGE ENTERS THE LABYRINTH",    color: "#d080ff", glow: "rgba(200,120,255,0.6)" },
-  rival_rogue:   { label: "A RIVAL ROGUE ENTERS THE LABYRINTH",   color: "#60e8a0", glow: "rgba(60,220,140,0.6)" },
+  rival_warrior:     { label: "A RIVAL WARRIOR ENTERS THE LABYRINTH",     color: "#ff6866", glow: "rgba(255,100,80,0.6)" },
+  rival_mage:        { label: "A RIVAL MAGE ENTERS THE LABYRINTH",        color: "#d080ff", glow: "rgba(200,120,255,0.6)" },
+  rival_rogue:       { label: "A RIVAL ROGUE ENTERS THE LABYRINTH",       color: "#60e8a0", glow: "rgba(60,220,140,0.6)" },
+  rival_necromancer: { label: "A RIVAL NECROMANCER ENTERS THE LABYRINTH", color: "#88ff44", glow: "rgba(100,220,60,0.6)" },
+  rival_bard:        { label: "A RIVAL BARD ENTERS THE LABYRINTH",        color: "#ffcc44", glow: "rgba(255,200,60,0.6)" },
 };
 
 /** Rival-spawn banner. Shows for 3.5 s after each rival spawn.
  *  Class-coloured so the player reads the threat type immediately. */
 function RivalBanner({ elapsedSec, announce }: {
   elapsedSec: number;
-  announce: { kind: "rival_warrior" | "rival_mage" | "rival_rogue"; announcedAt: number } | null;
+  announce: { kind: RivalKind; announcedAt: number } | null;
 }) {
   if (!announce) return null;
   const dt = elapsedSec - announce.announcedAt;
