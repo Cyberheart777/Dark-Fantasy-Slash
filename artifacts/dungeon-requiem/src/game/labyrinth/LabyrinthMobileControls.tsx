@@ -39,10 +39,10 @@ const DASH_BUTTON_RIGHT = 180;
 const DASH_BUTTON_BOTTOM = 80;
 const DASH_HIT_PAD = 12;
 
-// Action button — above the dash button, slightly offset.
+// Action button — to the right of the dash button.
 const ACTION_BUTTON_SIZE = 72;
-const ACTION_BUTTON_RIGHT = 180;
-const ACTION_BUTTON_BOTTOM = 175;
+const ACTION_BUTTON_RIGHT = 80;
+const ACTION_BUTTON_BOTTOM = 80;
 const ACTION_HIT_PAD = 12;
 
 function checkMobile() {

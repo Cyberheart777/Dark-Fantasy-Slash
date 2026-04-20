@@ -46,6 +46,11 @@ export function LabyrinthPortal3D({ portal }: { portal: ExtractionPortal }) {
   const coreMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const haloMatRef = useRef<THREE.MeshBasicMaterial>(null);
 
+  const isExtract = portal.id.startsWith("extract_");
+  const colors = isExtract
+    ? { glow: "#44ccff", disc: "#2080ff", core: "#b0e8ff", ring: "#40b0ff", halo: "#2080ff" }
+    : { glow: "#6ab0ff", disc: "#8040ee", core: "#e0b0ff", ring: "#c070ff", halo: "#8040ff" };
+
   useFrame((_, delta) => {
     if (portal.consumed) {
       portal.fadeElapsedSec += delta;
@@ -84,7 +89,7 @@ export function LabyrinthPortal3D({ portal }: { portal: ExtractionPortal }) {
           <ringGeometry args={[0.9, 1.6, 48]} />
           <meshBasicMaterial
             ref={glowMatRef}
-            color="#6ab0ff"
+            color={colors.glow}
             transparent
             opacity={0.7}
             blending={THREE.AdditiveBlending}
@@ -98,7 +103,7 @@ export function LabyrinthPortal3D({ portal }: { portal: ExtractionPortal }) {
           <circleGeometry args={[0.85, 48]} />
           <meshBasicMaterial
             ref={discMatRef}
-            color="#8040ee"
+            color={colors.disc}
             transparent
             opacity={0.75}
             blending={THREE.AdditiveBlending}
@@ -107,12 +112,12 @@ export function LabyrinthPortal3D({ portal }: { portal: ExtractionPortal }) {
           />
         </mesh>
 
-        {/* Bright inner core — hot white-purple */}
+        {/* Bright inner core */}
         <mesh position={[0, 0, 0]}>
           <circleGeometry args={[0.4, 32]} />
           <meshBasicMaterial
             ref={coreMatRef}
-            color="#e0b0ff"
+            color={colors.core}
             transparent
             opacity={0.95}
             blending={THREE.AdditiveBlending}
@@ -126,7 +131,7 @@ export function LabyrinthPortal3D({ portal }: { portal: ExtractionPortal }) {
           <torusGeometry args={[1, 0.14, 14, 48]} />
           <meshBasicMaterial
             ref={ringMatRef}
-            color="#c070ff"
+            color={colors.ring}
             transparent
             opacity={1.0}
             blending={THREE.AdditiveBlending}
@@ -143,7 +148,7 @@ export function LabyrinthPortal3D({ portal }: { portal: ExtractionPortal }) {
         <ringGeometry args={[0.7, 1.15, 40]} />
         <meshBasicMaterial
           ref={haloMatRef}
-          color="#8040ff"
+          color={colors.halo}
           transparent
           opacity={0.35}
           blending={THREE.AdditiveBlending}

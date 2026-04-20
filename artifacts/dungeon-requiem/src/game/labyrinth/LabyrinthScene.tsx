@@ -3728,7 +3728,7 @@ function LabyrinthMinimap({ maze, playerRef, enemiesRef, sharedRef, lootRoomCell
       height={MINIMAP_SIZE}
       style={{
         position: "absolute",
-        bottom: 12,
+        bottom: 28,
         left: 12,
         borderRadius: 6,
         border: "1px solid rgba(100,60,180,0.4)",
