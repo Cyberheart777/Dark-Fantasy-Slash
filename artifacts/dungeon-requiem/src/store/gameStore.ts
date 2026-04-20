@@ -106,6 +106,9 @@ export interface GameUIState {
   attackFlash: boolean;
   attackTrigger: number;
   isDashing: boolean;
+  actionCooldownTimer: number;
+  actionCooldownMax: number;
+  actionReady: boolean;
 
   // Settings
   masterVolume: number;
@@ -206,6 +209,7 @@ export interface GameUIState {
   addDamagePopup: (popup: DamagePopup) => void;
   removeDamagePopup: (id: string) => void;
   setAttackState: (attackTrigger: number, isDashing: boolean) => void;
+  setActionState: (cooldownTimer: number, cooldownMax: number) => void;
   setVolume: (master: number, sfx: number, music: number, muted: boolean) => void;
   setBestScore: (score: number, wave: number) => void;
   setNemesisState: (alive: boolean, announce: string) => void;
@@ -240,6 +244,9 @@ const initialState = {
   attackFlash: false,
   attackTrigger: 0,
   isDashing: false,
+  actionCooldownTimer: 0,
+  actionCooldownMax: 60,
+  actionReady: true,
   masterVolume: 0.6,
   sfxVolume: 0.7,
   musicVolume: 0.3,
@@ -336,6 +343,9 @@ export const useGameStore = create<GameUIState>((set, get) => ({
 
   setAttackState: (attackTrigger, isDashing) =>
     set({ attackTrigger, isDashing }),
+
+  setActionState: (cooldownTimer, cooldownMax) =>
+    set({ actionCooldownTimer: cooldownTimer, actionCooldownMax: cooldownMax, actionReady: cooldownTimer <= 0 }),
 
   setVolume: (masterVolume, sfxVolume, musicVolume, muted) =>
     set({ masterVolume, sfxVolume, musicVolume, muted }),

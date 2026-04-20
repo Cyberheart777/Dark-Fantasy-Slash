@@ -29,6 +29,9 @@ function checkMobile() {
 export function MobileControls({ gsRef }: Props) {
   const [visible, setVisible] = useState(checkMobile);
   const setPhase = useGameStore(s => s.setPhase);
+  const actionReady = useGameStore(s => s.actionReady);
+  const actionCooldownTimer = useGameStore(s => s.actionCooldownTimer);
+  const selectedClass = useGameStore(s => s.selectedClass);
 
   useEffect(() => {
     const onResize = () => setVisible(checkMobile());
@@ -58,6 +61,7 @@ export function MobileControls({ gsRef }: Props) {
   const [aimKnob, setAimKnob] = useState({ x: 0, y: 0 });
 
   const [dashFlash, setDashFlash] = useState(false);
+  const [actionFlash, setActionFlash] = useState(false);
 
   // ── Shared joystick math ─────────────────────────────────────────────────
   function computeStick(cx: number, cy: number, ox: number, oy: number) {
@@ -171,6 +175,15 @@ export function MobileControls({ gsRef }: Props) {
     setTimeout(() => setDashFlash(false), 200);
   }, [gsRef]);
 
+  // ── Action ──────────────────────────────────────────────────────────────
+  const onAction = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    gsRef.current?.input.triggerMobileAction();
+    setActionFlash(true);
+    setTimeout(() => setActionFlash(false), 200);
+  }, [gsRef]);
+
   // ── Pause ────────────────────────────────────────────────────────────────
   const onPause = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
@@ -233,6 +246,49 @@ export function MobileControls({ gsRef }: Props) {
       {/* Subtle zone hints — always visible */}
       <div style={styles.moveHint}>MOVE</div>
       <div style={styles.aimHint}>AIM</div>
+
+      {/* Action button — above dash button */}
+      <div
+        data-ctrl="action"
+        style={{
+          position: "absolute",
+          bottom: 104,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: 72,
+          height: 72,
+          borderRadius: 18,
+          border: `2px solid ${actionReady ? "rgba(100,255,100,0.7)" : "rgba(100,100,100,0.4)"}`,
+          display: "flex",
+          flexDirection: "column" as const,
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 2,
+          pointerEvents: "auto",
+          touchAction: "none",
+          boxShadow: actionReady ? "0 2px 16px rgba(60,200,60,0.5)" : "none",
+          background: actionFlash
+            ? "rgba(120,255,120,1)"
+            : actionReady
+              ? "rgba(25,100,40,0.85)"
+              : "rgba(40,40,50,0.7)",
+          opacity: actionReady ? 1 : 0.6,
+        }}
+        onTouchStart={onAction}
+      >
+        <span style={{ fontSize: 22, lineHeight: 1 }}>
+          {selectedClass === "warrior" ? "📯" : selectedClass === "mage" ? "🔮" : selectedClass === "rogue" ? "🗡" : selectedClass === "necromancer" ? "💀" : "🎵"}
+        </span>
+        <span style={{
+          fontSize: 7,
+          fontWeight: "bold",
+          letterSpacing: 1,
+          color: actionReady ? "#aaffaa" : "#888",
+          fontFamily: "monospace",
+        }}>
+          {actionReady ? (selectedClass === "warrior" ? "WAR CRY" : selectedClass === "mage" ? "BARRAGE" : selectedClass === "rogue" ? "KNIVES" : selectedClass === "necromancer" ? "ARMY" : "DISCORD") : `${Math.ceil(actionCooldownTimer)}s`}
+        </span>
+      </div>
 
       {/* Dash button — bottom-center, always visible, opaque */}
       <div

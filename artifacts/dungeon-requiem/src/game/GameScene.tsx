@@ -95,6 +95,15 @@ export interface PlayerRuntime {
   bardShotCounter: number;         // tracks consecutive shots for Staccato + Grand Finale
   bardRhapsodyTimer: number;       // seconds of continuous attacking (for Rhapsody ramp)
   bardConfuseCount: number;        // current number of confused enemies (capped)
+  // ── Action ability runtime fields ──────────────────────────────────────
+  actionCooldownTimer: number;
+  actionActiveTimer: number;
+  warCryArmorTimer: number;
+  actionArmorBuff: number;
+  actionDmgMult: number;
+  actionAtkSpeedMult: number;
+  actionOrbSizeMult: number;
+  actionVulnerabilityTimer: number;
   // ── Gear proc runtime fields ──────────────────────────────────────────────
   arcSlashTimer: number;         // Arc Warblade: counts up to arcSlashInterval, then procs
   phantomWrapCdTimer: number;    // Phantom Wrap: cooldown remaining (seconds)
@@ -194,6 +203,7 @@ export interface Projectile {
   spawnZ?: number;
   maxRange?: number;    // overcharged orbs: max travel distance
   trailTimer?: number;  // residual field: timer for next trail drop
+  fanOfKnives?: boolean;
 }
 
 /** Residual Field ground damage zone left by mage orbs. */
@@ -593,6 +603,15 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     bardShotCounter: 0,
     bardRhapsodyTimer: 0,
     bardConfuseCount: 0,
+    // Action ability runtime
+    actionCooldownTimer: 0,
+    actionActiveTimer: 0,
+    warCryArmorTimer: 0,
+    actionArmorBuff: 0,
+    actionDmgMult: 1,
+    actionAtkSpeedMult: 1,
+    actionOrbSizeMult: 1,
+    actionVulnerabilityTimer: 0,
     // Gear proc runtime
     arcSlashTimer: 0,
     phantomWrapCdTimer: 0,
@@ -1263,6 +1282,23 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (p.glacialRobeCdTimer > 0) p.glacialRobeCdTimer -= delta;
       if (p.postDashSpeedCdTimer > 0) p.postDashSpeedCdTimer -= delta;
       if (p.postDashSpeedActive > 0) p.postDashSpeedActive -= delta;
+      // Action ability timers
+      if (p.actionCooldownTimer > 0) p.actionCooldownTimer -= delta;
+      if (p.actionActiveTimer > 0) {
+        p.actionActiveTimer -= delta;
+        if (p.actionActiveTimer <= 0) {
+          p.actionAtkSpeedMult = 1;
+          p.actionOrbSizeMult = 1;
+        }
+      }
+      if (p.warCryArmorTimer > 0) {
+        p.warCryArmorTimer -= delta;
+        if (p.warCryArmorTimer <= 0) {
+          p.actionArmorBuff = 0;
+          p.actionDmgMult = 1;
+        }
+      }
+      if (p.actionVulnerabilityTimer > 0) p.actionVulnerabilityTimer -= delta;
       tickGearProcs(p, stats, g, delta);
 
       // Aim — desktop uses mouse cursor, mobile uses right-side aim stick
@@ -1465,7 +1501,6 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             p.dashVX = dashDir.x * GAME_CONFIG.PLAYER.DASH_SPEED;
             p.dashVZ = dashDir.z * GAME_CONFIG.PLAYER.DASH_SPEED;
             p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.15; // longer i-frames for melee
-            p.warCryTimer = stats.warCryDmgBonus > 0 ? 4.0 : 0;
             // Knockback enemies in path
             const kbForce = stats.dashKnockbackForce;
             const kbDmg = Math.round(stats.damage * 0.3);
@@ -1486,6 +1521,70 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         }
       }
 
+      // ── Action ability ─────────────────────────────────────────────────
+      if (input.action && p.actionCooldownTimer <= 0) {
+        g.input.consumeAction();
+        p.actionCooldownTimer = stats.actionCooldown * (1 - stats.actionCdrPct);
+
+        if (g.charClass === "warrior") {
+          p.actionActiveTimer = 3.0;
+          p.warCryArmorTimer = 8.0;
+          p.actionArmorBuff = 8;
+          p.actionDmgMult = 1.25;
+          triggerShake(g, 0.5, 0.35);
+          audioManager.play("dash");
+        } else if (g.charClass === "mage") {
+          p.actionActiveTimer = 5.0;
+          p.actionAtkSpeedMult = 2.0;
+          p.actionOrbSizeMult = 2.0;
+          triggerShake(g, 0.3, 0.2);
+          audioManager.play("attack_melee");
+        } else if (g.charClass === "rogue") {
+          const FAN_COUNT = 25;
+          const FAN_DMG = Math.round(stats.damage * 0.8);
+          const FAN_SPEED = 18;
+          const FAN_LIFETIME = 0.6;
+          const FAN_RADIUS = 0.35;
+          for (let i = 0; i < FAN_COUNT; i++) {
+            const angle = (i / FAN_COUNT) * Math.PI * 2;
+            const vx = Math.sin(angle) * FAN_SPEED;
+            const vz = Math.cos(angle) * FAN_SPEED;
+            g.projectiles.push({
+              id: `fan_${Date.now()}_${i}`,
+              x: p.x + Math.sin(angle) * 1.2,
+              z: p.z + Math.cos(angle) * 1.2,
+              vx, vz,
+              damage: FAN_DMG,
+              radius: FAN_RADIUS,
+              lifetime: FAN_LIFETIME,
+              piercing: false,
+              hitIds: new Set<string>(),
+              color: "#a0ffff",
+              glowColor: "#20c870",
+              style: "dagger" as const,
+              dead: false,
+              fanOfKnives: true,
+            });
+          }
+          triggerShake(g, 0.4, 0.25);
+          audioManager.play("attack_melee");
+        }
+      }
+
+      // Warrior War Cry vortex pull — active while actionActiveTimer > 0
+      if (g.charClass === "warrior" && p.actionActiveTimer > 0) {
+        for (const e of g.enemies) {
+          if (e.dead) continue;
+          const sx = p.x - e.x, sz = p.z - e.z;
+          const sd = Math.sqrt(sx * sx + sz * sz);
+          if (sd <= 10 && sd > 0.5) {
+            const pullStr = 8 * delta;
+            e.x += (sx / sd) * pullStr;
+            e.z += (sz / sd) * pullStr;
+          }
+        }
+      }
+
       // Arena clamp
       p.x = Math.max(-ARENA, Math.min(ARENA, p.x));
       p.z = Math.max(-ARENA, Math.min(ARENA, p.z));
@@ -1493,7 +1592,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       // Auto-attack — fires automatically when cooldown expires
       if (p.attackTimer <= 0) {
         const berserkAtkSpd = p.berserkersMarkTimer > 0 ? 1.15 : 1;
-        const attackDuration = 1 / (stats.attackSpeed * berserkAtkSpd);
+        const attackDuration = 1 / (stats.attackSpeed * berserkAtkSpd * p.actionAtkSpeedMult);
         p.attackTrigger++;
         p.attackTimer = attackDuration;
         p.attackAngle = p.angle;
@@ -1502,8 +1601,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (g.charClass === "warrior") {
           audioManager.play("attack_melee");
           // ── Melee arc sweep ────────────────────────────────────────────
-          // War Cry damage bonus
-          const warCryMult = p.warCryTimer > 0 ? (1 + stats.warCryDmgBonus) : 1;
+          // War Cry damage bonus (now handled by action ability system)
+          const warCryMult = 1;
           // Berserker's Mark: +30% crit damage while active
           const berserkCritBonus = p.berserkersMarkTimer > 0 ? 0.30 : 0;
           // Blood Momentum stacking
@@ -1528,7 +1627,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (cleaved.current.has(e.id) && Math.random() > stats.cleaveChance) continue;
             cleaved.current.add(e.id);
 
-            let dmg = Math.round(stats.damage * warCryMult * momentumMult * lowHpMult * getGlacialAmp(stats, e));
+            let dmg = Math.round(stats.damage * warCryMult * momentumMult * lowHpMult * getGlacialAmp(stats, e) * p.actionDmgMult);
+            if (p.actionVulnerabilityTimer > 0) dmg = Math.round(dmg * 1.2);
             const isCrit = Math.random() < stats.critChance;
             if (isCrit) {
               dmg = Math.floor(dmg * (stats.critDamageMultiplier + stats.critDamageBonus + berserkCritBonus));
@@ -1771,8 +1871,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const totalCount = def.projectileCount + extraCount;
           const projStyle = g.charClass === "mage" ? "orb" as const : "dagger" as const;
           const isPiercing = def.projectilePiercing;
-          // War cry damage bonus (warrior only but just in case)
-          const warCryMult = p.warCryTimer > 0 ? (1 + stats.warCryDmgBonus) : 1;
+          // War cry damage bonus (now handled by action ability system)
+          const warCryMult = 1;
           const projDmg = Math.round(stats.damage * warCryMult);
           // Leyline Anchor: +20% projectile speed while in zone
           const leylineInZone = stats.leylineAnchorEnabled && p.leylineZoneTimer > 0
@@ -1780,7 +1880,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const projSpeedMult = leylineInZone ? 1.20 : 1;
           const projSpeed = def.projectileSpeed * projSpeedMult;
           // Projectile radius with bonus
-          const projRadius = def.projectileRadius + stats.projectileRadiusBonus;
+          const projRadius = (def.projectileRadius + stats.projectileRadiusBonus) * p.actionOrbSizeMult;
           // Main-game ranged nerf: shrink projectile travel by shortening
           // its lifetime. Paired with the attackRange cut in makeProgWithMeta.
           // Mage → 50% lifetime, Rogue → 30% lifetime. Labyrinth uses its
@@ -1936,8 +2036,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         }
       }
 
-      // Warrior: War Cry timer
-      if (p.warCryTimer > 0) p.warCryTimer -= delta;
+      // Warrior: War Cry timer (legacy — now handled by action ability system)
+      // if (p.warCryTimer > 0) p.warCryTimer -= delta;
 
       // Warrior: Berserker's Mark — below 40% HP triggers burst buff
       if (p.berserkersMarkCooldown > 0) p.berserkersMarkCooldown -= delta;
@@ -2192,7 +2292,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               // Mana Shield absorption
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
               const afterShield = rawDmg - shielded;
-              const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
+              const effective = applyArmor(afterShield, stats.armor + p.actionArmorBuff, stats.incomingDamageMult);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.8;
               handlePlayerDamageTakenProcs(p, stats, g);
@@ -2243,7 +2343,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               // Mana Shield absorption
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
               const afterShield = rawDmg - shielded;
-              const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
+              const effective = applyArmor(afterShield, stats.armor + p.actionArmorBuff, stats.incomingDamageMult);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
               handlePlayerDamageTakenProcs(p, stats, g);
@@ -2581,7 +2681,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           dmg = Math.round(dmg * mult);
         }
         // Gear: Berserker Sigil low-HP bonus + Glacial Robe amp
-        dmg = Math.round(dmg * getLowHpDamageMult(p, stats) * getGlacialAmp(stats, e));
+        dmg = Math.round(dmg * getLowHpDamageMult(p, stats) * getGlacialAmp(stats, e) * p.actionDmgMult);
+        if (p.actionVulnerabilityTimer > 0) dmg = Math.round(dmg * 1.2);
         // Crit: guaranteed crit from evasion matrix, or normal roll
         const isCrit = p.guaranteedCrit || Math.random() < (stats.critChance + (p.critCascadeTimer > 0 ? 0.12 : 0));
         if (p.guaranteedCrit) p.guaranteedCrit = false;
@@ -2650,6 +2751,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           e.hp -= dmg;
           e.hitFlashTimer = 0.15;
           spawnDmgPopup(e.x, e.z, dmg, isCrit, false);
+          // Crit hit juice — see melee swing for the same pattern
+          if (isCrit && e.hp > 0) { triggerShake(g, 0.22, 0.16); triggerFreeze(g, 22); }
         }
         if (stats.lifesteal > 0) {
           healPlayer(p, stats, dmg * stats.lifesteal);
@@ -2722,6 +2825,17 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           }
         }
 
+        if (proj.fanOfKnives && !e.dead) {
+          const kx = e.x - p.x, kz = e.z - p.z;
+          const kd = Math.sqrt(kx * kx + kz * kz);
+          if (kd > 0.1) {
+            e.x = Math.max(-ARENA, Math.min(ARENA, e.x + (kx / kd) * 2));
+            e.z = Math.max(-ARENA, Math.min(ARENA, e.z + (kz / kd) * 2));
+          }
+          e.poisonStacks = Math.min((e.poisonStacks || 0) + 3, getMaxPoisonStacks(stats));
+          e.poisonDps = Math.max(e.poisonDps || 0, (stats.venomStackDps || 3) * (stats.deepWoundsMultiplier || 1) * (1 + stats.poisonDamageBonus));
+        }
+
         if (proj.piercing) {
           proj.hitIds.add(e.id);
         } else {
@@ -2791,7 +2905,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const rawDmg = ep.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
           const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
           if (!isDodged) {
-            const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
+            const effective = applyArmor(rawDmg, stats.armor + p.actionArmorBuff, stats.incomingDamageMult);
             p.hp -= effective; spawnPlayerDmgPopup(p, effective);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.6;
             handlePlayerDamageTakenProcs(p, stats, g);
@@ -2890,8 +3004,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           // AoE damage lands
           const dist = Math.sqrt((p.x - e.x) ** 2 + (p.z - e.z) ** 2);
           if (dist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
-            const rawDmg = e.damage * 0.75;
-            const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult, 100);
+            const rawDmg = e.damage * 3;
+            const effective = applyArmor(rawDmg, stats.armor + p.actionArmorBuff, stats.incomingDamageMult, 100);
             p.hp -= effective; spawnPlayerDmgPopup(p, effective);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
             handlePlayerDamageTakenProcs(p, stats, g);
@@ -3092,7 +3206,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             triggerFreeze(g, 45);
             if (cDist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
               const rawDmg = e.damage * 1.5;
-              const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
+              const effective = applyArmor(rawDmg, stats.armor + p.actionArmorBuff, stats.incomingDamageMult);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
               handlePlayerDamageTakenProcs(p, stats, g);
@@ -3466,6 +3580,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     store.setPlayerHP(p.hp, p.maxHp);
     store.setPlayerPos(p.x, p.z, p.angle);
     store.setAttackState(p.attackTrigger, p.isDashing);
+    store.setActionState(p.actionCooldownTimer, stats.actionCooldown);
     store.setProgression(
       g.progression.level,
       g.progression.xp,
@@ -3491,8 +3606,15 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     // ── Sync active buffs/debuffs to UI store ────────────────────────────
     {
       const buffs: import("../store/gameStore").ActiveBuff[] = [];
-      if (p.warCryTimer > 0)
-        buffs.push({ id: "warcry", icon: "📯", label: "WAR CRY", value: p.warCryTimer, max: 4, isStacks: false, color: "#ff8844" });
+      // Action ability buffs
+      if (p.actionActiveTimer > 0 && g.charClass === "warrior")
+        buffs.push({ id: "action_warcry", icon: "📯", label: "WAR CRY", value: p.actionActiveTimer, max: 3, isStacks: false, color: "#ff8844" });
+      if (p.warCryArmorTimer > 0)
+        buffs.push({ id: "action_armor", icon: "🛡", label: "WAR CRY ARMOR +8", value: p.warCryArmorTimer, max: 8, isStacks: false, color: "#4488ff" });
+      if (p.actionActiveTimer > 0 && g.charClass === "mage")
+        buffs.push({ id: "action_barrage", icon: "🔮", label: "ARCANE BARRAGE", value: p.actionActiveTimer, max: 5, isStacks: false, color: "#cc44ff" });
+      if (p.actionVulnerabilityTimer > 0)
+        buffs.push({ id: "action_chord", icon: "🎵", label: "DISCORD", value: p.actionVulnerabilityTimer, max: 6, isStacks: false, color: "#ffaa22" });
       if (stats.bloodMomentumPerHit > 0 && p.momentumStacks > 0)
         buffs.push({ id: "momentum", icon: "🔴", label: "MOMENTUM", value: p.momentumStacks, max: 20, isStacks: true, color: "#ff4444" });
       if (p.berserkersMarkTimer > 0)

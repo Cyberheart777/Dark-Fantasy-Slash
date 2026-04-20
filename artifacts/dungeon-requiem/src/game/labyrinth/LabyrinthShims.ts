@@ -95,6 +95,15 @@ export function createPlayerShim(charClass: CharacterClass, race: RaceType = "hu
     bardShotCounter: 0,
     bardRhapsodyTimer: 0,
     bardConfuseCount: 0,
+    // Action ability runtime
+    actionCooldownTimer: 0,
+    actionActiveTimer: 0,
+    warCryArmorTimer: 0,
+    actionArmorBuff: 0,
+    actionDmgMult: 1,
+    actionAtkSpeedMult: 1,
+    actionOrbSizeMult: 1,
+    actionVulnerabilityTimer: 0,
     // Gear proc runtime (neutral defaults — labyrinth shim; main game's
     // factory in GameScene.tsx sets the same values).
     arcSlashTimer: 0,

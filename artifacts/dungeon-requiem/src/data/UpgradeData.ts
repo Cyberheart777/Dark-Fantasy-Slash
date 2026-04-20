@@ -35,7 +35,7 @@ export type UpgradeId =
   | "blood_momentum"
   | "earthbreaker"
   | "iron_reprisal"
-  | "war_cry"
+  // war_cry removed — replaced by action ability system
   | "bloodforge"
   | "weakening_blows"
   | "concussive_charge"
@@ -573,12 +573,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "💢", maxStacks: 1, rarity: "rare", classes: ["warrior"],
     apply: (s) => { s.ironReprisalEnabled = true; },
   },
-  war_cry: {
-    id: "war_cry", name: "Battle Roar",
-    description: "War Cry damage bonus increased to +35% for 6 seconds.",
-    icon: "📯", maxStacks: 1, rarity: "rare", classes: ["warrior"],
-    apply: (s) => { s.warCryDmgBonus = 0.35; },  // upgrades baseline 0.15 → 0.35
-  },
+  // war_cry removed — replaced by action ability system
   bloodforge: {
     id: "bloodforge", name: "Bloodforge",
     description: "Each kill grants +0.2 max HP (capped at +30).",
