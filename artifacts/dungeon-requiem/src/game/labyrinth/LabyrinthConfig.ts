@@ -99,6 +99,10 @@ export interface LayerConfig {
   zoneShrinkMult: number;
   gearDropMult: number;
   crystalMult: number;
+  /** Per-layer XP multiplier applied on top of LABYRINTH_CONFIG.XP_MULTIPLIER.
+   *  Layer 1 = 1x (baseline), Layer 2 = 2x, Layer 3 = 2x. Lets deeper
+   *  layers feel rewarding despite the shorter runtime. */
+  xpMultiplier: number;
   championCount: number;
   championScheduleSec: number[];
   hasWarden: boolean;
@@ -115,6 +119,7 @@ export const LAYER_CONFIG: Record<1 | 2 | 3, LayerConfig> = {
     zoneShrinkMult: 1.0,
     gearDropMult: 1.0,
     crystalMult: 1,
+    xpMultiplier: 1,
     championCount: 4,
     championScheduleSec: [120, 180, 240, 300],
     hasWarden: false,
@@ -129,6 +134,7 @@ export const LAYER_CONFIG: Record<1 | 2 | 3, LayerConfig> = {
     zoneShrinkMult: 2.667,
     gearDropMult: 1.5,
     crystalMult: 2,
+    xpMultiplier: 2,
     championCount: 3,
     championScheduleSec: [60, 120, 180],
     hasWarden: false,
@@ -143,6 +149,7 @@ export const LAYER_CONFIG: Record<1 | 2 | 3, LayerConfig> = {
     zoneShrinkMult: 0,
     gearDropMult: 0,
     crystalMult: 3,
+    xpMultiplier: 2,
     championCount: 0,
     championScheduleSec: [],
     hasWarden: true,

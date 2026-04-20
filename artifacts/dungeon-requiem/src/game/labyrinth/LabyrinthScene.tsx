@@ -77,6 +77,7 @@ import {
 import {
   spawnCorridorGuardians,
   spawnTrapSpawners,
+  spawnTrapSpawnersAt,
   spawnHeavies,
   updateEnemy,
   damageEnemy,
@@ -235,6 +236,10 @@ interface LabSharedState {
   secondRivalSpawned: boolean;
   rivalKillCount: number;
   hasKey: boolean;
+  /** Manual-pickup vault keys. Rival-champion death spawns one here;
+   *  the player must walk onto it (radius ~0.6u) to set hasKey=true.
+   *  Multiple entries are supported but only the first rival drops. */
+  keyPickups: Array<{ id: string; x: number; z: number }>;
   lootRoomUnlocked: boolean;
   pendingLootSpawn: boolean;
   pendingMinorRoomGear: Array<{ x: number; z: number; gear: GearDef }>;
@@ -370,6 +375,7 @@ export function LabyrinthScene() {
     secondRivalSpawned: false,
     rivalKillCount: 0,
     hasKey: false,
+    keyPickups: [],
     lootRoomUnlocked: false,
     pendingLootSpawn: false,
     pendingMinorRoomGear: [],
@@ -579,7 +585,22 @@ export function LabyrinthScene() {
     // Heavies (ex-champion orange model, demoted to standard heavy
     // enemy). Spread around the maze, no ring bias.
     const heavies = spawnHeavies(maze, LABYRINTH_CONFIG.HEAVY_COUNT);
-    enemiesRef.current = [...guardians, ...turrets, ...heavies];
+    // Loot-room guardians — 3 extra trap_spawner turrets arranged in
+    // a triangle around the vault cell centre. The loot room is now
+    // highlighted on the minimap from run start (Task 4), so the room
+    // needs dedicated ranged defenders to keep the approach dangerous.
+    // Radius 2.2u keeps the turrets inside the 8u-wide cell while
+    // giving the player room to manoeuvre during the fight.
+    const lootCenter = cellToWorld(lootRoomCell.col, lootRoomCell.row);
+    const LOOT_GUARD_R = 2.2;
+    const lootGuards = spawnTrapSpawnersAt(
+      [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3].map((ang) => ({
+        x: lootCenter.x + Math.cos(ang) * LOOT_GUARD_R,
+        z: lootCenter.z + Math.sin(ang) * LOOT_GUARD_R,
+      })),
+      "lootguard",
+    );
+    enemiesRef.current = [...guardians, ...turrets, ...heavies, ...lootGuards];
     sharedRef.current.enemyCount = enemiesRef.current.length;
   }
   const runStartMs = useRef(performance.now());
@@ -608,6 +629,7 @@ export function LabyrinthScene() {
       s.descentPortalsSpawned = false;
       s.portals = [];
       s.rivalKillCount = 0;
+      s.keyPickups = [];
       s.wardenSpawned = false;
       s.rivalAnnounce = null;
       s.wardenHud = null;
@@ -700,6 +722,7 @@ export function LabyrinthScene() {
         progressionRef={progressionRef}
         onUpgradeApplied={() => setUpgradeRevision((v) => v + 1)}
         enemiesRef={enemiesRef}
+        lootRoomCell={lootRoomCell}
       />
       <LabyrinthMobileControls inputRef={inputRef} aimOverrideRef={aimOverrideRef} />
       {/* Affix tap-to-inspect tooltip — wired so the labyrinth's
@@ -939,6 +962,11 @@ function LabyrinthWorld({
         openDir={vaultOpenDir}
         unlocked={lootRoomUnlockedFlag}
       />
+      {/* Key pickups — 2D billboarded gold key sprite dropped on rival
+          champion death. Reads live from sharedRef.keyPickups each
+          frame; the MovementLoop pickup-radius check removes entries
+          from that array when the player walks onto them. */}
+      <LabyrinthKeyPickups3D sharedRef={sharedRef} />
       {/* Active projectiles — wall-trap beams, enemy turret shots,
           warden starburst, mage orbs, rogue daggers. Uses the main
           game's Projectile3D via a shim-cast in LabyrinthProjectiles3D. */}
@@ -1499,6 +1527,24 @@ function MovementLoop({
       }
     } else {
       sharedRef.current.nearLockedVault = false;
+    }
+
+    // ── Key pickup (Task 6) ─────────────────────────────────────────
+    // Rival-champion death spawns a key pickup at the death spot; the
+    // player must walk onto it to claim it. Pickup radius 0.6u.
+    if (sharedRef.current.keyPickups.length > 0) {
+      const PICKUP_R = 0.6;
+      const PICKUP_RSQ = PICKUP_R * PICKUP_R;
+      for (let i = sharedRef.current.keyPickups.length - 1; i >= 0; i--) {
+        const k = sharedRef.current.keyPickups[i];
+        const dx = p.x - k.x;
+        const dz = p.z - k.z;
+        if (dx * dx + dz * dz <= PICKUP_RSQ) {
+          sharedRef.current.hasKey = true;
+          sharedRef.current.keyPickups.splice(i, 1);
+          audioManager.play("gear_drop");
+        }
+      }
     }
 
     // Facing angle follows active movement direction (dash OR joystick).
@@ -2136,7 +2182,12 @@ function CombatEnemyLoop({
     const orbTick = tickLabXpOrbs(xpOrbsRef.current, p.x, p.z, delta);
     if (orbTick.awardedXp > 0) {
       audioManager.play("xp_pickup");
-      addLabXp(progressionRef.current, orbTick.awardedXp);
+      // Per-layer XP multiplier — LAYER_CONFIG[layer].xpMultiplier
+      // (L1 = 1x, L2 = 2x, L3 = 2x). Applied at award time so the
+      // base orb values stay unchanged and the multiplier scales the
+      // total the player banks each pickup batch.
+      const layerXpMult = LAYER_CONFIG[shared.layer]?.xpMultiplier ?? 1;
+      addLabXp(progressionRef.current, orbTick.awardedXp * layerXpMult);
       if (progressionRef.current.pendingLevelUps > 0) {
         progressionRef.current.pendingLevelUps -= 1;
         p.maxHp += 3;
@@ -2694,6 +2745,7 @@ function LabyrinthHUD({
   progressionRef,
   onUpgradeApplied,
   enemiesRef,
+  lootRoomCell,
 }: {
   maze: Maze;
   charClass: CharacterClass;
@@ -2704,6 +2756,7 @@ function LabyrinthHUD({
   progressionRef: React.MutableRefObject<LabProgressionState>;
   onUpgradeApplied: () => void;
   enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
+  lootRoomCell: { col: number; row: number };
 }) {
   const setPhase = useGameStore((s) => s.setPhase);
   const [isMob, setIsMob] = useState(() => window.innerWidth < 900);
@@ -2836,6 +2889,55 @@ function LabyrinthHUD({
   }, []);
 
   const exit = useCallback(() => setPhase("menu"), [setPhase]);
+
+  // ── Portal-confirmation handlers ─────────────────────────────────
+  // Accept: commit the portal outcome (extract or descent). The
+  // sharedRef is the source of truth; ZoneTickLoop's layer-change
+  // watcher picks up pendingLayerChange on its next interval tick.
+  const handlePortalAccept = useCallback(() => {
+    const s = sharedRef.current;
+    const decision = s.pendingPortalDecision;
+    if (!decision) return;
+    const p = playerRef.current;
+    if (decision.type === "extract") {
+      const portal = s.portals.find((pp) => pp.id === decision.portalId);
+      if (portal) {
+        p.x = portal.x;
+        p.z = portal.z;
+      }
+      s.extracted = true;
+    } else {
+      s.pendingLayerChange = (s.layer + 1) as 2 | 3;
+      s.portals = [];
+    }
+    s.pendingPortalDecision = null;
+  }, [playerRef, sharedRef]);
+
+  // Cancel: nudge the player away from the portal so they don't
+  // instantly re-trigger the collision check. The escape distance
+  // (portal radius ~2.5u + 2u buffer) guarantees the next MovementLoop
+  // tick reads them as outside the portal ellipse on any axis.
+  const handlePortalCancel = useCallback(() => {
+    const s = sharedRef.current;
+    const decision = s.pendingPortalDecision;
+    if (!decision) return;
+    const p = playerRef.current;
+    const portal = s.portals.find((pp) => pp.id === decision.portalId);
+    if (portal) {
+      const dx = p.x - portal.x;
+      const dz = p.z - portal.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      const ESCAPE = 4.5;
+      if (d > 0.001) {
+        p.x = portal.x + (dx / d) * ESCAPE;
+        p.z = portal.z + (dz / d) * ESCAPE;
+      } else {
+        p.x = portal.x + ESCAPE;
+        p.z = portal.z;
+      }
+    }
+    s.pendingPortalDecision = null;
+  }, [playerRef, sharedRef]);
 
   const phase = useGameStore((s) => s.phase);
   const handleLabUpgrade = useCallback((id: string) => {
@@ -3179,7 +3281,13 @@ function LabyrinthHUD({
 
       {/* Fog-of-war minimap — bottom left, reveals as player explores */}
       {!display.defeated && !display.extracted && !display.victory && (
-        <LabyrinthMinimap maze={maze} playerRef={playerRef} enemiesRef={enemiesRef} />
+        <LabyrinthMinimap
+          maze={maze}
+          playerRef={playerRef}
+          enemiesRef={enemiesRef}
+          sharedRef={sharedRef}
+          lootRoomCell={lootRoomCell}
+        />
       )}
 
       {/* Nearest-portal edge arrow (gold/purple) — separate from the safe-zone arrow */}
@@ -3352,6 +3460,48 @@ function LabyrinthHUD({
         </div>
       )}
 
+      {/* Portal-entry confirmation dialog. Shown on collision with an
+          extract or descent portal — lets the player back out before
+          committing. Two buttons: accept (commits) / cancel (nudges
+          the player away from the portal). Hidden once the run is
+          already resolved (extracted / defeated / victory) so it can't
+          stack on top of the end-of-run overlays. */}
+      {display.pendingPortalDecision
+        && !display.extracted && !display.defeated && !display.victory && (
+        <div style={styles.confirmOverlay}>
+          <div style={styles.confirmPanel}>
+            <div style={styles.confirmTitle}>
+              {display.pendingPortalDecision.type === "extract"
+                ? "EXTRACT FROM THE LABYRINTH?"
+                : "DESCEND TO THE NEXT LAYER?"}
+            </div>
+            <div style={styles.confirmSub}>
+              {display.pendingPortalDecision.type === "extract"
+                ? "You've walked into the extraction portal."
+                : "You've walked into the descent portal."}
+            </div>
+            <div style={styles.confirmBtnCol}>
+              <button
+                style={styles.confirmPrimary}
+                onClick={handlePortalAccept}
+              >
+                {display.pendingPortalDecision.type === "extract"
+                  ? "EXTRACT NOW — KEEP YOUR LOOT & XP"
+                  : "GO DEEPER INTO THE LABYRINTH"}
+              </button>
+              <button
+                style={styles.confirmDestructive}
+                onClick={handlePortalCancel}
+              >
+                {display.pendingPortalDecision.type === "extract"
+                  ? "RISK IT ALL — STAY IN THE LABYRINTH"
+                  : "NOT YET"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Level-up upgrade pick screen — same component as main game */}
       {phase === "levelup" && <LevelUp onChoice={handleLabUpgrade} />}
     </>
@@ -3383,7 +3533,13 @@ function LayerBanner({ banner, elapsedSec }: { banner: LabSharedState["layerBann
   );
 }
 
-function LabyrinthMinimap({ maze, playerRef, enemiesRef }: { maze: Maze; playerRef: React.MutableRefObject<LabPlayer>; enemiesRef: React.MutableRefObject<EnemyRuntime[]> }) {
+function LabyrinthMinimap({ maze, playerRef, enemiesRef, sharedRef, lootRoomCell }: {
+  maze: Maze;
+  playerRef: React.MutableRefObject<LabPlayer>;
+  enemiesRef: React.MutableRefObject<EnemyRuntime[]>;
+  sharedRef: React.MutableRefObject<LabSharedState>;
+  lootRoomCell: { col: number; row: number };
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const exploredRef = useRef(new Set<number>());
   const MINIMAP_SIZE = 140;
@@ -3452,6 +3608,65 @@ function LabyrinthMinimap({ maze, playerRef, enemiesRef }: { maze: Maze; playerR
         ctx.fill();
       }
 
+      // Treasure-room marker — yellow "$" with soft glow. Visible from
+      // run start so the player can path toward it (no fog-of-war gate).
+      // Rendered beneath the player dot so the player is always on top.
+      {
+        const lx = lootRoomCell.col * cellPx + cellPx / 2;
+        const ly = lootRoomCell.row * cellPx + cellPx / 2;
+        // Outer glow disc
+        ctx.fillStyle = "rgba(255,200,64,0.25)";
+        ctx.beginPath();
+        ctx.arc(lx, ly, 6, 0, Math.PI * 2);
+        ctx.fill();
+        // Core disc
+        ctx.fillStyle = "#ffcc44";
+        ctx.beginPath();
+        ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+        ctx.fill();
+        // "$" glyph
+        ctx.fillStyle = "#1a0f00";
+        ctx.font = "bold 7px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("$", lx, ly + 0.5);
+      }
+
+      // Portal markers — pulse + icon. Extraction = blue "↑",
+      // Descent = purple "▼". Pulse uses performance.now() so all
+      // portals breathe in sync.
+      {
+        const now = performance.now() / 1000;
+        const pulse = 0.5 + 0.5 * Math.sin(now * 3);
+        for (const portal of sharedRef.current.portals) {
+          if (portal.consumed) continue;
+          const pcell = worldToCell(portal.x, portal.z);
+          const px2 = pcell.col * cellPx + cellPx / 2;
+          const py2 = pcell.row * cellPx + cellPx / 2;
+          const isExtract = portal.id.startsWith("extract_");
+          const coreColor = isExtract ? "#44b0ff" : "#c080ff";
+          const glowColor = isExtract ? "rgba(68,176,255,0.5)" : "rgba(192,128,255,0.5)";
+          const icon = isExtract ? "↑" : "▼";
+          const r = 4 + pulse * 2;
+          // Pulsing glow
+          ctx.fillStyle = glowColor;
+          ctx.beginPath();
+          ctx.arc(px2, py2, r + 2, 0, Math.PI * 2);
+          ctx.fill();
+          // Core disc
+          ctx.fillStyle = coreColor;
+          ctx.beginPath();
+          ctx.arc(px2, py2, 4, 0, Math.PI * 2);
+          ctx.fill();
+          // Glyph
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 7px monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(icon, px2, py2 + 0.5);
+        }
+      }
+
       // Player dot
       const px = pc.col * cellPx + cellPx / 2;
       const py = pc.row * cellPx + cellPx / 2;
@@ -3461,7 +3676,7 @@ function LabyrinthMinimap({ maze, playerRef, enemiesRef }: { maze: Maze; playerR
       ctx.fill();
     }, 150);
     return () => clearInterval(iv);
-  }, [maze, playerRef, enemiesRef, cellPx]);
+  }, [maze, playerRef, enemiesRef, sharedRef, lootRoomCell, cellPx]);
 
   return (
     <canvas
@@ -3478,6 +3693,84 @@ function LabyrinthMinimap({ maze, playerRef, enemiesRef }: { maze: Maze; playerR
         zIndex: 20,
       }}
     />
+  );
+}
+
+/** 2D billboarded gold-key pickup sprites. Task 6: rival-champion
+ *  death spawns a `keyPickups` entry on sharedRef; this component
+ *  pools up to 4 flat-quad key icons and positions them from the
+ *  live list each frame. The quads camera-face via
+ *  groupRef.quaternion.copy(camera.quaternion) (same pattern as the
+ *  rival HP bar). Key shape is drawn from three rectangular planes:
+ *  a gold disc (bow), a shaft, and two teeth — readable top-down.
+ *
+ *  No GLB fetch, no atlas, no new runtime state — purely reactive to
+ *  sharedRef.current.keyPickups which MovementLoop mutates when the
+ *  player walks onto the pickup. */
+function LabyrinthKeyPickups3D({ sharedRef }: {
+  sharedRef: React.MutableRefObject<LabSharedState>;
+}) {
+  const groupsRef = useRef<Array<THREE.Group | null>>([]);
+  const POOL = 4;
+  useFrame(({ camera, clock }) => {
+    const keys = sharedRef.current.keyPickups;
+    const bob = Math.sin(clock.elapsedTime * 2) * 0.12;
+    for (let i = 0; i < POOL; i++) {
+      const g = groupsRef.current[i];
+      if (!g) continue;
+      if (i < keys.length) {
+        const k = keys[i];
+        g.visible = true;
+        // Float just above the floor; add a gentle bob so the pickup
+        // reads as interactable rather than inert scenery.
+        g.position.set(k.x, 0.9 + bob, k.z);
+        // Camera-face the flat key so it always reads top-down.
+        g.quaternion.copy(camera.quaternion);
+      } else {
+        g.visible = false;
+      }
+    }
+  });
+  return (
+    <>
+      {Array.from({ length: POOL }).map((_, i) => (
+        <group
+          key={i}
+          ref={(el) => { groupsRef.current[i] = el; }}
+          visible={false}
+        >
+          {/* Soft gold halo so the key glows on the stone floor. */}
+          <mesh position={[0, 0, -0.01]}>
+            <planeGeometry args={[1.4, 1.0]} />
+            <meshBasicMaterial color="#ffd860" transparent opacity={0.22} depthWrite={false} />
+          </mesh>
+          {/* Key bow — the circular head. Approximated with a plane
+              ring via two stacked quads: gold outer + dark centre. */}
+          <mesh position={[-0.35, 0, 0]}>
+            <circleGeometry args={[0.28, 24]} />
+            <meshBasicMaterial color="#ffc440" transparent opacity={0.98} depthWrite={false} />
+          </mesh>
+          <mesh position={[-0.35, 0, 0.001]}>
+            <circleGeometry args={[0.14, 24]} />
+            <meshBasicMaterial color="#2a1a05" transparent opacity={0.98} depthWrite={false} />
+          </mesh>
+          {/* Key shaft — horizontal plank. */}
+          <mesh position={[0.05, 0, 0]}>
+            <planeGeometry args={[0.56, 0.14]} />
+            <meshBasicMaterial color="#ffc440" transparent opacity={0.98} depthWrite={false} />
+          </mesh>
+          {/* Key teeth — two downward-pointing rectangles at the tip. */}
+          <mesh position={[0.22, -0.15, 0]}>
+            <planeGeometry args={[0.08, 0.18]} />
+            <meshBasicMaterial color="#ffc440" transparent opacity={0.98} depthWrite={false} />
+          </mesh>
+          <mesh position={[0.33, -0.12, 0]}>
+            <planeGeometry args={[0.08, 0.12]} />
+            <meshBasicMaterial color="#ffc440" transparent opacity={0.98} depthWrite={false} />
+          </mesh>
+        </group>
+      ))}
+    </>
   );
 }
 
@@ -3694,7 +3987,15 @@ function onRivalChampionKill(
   gearDrops: LabGearDropRuntime[],
 ): void {
   if (shared.rivalKillCount === 0) {
-    shared.hasKey = true;
+    // Task 6: key is now a manual ground pickup. Spawn it at the
+    // rival's death spot — the player must walk onto it to pick it up
+    // (pickup radius ~0.6u, checked each MovementLoop tick). hasKey is
+    // set at that moment, not here.
+    shared.keyPickups.push({
+      id: `key-${e.id}`,
+      x: e.x,
+      z: e.z,
+    });
     useMetaStore.getState().recordLabyrinthKeyObtain();
   } else if (shared.rivalKillCount === 1) {
     const gear = rollGearDrop("rare");

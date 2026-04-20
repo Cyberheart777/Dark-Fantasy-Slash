@@ -77,13 +77,13 @@ export function LabyrinthLootDoor3D({ x, z, openDir, unlocked }: Props) {
     }
   });
 
-  // Door spans wall-to-wall in the corridor. PILLAR_HALF_SPAN = 1.3
-  // gives an effective door width of 2.6u + pillars, which stretches
-  // from wall to wall in the 8u-wide corridor (CELL_SIZE 8 minus
-  // WALL_THICKNESS 1.5 ≈ 6.5u of open span, and the pillars tuck
-  // into the walls). +30% over the previous 1.0 — visual only,
-  // collision (MovementLoop LOCK_R) is untouched.
-  const PILLAR_HALF_SPAN = 1.3;
+  // Door spans wall-to-wall in the corridor. Task 6: doubled from 1.3
+  // so the door panel reaches the full corridor opening. With
+  // CELL_SIZE 8 and WALL_THICKNESS 1.5, the open corridor span is
+  // ≈ 6.5u — PILLAR_HALF_SPAN 2.6 gives 5.2u of door + pillars tucked
+  // into the walls on each side so the door spans the gap visually.
+  // Collision (MovementLoop LOCK_R) is untouched.
+  const PILLAR_HALF_SPAN = 2.6;
 
   return (
     <group position={[x + offsetX, 0, z + offsetZ]} rotation={[0, yaw, 0]}>

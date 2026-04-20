@@ -758,6 +758,38 @@ export function spawnTrapSpawners(
   });
 }
 
+/** Spawn trap_spawner turrets at explicit world positions. Used by the
+ *  loot-room guard placement — the room is highlighted on the minimap
+ *  from run start, so we add dedicated ranged defenders inside it to
+ *  make the approach feel earned. Positions are caller-chosen (typically
+ *  a ring around the vault cell centre); each turret fires with the
+ *  same cadence + HP as the corridor-placed ones. */
+export function spawnTrapSpawnersAt(
+  positions: Array<{ x: number; z: number }>,
+  tag = "loot",
+  rng: () => number = Math.random,
+): EnemyRuntime[] {
+  return positions.map((pos, i) => ({
+    id: `spawner-${tag}-${i}-${pos.x.toFixed(1)}-${pos.z.toFixed(1)}`,
+    kind: "trap_spawner" as const,
+    x: pos.x,
+    z: pos.z,
+    angle: 0,
+    hp: TRAP_SPAWNER_HP,
+    maxHp: TRAP_SPAWNER_HP,
+    state: "patrol" as EnemyAiState,
+    aiTimer: 0,
+    attackCooldown: 0,
+    deathFadeSec: 0,
+    hitFlashTimer: 0,
+    patrolTargetX: null,
+    patrolTargetZ: null,
+    lastMoveX: 0,
+    lastMoveZ: 0,
+    fireTimer: rng() * TRAP_SPAWNER_FIRE_SEC,
+  }));
+}
+
 // ─── Per-frame update ────────────────────────────────────────────────────────
 
 /**
