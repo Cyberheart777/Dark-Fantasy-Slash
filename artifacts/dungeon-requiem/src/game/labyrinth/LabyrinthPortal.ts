@@ -51,8 +51,8 @@ const PORTAL_MIN_CELL_SPACING = 2;
 
 /** Elliptical collision radii (world units) — wider than tall to match
  *  the oval visual. */
-export const PORTAL_COLLISION_RX = LABYRINTH_CONFIG.CELL_SIZE * 0.45;
-export const PORTAL_COLLISION_RZ = LABYRINTH_CONFIG.CELL_SIZE * 0.32;
+export const PORTAL_COLLISION_RX = LABYRINTH_CONFIG.CELL_SIZE * 0.22;
+export const PORTAL_COLLISION_RZ = LABYRINTH_CONFIG.CELL_SIZE * 0.16;
 
 /** How long the fade-out lasts after a portal is consumed. */
 export const PORTAL_FADE_DURATION_SEC = 0.8;

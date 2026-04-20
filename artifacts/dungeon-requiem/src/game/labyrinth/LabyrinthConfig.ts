@@ -126,7 +126,7 @@ export const LAYER_CONFIG: Record<1 | 2 | 3, LayerConfig> = {
   2: {
     gridSize: 15,
     spawnMult: 2.0,
-    zoneShrinkMult: 1.25,
+    zoneShrinkMult: 2.667,
     gearDropMult: 1.5,
     crystalMult: 2,
     championCount: 3,

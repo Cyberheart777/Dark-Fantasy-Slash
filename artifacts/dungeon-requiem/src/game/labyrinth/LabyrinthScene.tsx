@@ -696,6 +696,35 @@ export function LabyrinthScene() {
   );
 }
 
+// ─── Layer-aware lighting ────────────────────────────────────────────────────
+
+const LAYER_LIGHT_MULT: Record<number, number> = { 1: 1.0, 2: 0.8, 3: 0.6 };
+const LAYER_FOG_NEAR:   Record<number, number> = { 1: 50,  2: 35,  3: 25  };
+
+function LayerLighting({ sharedRef }: { sharedRef: React.MutableRefObject<LabSharedState> }) {
+  const ambRef = useRef<THREE.AmbientLight>(null);
+  const hemiRef = useRef<THREE.HemisphereLight>(null);
+  const dirRef = useRef<THREE.DirectionalLight>(null);
+  const fogRef = useRef<THREE.Fog>(null);
+
+  useFrame(() => {
+    const m = LAYER_LIGHT_MULT[sharedRef.current.layer] ?? 1;
+    if (ambRef.current)  ambRef.current.intensity  = 1.4 * m;
+    if (hemiRef.current) hemiRef.current.intensity  = 0.7 * m;
+    if (dirRef.current)  dirRef.current.intensity   = 1.8 * m;
+    if (fogRef.current)  fogRef.current.near        = LAYER_FOG_NEAR[sharedRef.current.layer] ?? 50;
+  });
+
+  return (
+    <>
+      <ambientLight ref={ambRef} intensity={1.4} color="#a090c8" />
+      <hemisphereLight ref={hemiRef} args={["#b0a0e0", "#20103a", 0.7]} />
+      <directionalLight ref={dirRef} position={[30, 50, 20]} intensity={1.8} color="#d0b0e8" />
+      <fog ref={fogRef} attach="fog" args={["#100820", 50, 140]} />
+    </>
+  );
+}
+
 // ─── 3D world contents ────────────────────────────────────────────────────────
 
 function LabyrinthWorld({
@@ -826,15 +855,8 @@ function LabyrinthWorld({
           between them. Walls + floor self-emissive (boosted in
           LabyrinthMap3D) covers the case where direct lighting is
           weak; lights here just lift the player + enemy meshes. */}
-      <ambientLight intensity={1.4} color="#a090c8" />
-      <hemisphereLight args={["#b0a0e0", "#20103a", 0.7]} />
-      <directionalLight
-        position={[30, 50, 20]}
-        intensity={1.8}
-        color="#d0b0e8"
-      />
+      <LayerLighting sharedRef={sharedRef} />
       <PlayerTorch playerRef={playerRef} />
-      <fog attach="fog" args={["#100820", 50, 140]} />
 
       {/* Each visual subsystem is wrapped in an error boundary so a
           silent throw in one (e.g. a shader, material, or geometry
@@ -2296,8 +2318,14 @@ function ZoneTickLoop({
     const shared = sharedRef.current;
     if (shared.defeated || shared.extracted || shared.victory) return;
 
-    const elapsedSec = (performance.now() - runStartMs.current) / 1000;
+    const realElapsed = (performance.now() - runStartMs.current) / 1000;
+    const shrinkMult = LAYER_CONFIG[shared.layer].zoneShrinkMult || 1;
+    const elapsedSec = realElapsed * shrinkMult;
     const zone = computeZoneState(elapsedSec);
+    // Show real seconds remaining in HUD, not scaled
+    zone.timeRemaining = shrinkMult > 0
+      ? Math.max(0, (ZONE_TOTAL_DURATION_SEC - elapsedSec) / shrinkMult)
+      : zone.timeRemaining;
     shared.zone = zone;
     shared.layerElapsedSec += delta;
 

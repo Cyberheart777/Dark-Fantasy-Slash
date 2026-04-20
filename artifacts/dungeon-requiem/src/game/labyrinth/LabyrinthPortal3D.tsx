@@ -54,7 +54,7 @@ export function LabyrinthPortal3D({ portal }: { portal: ExtractionPortal }) {
 
     const t = performance.now() / 1000;
     const bobY = Math.sin(t * 1.8) * 0.15;
-    const breath = 1 + Math.sin(t * 2.4) * 0.04;
+    const breath = 1 + Math.sin(t * 3.0) * 0.08;
     // Shrink slightly on fade-out so the portal "collapses" as it vanishes.
     const fadeScale = portal.consumed ? 0.7 + 0.3 * alpha : 1;
     const s = breath * fadeScale;
@@ -79,14 +79,14 @@ export function LabyrinthPortal3D({ portal }: { portal: ExtractionPortal }) {
     <group ref={rootRef}>
       {/* Upright oval — tilted back toward camera */}
       <group rotation={[TILT_X, 0, 0]}>
-        {/* Outer fuzzy glow */}
+        {/* Outer fuzzy glow — intense */}
         <mesh position={[0, 0, -0.08]}>
-          <ringGeometry args={[1.0, 1.4, 48]} />
+          <ringGeometry args={[0.9, 1.6, 48]} />
           <meshBasicMaterial
             ref={glowMatRef}
-            color="#3a80ff"
+            color="#6ab0ff"
             transparent
-            opacity={0.4}
+            opacity={0.7}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
             side={THREE.DoubleSide}
@@ -95,40 +95,40 @@ export function LabyrinthPortal3D({ portal }: { portal: ExtractionPortal }) {
 
         {/* Back disc — the gateway interior */}
         <mesh position={[0, 0, -0.04]}>
-          <circleGeometry args={[0.95, 48]} />
+          <circleGeometry args={[0.85, 48]} />
           <meshBasicMaterial
             ref={discMatRef}
-            color="#6a28cc"
+            color="#8040ee"
             transparent
-            opacity={0.55}
+            opacity={0.75}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
             side={THREE.DoubleSide}
           />
         </mesh>
 
-        {/* Bright inner core */}
+        {/* Bright inner core — hot white-purple */}
         <mesh position={[0, 0, 0]}>
-          <circleGeometry args={[0.45, 32]} />
+          <circleGeometry args={[0.4, 32]} />
           <meshBasicMaterial
             ref={coreMatRef}
-            color="#c080ff"
+            color="#e0b0ff"
             transparent
-            opacity={0.85}
+            opacity={0.95}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
             side={THREE.DoubleSide}
           />
         </mesh>
 
-        {/* Main oval ring */}
+        {/* Main oval ring — thicker, brighter */}
         <mesh position={[0, 0, 0.04]}>
-          <torusGeometry args={[1, 0.09, 14, 48]} />
+          <torusGeometry args={[1, 0.14, 14, 48]} />
           <meshBasicMaterial
             ref={ringMatRef}
-            color="#a050ff"
+            color="#c070ff"
             transparent
-            opacity={0.95}
+            opacity={1.0}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
           />
