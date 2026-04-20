@@ -586,6 +586,7 @@ export function LabyrinthScene() {
       s.rivalAnnounce = null;
       s.wardenHud = null;
       s.pendingLayerChange = null;
+      s.spawnedMilestones = new Set<number>();
       // Layer intro banner
       if (next === 2) {
         s.layerBanner = { text: "LAYER 2 — THE DEEP LABYRINTH", sub: "DEFEAT 3 CHAMPIONS TO DESCEND", color: "#cc88ff", at: 0 };
@@ -2956,7 +2957,7 @@ function LabyrinthHUD({
 
       {/* Below the timer: threat readout (desktop only) */}
       {!isMob && (
-        <div style={{ ...styles.threatBox, minWidth: 180, top: 108, right: 20, padding: "8px 14px" }}>
+        <div style={{ ...styles.threatBox, minWidth: 180, top: 120, right: 20, padding: "8px 14px" }}>
           <div style={styles.threatRow}>
             <span style={styles.threatLabel}>THREATS</span>
             <span style={styles.threatValue}>{display.enemyCount}</span>
@@ -2970,7 +2971,7 @@ function LabyrinthHUD({
 
       {/* Layer + champion hunt tracker (desktop only — mobile uses connected strip) */}
       {!isMob && display.championsToKill > 0 && (
-        <div style={{ ...styles.threatBox, top: isMob ? 55 : 165, right: isMob ? 6 : 20, minWidth: isMob ? 100 : 180, padding: isMob ? "3px 6px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
+        <div style={{ ...styles.threatBox, top: isMob ? 55 : 205, right: isMob ? 6 : 20, minWidth: isMob ? 100 : 180, padding: isMob ? "3px 6px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
           <div style={{ fontSize: isMob ? 7 : 9, letterSpacing: 2, color: "#cc88ff", fontWeight: 900, fontFamily: "monospace", marginBottom: 1 }}>
             L{display.layer} HUNT
           </div>
@@ -2994,7 +2995,7 @@ function LabyrinthHUD({
         </div>
       )}
       {!isMob && display.layer === 3 && display.championsToKill === 0 && (
-        <div style={{ ...styles.threatBox, top: isMob ? 55 : 165, right: isMob ? 6 : 20, minWidth: isMob ? 100 : 180, padding: isMob ? "3px 6px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
+        <div style={{ ...styles.threatBox, top: isMob ? 55 : 205, right: isMob ? 6 : 20, minWidth: isMob ? 100 : 180, padding: isMob ? "3px 6px" : "8px 14px", background: "rgba(40,10,60,0.75)", borderColor: "rgba(180,60,255,0.4)" }}>
           <div style={{ fontSize: isMob ? 7 : 9, letterSpacing: 2, color: "#ff4488", fontWeight: 900, fontFamily: "monospace" }}>
             L3 — THE ABYSS
           </div>
@@ -3587,14 +3588,10 @@ function onRivalChampionKill(
     shared.layerBanner = { text: "ONE CHAMPION REMAINS", sub: "FINISH THE HUNT", color: "#ff8844", at: shared.zone.elapsedSec };
   }
   if (shared.championsKilled >= lc.championCount) {
-    if (shared.layer === 2 && !shared.miniBossSpawned) {
-      // L2: mini-boss spawns after all champions — handled by caller
-    } else if (shared.layer === 2 && shared.miniBossAlive) {
-      // L2: mini-boss still alive, wait
-    } else {
-      shared.layerComplete = true;
-      shared.layerBanner = { text: "PORTALS OPENED — CHOOSE YOUR PATH", sub: shared.layer < 3 ? "DESCEND DEEPER OR EXTRACT" : "THE ABYSS IS CONQUERED", color: "#44ff88", at: shared.zone.elapsedSec };
-    }
+    // Mini-boss stage not implemented yet — completing champions opens portals
+    // directly. Re-gate behind miniBossAlive once the mini-boss is wired in.
+    shared.layerComplete = true;
+    shared.layerBanner = { text: "PORTALS OPENED — CHOOSE YOUR PATH", sub: shared.layer < 3 ? "DESCEND DEEPER OR EXTRACT" : "THE ABYSS IS CONQUERED", color: "#44ff88", at: shared.zone.elapsedSec };
   }
 }
 
@@ -4435,8 +4432,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   gearStrip: {
     position: "absolute" as const,
-    top: 115,
-    right: 6,
+    top: 300,
+    right: 20,
     display: "flex",
     gap: 4,
     padding: "4px",
