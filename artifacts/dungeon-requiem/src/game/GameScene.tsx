@@ -2831,7 +2831,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         }
 
         // ── Rogue: Ricochet — daggers bounce to nearby enemies ──
-        if (stats.ricochetBounces > 0 && proj.style === "dagger") {
+        if (stats.ricochetBounces > 0 && proj.style === "dagger" && !proj.fanOfKnives) {
           let ricoSource = e;
           const ricoBounced = new Set<string>([e.id]);
           for (let rb = 0; rb < stats.ricochetBounces; rb++) {

@@ -153,7 +153,7 @@ export function Projectile3D({ proj }: ProjectileProps) {
         {/* Spinning inner group */}
         <group>
           {/* Blade */}
-          <mesh position={[0, 0, -0.22]} castShadow>
+          <mesh position={[0, 0, -0.22]} castShadow={!proj.fanOfKnives}>
             <boxGeometry args={[0.07, 0.07, 0.55]} />
             <meshStandardMaterial
               color={proj.color}
@@ -184,26 +184,30 @@ export function Projectile3D({ proj }: ProjectileProps) {
             />
           </mesh>
         </group>
-        {/* Motion trail */}
-        <mesh ref={trailRef} position={[0, 0, 0.35]}>
-          <boxGeometry args={[0.03, 0.03, 0.5]} />
-          <meshStandardMaterial
-            color={proj.glowColor}
-            emissive={proj.glowColor}
-            emissiveIntensity={2}
-            transparent
-            opacity={0.5}
-            depthWrite={false}
-          />
-        </mesh>
+        {/* Motion trail — skip for fan-of-knives burst */}
+        {!proj.fanOfKnives && (
+          <mesh ref={trailRef} position={[0, 0, 0.35]}>
+            <boxGeometry args={[0.03, 0.03, 0.5]} />
+            <meshStandardMaterial
+              color={proj.glowColor}
+              emissive={proj.glowColor}
+              emissiveIntensity={2}
+              transparent
+              opacity={0.5}
+              depthWrite={false}
+            />
+          </mesh>
+        )}
       </group>
-      <pointLight
-        ref={lightRef}
-        color={proj.glowColor}
-        intensity={1.5}
-        distance={4}
-        decay={2}
-      />
+      {!proj.fanOfKnives && (
+        <pointLight
+          ref={lightRef}
+          color={proj.glowColor}
+          intensity={1.5}
+          distance={4}
+          decay={2}
+        />
+      )}
     </>
   );
 }
