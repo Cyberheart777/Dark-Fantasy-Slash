@@ -228,6 +228,8 @@ export interface MinionRuntime {
   orbitAngle: number;
   fireTimer: number;
   spawnTime: number;
+  /** Army of the Dead — 10x scale, 10x damage, 10x projectile size. */
+  giant?: boolean;
 }
 
 export interface GameState {
@@ -1569,22 +1571,19 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           triggerShake(g, 0.4, 0.25);
           audioManager.play("attack_melee");
         } else if (g.charClass === "necromancer") {
-          const ARMY_COUNT = 10;
-          const minionHp = stats.necroMinionHp + stats.necroMinionHpBonus;
-          for (let i = 0; i < ARMY_COUNT; i++) {
-            const angle = (i / ARMY_COUNT) * Math.PI * 2;
-            g.minions.push({
-              id: `army_${Date.now()}_${i}`,
-              x: p.x + Math.sin(angle) * 1.5,
-              z: p.z + Math.cos(angle) * 1.5,
-              angle: 0,
-              hp: minionHp, maxHp: minionHp,
-              orbitAngle: angle,
-              fireTimer: stats.necroMinionFireRate * 0.3,
-              spawnTime: performance.now(),
-            });
-          }
-          triggerShake(g, 0.5, 0.3);
+          // Army of the Dead — one colossal skeleton: 10x size, damage, projectile, HP
+          const giantHp = (stats.necroMinionHp + stats.necroMinionHpBonus) * 10;
+          g.minions.push({
+            id: `army_${Date.now()}`,
+            x: p.x, z: p.z,
+            angle: 0,
+            hp: giantHp, maxHp: giantHp,
+            orbitAngle: 0,
+            fireTimer: stats.necroMinionFireRate * 0.3,
+            spawnTime: performance.now(),
+            giant: true,
+          });
+          triggerShake(g, 0.7, 0.4);
           audioManager.play("dash");
         } else if (g.charClass === "bard") {
           const DISCORD_RADIUS = 8;
@@ -2494,9 +2493,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       for (let mi = g.minions.length - 1; mi >= 0; mi--) {
         const m = g.minions[mi];
         // Orbit
-        m.orbitAngle += ORBIT_SPEED * delta;
-        m.x = p.x + Math.cos(m.orbitAngle) * ORBIT_RADIUS;
-        m.z = p.z + Math.sin(m.orbitAngle) * ORBIT_RADIUS;
+        const orbitR = m.giant ? 6 : ORBIT_RADIUS;
+        const orbitS = m.giant ? ORBIT_SPEED * 0.4 : ORBIT_SPEED;
+        m.orbitAngle += orbitS * delta;
+        m.x = p.x + Math.cos(m.orbitAngle) * orbitR;
+        m.z = p.z + Math.sin(m.orbitAngle) * orbitR;
 
         // Face nearest enemy
         let nearDist = Infinity, nearE: EnemyRuntime | null = null;
@@ -2512,7 +2513,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         m.fireTimer -= delta;
         if (m.fireTimer <= 0 && nearE) {
           m.fireTimer = stats.necroMinionFireRate;
-          const boneDmg = Math.round(stats.damage * 0.10) + stats.necroMinionDamageBonus;
+          const sizeMult = m.giant ? 10 : 1;
+          const boneDmg = (Math.round(stats.damage * 0.10) + stats.necroMinionDamageBonus) * sizeMult;
           const boneAngle = Math.atan2(nearE.x - m.x, nearE.z - m.z);
           g.projectiles.push({
             id: `bone_${m.id}_${Date.now()}`,
@@ -2520,9 +2522,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             vx: Math.sin(boneAngle) * BONE_SPEED,
             vz: Math.cos(boneAngle) * BONE_SPEED,
             damage: boneDmg,
-            radius: BONE_RADIUS,
+            radius: BONE_RADIUS * sizeMult,
             lifetime: BONE_LIFETIME,
-            piercing: false,
+            piercing: !!m.giant,
             hitIds: new Set(),
             color: "#44ff66",
             glowColor: "#22cc44",
@@ -3866,7 +3868,7 @@ function Minion3D({ m }: { m: MinionRuntime }) {
     ref.current.rotation.y = m.angle;
   });
   return (
-    <group ref={ref} scale={0.4}>
+    <group ref={ref} scale={m.giant ? 4.0 : 0.4}>
       {/* Skull */}
       <mesh castShadow position={[0, 1.65, 0]}>
         <boxGeometry args={[0.4, 0.45, 0.38]} />
