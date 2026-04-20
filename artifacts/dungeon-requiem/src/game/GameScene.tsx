@@ -1535,16 +1535,16 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           audioManager.play("dash");
         } else if (g.charClass === "mage") {
           p.actionActiveTimer = 5.0;
-          p.actionAtkSpeedMult = 2.0;
+          p.actionAtkSpeedMult = 3.0;
           p.actionOrbSizeMult = 2.0;
           triggerShake(g, 0.3, 0.2);
           audioManager.play("attack_melee");
         } else if (g.charClass === "rogue") {
-          const FAN_COUNT = 25;
-          const FAN_DMG = Math.round(stats.damage * 0.8);
+          const FAN_COUNT = 12;
+          const FAN_DMG = Math.round(stats.damage * 1.2);
           const FAN_SPEED = 18;
-          const FAN_LIFETIME = 0.6;
-          const FAN_RADIUS = 0.35;
+          const FAN_LIFETIME = 0.5;
+          const FAN_RADIUS = 0.4;
           for (let i = 0; i < FAN_COUNT; i++) {
             const angle = (i / FAN_COUNT) * Math.PI * 2;
             const vx = Math.sin(angle) * FAN_SPEED;
@@ -1565,6 +1565,40 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               dead: false,
               fanOfKnives: true,
             });
+          }
+          triggerShake(g, 0.4, 0.25);
+          audioManager.play("attack_melee");
+        } else if (g.charClass === "necromancer") {
+          const ARMY_COUNT = 10;
+          const minionHp = stats.necroMinionHp + stats.necroMinionHpBonus;
+          for (let i = 0; i < ARMY_COUNT; i++) {
+            const angle = (i / ARMY_COUNT) * Math.PI * 2;
+            g.minions.push({
+              id: `army_${Date.now()}_${i}`,
+              x: p.x + Math.sin(angle) * 1.5,
+              z: p.z + Math.cos(angle) * 1.5,
+              angle: 0,
+              hp: minionHp, maxHp: minionHp,
+              orbitAngle: angle,
+              fireTimer: stats.necroMinionFireRate * 0.3,
+              spawnTime: performance.now(),
+            });
+          }
+          triggerShake(g, 0.5, 0.3);
+          audioManager.play("dash");
+        } else if (g.charClass === "bard") {
+          const DISCORD_RADIUS = 8;
+          const DISCORD_DURATION = 6;
+          p.actionVulnerabilityTimer = DISCORD_DURATION;
+          for (const e of g.enemies) {
+            if (e.dead) continue;
+            const dx = e.x - p.x, dz = e.z - p.z;
+            if (Math.sqrt(dx * dx + dz * dz) > DISCORD_RADIUS) continue;
+            const isChampOrBoss = e.type === "boss" || e.type.endsWith("_champion");
+            if (!isChampOrBoss && (e.confuseTimer ?? 0) <= 0) {
+              e.confuseTimer = DISCORD_DURATION;
+              p.bardConfuseCount++;
+            }
           }
           triggerShake(g, 0.4, 0.25);
           audioManager.play("attack_melee");
