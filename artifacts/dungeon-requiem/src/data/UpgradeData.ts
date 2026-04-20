@@ -275,6 +275,9 @@ export interface PlayerStats {
   plagueDaggerEnabled: boolean;   // gear (Plague Dagger) kill spawns poison puddle
   orbitalStaffEnabled: boolean;   // gear (Orbital Staff) adds orbiting damage orbs
   ricochetOrbEnabled: boolean;    // gear (Ricochet Orb) mage orbs ricochet off walls
+  // ── Action ability ─────────────────────────────────────────────────────────
+  actionCooldown: number;          // base 60s cooldown for class action ability
+  actionCdrPct: number;            // 0..1 percentage reduction on action cooldown (gear)
 }
 
 export function createDefaultStats(): PlayerStats {
@@ -410,6 +413,9 @@ export function createDefaultStats(): PlayerStats {
     plagueDaggerEnabled: false,
     orbitalStaffEnabled: false,
     ricochetOrbEnabled: false,
+    // Action ability
+    actionCooldown: 60,
+    actionCdrPct: 0,
   };
 }
 

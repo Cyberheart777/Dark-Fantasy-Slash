@@ -176,6 +176,17 @@ export const META_UPGRADES: MetaUpgradeDef[] = [
     statLine: (r) => `-${(0.12 * r).toFixed(2)}s Dash CD`,
   },
   {
+    id: "battle_instinct",
+    name: "Battle Instinct",
+    title: "Honed Reflexes",
+    icon: "🔥",
+    description: "-5s action ability cooldown per rank.",
+    maxRanks: 4,
+    costs: [300, 600, 1000, 1600],
+    modifiers: (rank) => flatModifiers({ actionCooldown: -5 * rank }, `meta:battle_instinct:${rank}`),
+    statLine: (r) => `-${5 * r}s Action CD`,
+  },
+  {
     id: "scholars_tome",
     name: "Scholar's Tome",
     title: "Knowledge Compounds",
