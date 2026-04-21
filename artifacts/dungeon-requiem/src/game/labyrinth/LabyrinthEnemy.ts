@@ -275,18 +275,18 @@ const RIVAL_WARRIOR_WARCRY_MULT = 1.4;
  *  warrior_champion (GameScene.tsx:2283-2289). ToC uses 2.8s base
  *  with enrage scaling; labyrinth spec pins it to a consistent 2s
  *  (no phase scaling this pass — tune post-Alpha if needed). */
-const RIVAL_WARRIOR_ARC_SLASH_CD = 2.0;
+const RIVAL_WARRIOR_ARC_SLASH_CD = 2.5;
 /** Arc-slash damage. ToC uses e.damage * 1.2; we mirror that on the
  *  labyrinth's RIVAL_WARRIOR_ATTACK_DAMAGE. */
 const RIVAL_WARRIOR_ARC_SLASH_DAMAGE_MULT = 1.2;
 /** Projectile speed — ToC base is 8 u/s. */
-const RIVAL_WARRIOR_ARC_SLASH_SPEED = 8.0;
+const RIVAL_WARRIOR_ARC_SLASH_SPEED = 6.0;
 /** Max engagement range for arc-slash firing — the rival won't
  *  bother from across the maze; ports ToC's cDist <= 12 check. */
 const RIVAL_WARRIOR_ARC_SLASH_MAX_DIST = 12.0;
 /** Min engagement range — if the player is already in melee range,
  *  swing instead. Keeps arc slash as a mid-range pressure tool. */
-const RIVAL_WARRIOR_ARC_SLASH_MIN_DIST = 2.5;
+const RIVAL_WARRIOR_ARC_SLASH_MIN_DIST = 0;
 
 export const RIVAL_MAGE_HP = 280;
 const RIVAL_MAGE_SPEED = 4.5;
@@ -1062,7 +1062,7 @@ export function updateEnemy(
             damage: dmg,
             // Bigger collision footprint than a standard enemy orb —
             // tickLabProjectiles uses max(playerRadius, p.radius).
-            radius: 1.6,
+            radius: 1.0,
             lifetime: 2.5,
             piercing: false,
             hitIds: new Set(),
@@ -1640,26 +1640,30 @@ function runRivalBardAI(
     enemy.lastMoveZ = moveZ;
   }
 
-  // Ranged fire: "note" projectile (crescent style).
+  // Ranged fire: 3-note spread toward the player.
   if (r.abilityCooldown <= 0 && dist <= RIVAL_BARD_FIRE_RANGE && dist >= RIVAL_BARD_ATTACK_RANGE) {
     r.abilityCooldown = RIVAL_BARD_FIRE_COOLDOWN;
-    projectiles.push({
-      id: `rivalbardproj${rivalIdCounter++}`,
-      owner: "enemy",
-      x: enemy.x,
-      z: enemy.z,
-      vx: dirX * RIVAL_BARD_PROJECTILE_SPEED,
-      vz: dirZ * RIVAL_BARD_PROJECTILE_SPEED,
-      damage: RIVAL_BARD_PROJECTILE_DAMAGE * (enemy.damageMult ?? 1),
-      radius: 0.35,
-      lifetime: 1.0, // halved from 2.0
-      piercing: false,
-      hitIds: new Set(),
-      color: "#ffcc44",
-      glowColor: "#cc9920",
-      style: "crescent",
-      dead: false,
-    });
+    const baseAngle = Math.atan2(dirX, dirZ);
+    for (let n = -1; n <= 1; n++) {
+      const a = baseAngle + n * 0.2;
+      projectiles.push({
+        id: `rivalbardproj${rivalIdCounter++}`,
+        owner: "enemy",
+        x: enemy.x,
+        z: enemy.z,
+        vx: Math.sin(a) * RIVAL_BARD_PROJECTILE_SPEED,
+        vz: Math.cos(a) * RIVAL_BARD_PROJECTILE_SPEED,
+        damage: RIVAL_BARD_PROJECTILE_DAMAGE * (enemy.damageMult ?? 1),
+        radius: 0.3,
+        lifetime: 1.0,
+        piercing: false,
+        hitIds: new Set(),
+        color: "#ffcc44",
+        glowColor: "#cc9920",
+        style: "note",
+        dead: false,
+      });
+    }
   }
 
   // Buff ability: heal + speed-boost nearby non-rival enemies.
@@ -1688,7 +1692,7 @@ function runRivalBardAI(
     }
   }
 
-  // Melee fallback.
+  // Melee fallback — burst of notes around self.
   if (dist <= RIVAL_BARD_ATTACK_RANGE && enemy.attackCooldown <= 0) {
     enemy.attackCooldown = RIVAL_BARD_ATTACK_COOLDOWN;
     projectiles.push({
@@ -1699,13 +1703,13 @@ function runRivalBardAI(
       vx: dirX * 10,
       vz: dirZ * 10,
       damage: RIVAL_BARD_ATTACK_DAMAGE * (enemy.damageMult ?? 1),
-      radius: 0.35,
+      radius: 0.3,
       lifetime: 0.25,
       piercing: false,
       hitIds: new Set(),
       color: "#ffcc44",
       glowColor: "#cc9920",
-      style: "crescent",
+      style: "note",
       dead: false,
     });
   }
