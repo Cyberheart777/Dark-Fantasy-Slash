@@ -1687,7 +1687,7 @@ function CombatEnemyLoop({
   labStats: PlayerStats;
 }) {
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
-  // Tracks the last death-fx list length we pushed to React state so we
+  const hardMode = useGameStore((s) => s.labyrinthHardMode);
   // don't re-render on every frame just because the tick ran.
   const lastEmittedFxLen = useRef(0);
   // Same pattern for the XP-orb render mirror.
@@ -2532,6 +2532,7 @@ function ZoneTickLoop({
     const shared = sharedRef.current;
     if (shared.defeated || shared.extracted || shared.victory) return;
 
+    const hardMode = useGameStore.getState().labyrinthHardMode;
     const realElapsed = (performance.now() - runStartMs.current) / 1000;
     const shrinkMult = LAYER_CONFIG[shared.layer].zoneShrinkMult || 1;
     const elapsedSec = realElapsed * shrinkMult;
@@ -2806,6 +2807,7 @@ function LabyrinthHUD({
   lootRoomCell: { col: number; row: number };
 }) {
   const setPhase = useGameStore((s) => s.setPhase);
+  const hardMode = useGameStore((s) => s.labyrinthHardMode);
   const [isMob, setIsMob] = useState(() => window.innerWidth < 900);
   useEffect(() => { const fn = () => setIsMob(window.innerWidth < 900); window.addEventListener("resize", fn); return () => window.removeEventListener("resize", fn); }, []);
   const [esc, setEsc] = useState(false);
