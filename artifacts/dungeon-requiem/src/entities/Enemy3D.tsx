@@ -1173,6 +1173,51 @@ function NecromancerChampionMesh({ color, emissive, flash, walkSpeed, attackTime
   );
 }
 
+// ─── Death Knight Champion ──────────────────────────────────────────────────
+
+function DeathKnightChampionMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
+  const t = useRef(Math.random() * 100);
+  const groupRef = useRef<THREE.Group>(null);
+  const prevAttackRef = useRef(attackTimer);
+  const windupRef = useRef(0);
+  const strikeRef = useRef(0);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (!groupRef.current) return;
+    const moving = walkSpeed > 0.3;
+    const bob = moving ? Math.abs(Math.sin(t.current * 4)) * 0.05 : Math.sin(t.current * 1.2) * 0.02;
+    groupRef.current.position.y = bob;
+    updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
+  });
+
+  const armor = { color: flash ? "#ffffff" : "#1a1a2a", emissive: flash ? "#ffffff" : "#0a0a18", emissiveIntensity: flash ? 4 : 0.8, roughness: 0.3, metalness: 0.8 };
+  const dark = { color: flash ? "#ffffff" : "#0a0610", emissive: "#0a0610", emissiveIntensity: flash ? 3 : 0.3 };
+
+  return (
+    <group ref={groupRef}>
+      {/* Body — heavy dark armor */}
+      <mesh castShadow position={[0, 1.1, 0]}><boxGeometry args={[0.9, 1.2, 0.6]} /><meshStandardMaterial {...armor} /></mesh>
+      {/* Shoulder pauldrons */}
+      <mesh castShadow position={[-0.55, 1.5, 0]}><boxGeometry args={[0.3, 0.3, 0.35]} /><meshStandardMaterial {...armor} /></mesh>
+      <mesh castShadow position={[0.55, 1.5, 0]}><boxGeometry args={[0.3, 0.3, 0.35]} /><meshStandardMaterial {...armor} /></mesh>
+      {/* Helmet */}
+      <mesh castShadow position={[0, 1.9, 0.05]}><boxGeometry args={[0.5, 0.55, 0.5]} /><meshStandardMaterial {...armor} /></mesh>
+      {/* Visor glow — green eyes */}
+      <mesh position={[-0.1, 1.9, 0.3]}><boxGeometry args={[0.1, 0.05, 0.02]} /><meshStandardMaterial color="#44ff88" emissive="#44ff88" emissiveIntensity={8} /></mesh>
+      <mesh position={[0.1, 1.9, 0.3]}><boxGeometry args={[0.1, 0.05, 0.02]} /><meshStandardMaterial color="#44ff88" emissive="#44ff88" emissiveIntensity={8} /></mesh>
+      {/* Legs */}
+      <mesh castShadow position={[-0.2, 0.35, 0]}><boxGeometry args={[0.3, 0.7, 0.3]} /><meshStandardMaterial {...armor} /></mesh>
+      <mesh castShadow position={[0.2, 0.35, 0]}><boxGeometry args={[0.3, 0.7, 0.3]} /><meshStandardMaterial {...armor} /></mesh>
+      {/* Greatsword */}
+      <mesh castShadow position={[0.6, 0.9, 0.2]} rotation={[0, 0, -0.15]}><boxGeometry args={[0.08, 2.2, 0.06]} /><meshStandardMaterial color="#2a2a3a" metalness={0.9} roughness={0.1} /></mesh>
+      <mesh position={[0.6, 0.0, 0.2]}><boxGeometry args={[0.25, 0.08, 0.08]} /><meshStandardMaterial color="#1a1a2a" metalness={0.8} roughness={0.2} /></mesh>
+      {/* Cape */}
+      <mesh castShadow position={[0, 1.0, -0.35]}><boxGeometry args={[0.8, 1.3, 0.05]} /><meshStandardMaterial {...dark} /></mesh>
+    </group>
+  );
+}
+
 // ─── Bard Champion ───────────────────────────────────────────────────────────
 
 function BardChampionMesh({ color, emissive, flash }: { color: string; emissive: string; flash: boolean }) {
@@ -1557,6 +1602,7 @@ export function Enemy3D({ enemy }: EnemyProps) {
         {enemy.type === "rogue_champion" && <RogueChampionMesh {...meshProps} walkSpeed={walkSpeed} />}
         {enemy.type === "necromancer_champion" && <NecromancerChampionMesh {...meshProps} walkSpeed={walkSpeed} {...attackProps} />}
         {enemy.type === "bard_champion" && <BardChampionMesh {...meshProps} />}
+        {enemy.type === "death_knight_champion" && <DeathKnightChampionMesh {...meshProps} walkSpeed={walkSpeed} {...attackProps} />}
       </group>
 
       {/* Status effect visuals */}

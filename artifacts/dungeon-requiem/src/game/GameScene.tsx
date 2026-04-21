@@ -1148,6 +1148,33 @@ function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult =
   };
 }
 
+function spawnDeathKnightChampion(hpMult = 1, dmgMult = 1, speedMult = 1): EnemyRuntime {
+  const def = ENEMY_DATA.death_knight_champion;
+  const hp = Math.round(def.health * hpMult);
+  const finalDmg = Math.round(def.damage * dmgMult);
+  const finalSpd = def.moveSpeed * speedMult;
+  return {
+    id: enemyId(), type: "death_knight_champion", x: 0, z: -20,
+    hp, maxHp: hp,
+    damage: finalDmg, moveSpeed: finalSpd,
+    attackRange: def.attackRange,
+    attackInterval: def.attackInterval,
+    attackTimer: 2.0,
+    collisionRadius: def.collisionRadius,
+    xpReward: 0, scoreValue: 0,
+    dead: false, hitFlashTimer: 0,
+    scale: def.scale, color: def.color, emissive: def.emissive,
+    vx: 0, vz: 0, phasing: false, phaseTimer: 0,
+    specialTimer: 6.0,
+    specialWarning: false, specialWarnTimer: 0,
+    minionTimer: 8.0,
+    radialTimer: 5.0,
+    enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
+    affix: "none" as const, shieldHp: 0, affixPulseTimer: 0,
+  };
+}
+
 /**
  * Spawn a nemesis — a weaker, character-sized version of the trial champion
  * matching the player's class. Spawns at a random arena edge.
@@ -2366,7 +2393,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       }
 
       // Attack player (champions with custom AI handle damage themselves — skip generic melee)
-      const skipGenericMelee = e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "warrior_champion" || e.type === "necromancer_champion" || e.type === "bard_champion";
+      const skipGenericMelee = e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "warrior_champion" || e.type === "necromancer_champion" || e.type === "bard_champion" || e.type === "death_knight_champion";
       if (!skipGenericMelee && dist <= e.attackRange) {
         e.attackTimer -= delta;
         if (e.attackTimer <= 0) {
@@ -3147,7 +3174,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     // ── Champion AI (Trial of Champions) ──────────────────────────────────
     for (const e of g.enemies) {
       if (e.dead) continue;
-      const isChamp = e.type === "warrior_champion" || e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "necromancer_champion" || e.type === "bard_champion";
+      const isChamp = e.type === "warrior_champion" || e.type === "mage_champion" || e.type === "rogue_champion" || e.type === "necromancer_champion" || e.type === "bard_champion" || e.type === "death_knight_champion";
       if (!isChamp) continue;
 
       // ── Enrage phases at 75/50/25% HP ─────────────────────────────────
@@ -3474,6 +3501,79 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           audioManager.play("dash");
         }
 
+      } else if (e.type === "death_knight_champion") {
+        const cx = p.x - e.x, cz = p.z - e.z;
+        const clen = Math.sqrt(cx * cx + cz * cz) || 1;
+        if (cDist > e.attackRange * 0.85) {
+          const spd = (e.enragePhase >= 3 ? 4.0 : e.moveSpeed) * (1 + e.enragePhase * 0.1);
+          e.x += (cx / clen) * spd * delta;
+          e.z += (cz / clen) * spd * delta;
+          e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
+          e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
+        }
+        if (cDist <= e.attackRange && e.attackTimer <= 0) {
+          e.attackTimer = e.attackInterval;
+          const rawDmg = e.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
+          if (p.invTimer <= 0 && !p.dead && !p.isDashing) {
+            const effective = applyArmor(rawDmg, stats.armor + p.actionArmorBuff, stats.incomingDamageMult);
+            p.hp -= effective; spawnPlayerDmgPopup(p, effective);
+            p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+            handlePlayerDamageTakenProcs(p, stats, g);
+            if (p.hp <= 0) handlePlayerFatalDmg(p, g);
+          }
+        }
+        if (e.specialWarning) {
+          e.specialWarnTimer -= delta;
+          if (e.specialWarnTimer <= 0) {
+            e.specialWarning = false;
+            store.setBossSpecialWarn(false);
+            triggerShake(g, 0.65, 0.4);
+            triggerFreeze(g, 60);
+            const slamRadius = e.enragePhase >= 3 ? 10 : 7;
+            if (cDist <= slamRadius && p.invTimer <= 0 && !p.dead) {
+              const slamDmg = e.damage * 2.5;
+              const effective = applyArmor(slamDmg, stats.armor + p.actionArmorBuff, stats.incomingDamageMult, 100);
+              p.hp -= effective; spawnPlayerDmgPopup(p, effective);
+              p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+              handlePlayerDamageTakenProcs(p, stats, g);
+              if (p.hp <= 0) handlePlayerFatalDmg(p, g);
+            }
+          }
+        } else {
+          e.specialTimer -= delta;
+          if (e.specialTimer <= 0) {
+            e.specialTimer = e.enragePhase >= 3 ? 3.5 : e.enragePhase >= 2 ? 4.5 : 6.0;
+            e.specialWarning = true;
+            e.specialWarnTimer = 0.8;
+            audioManager.play("boss_special");
+            store.setBossSpecialWarn(true);
+          }
+        }
+        if (e.enragePhase >= 1) {
+          e.radialTimer -= delta;
+          if (e.radialTimer <= 0) {
+            e.radialTimer = e.enragePhase >= 3 ? 3.0 : e.enragePhase >= 2 ? 4.0 : 5.0;
+            const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
+            const lanceCount = e.enragePhase >= 3 ? 5 : 3;
+            for (let i = 0; i < lanceCount; i++) {
+              const a = baseAngle + (i - (lanceCount - 1) / 2) * 0.12;
+              g.enemyProjectiles.push({
+                id: eprojId(), x: e.x + Math.sin(a) * 3, z: e.z + Math.cos(a) * 3,
+                vx: Math.sin(a) * 12, vz: Math.cos(a) * 12,
+                damage: e.damage * 0.5, lifetime: 2.0, dead: false, style: "lance" as const,
+              });
+            }
+            audioManager.play("boss_special");
+          }
+        }
+        e.minionTimer -= delta;
+        if (e.enragePhase >= 1 && e.minionTimer <= 0) {
+          e.minionTimer = e.enragePhase >= 3 ? 6.0 : 8.0;
+          const count = e.enragePhase >= 3 ? 3 : 2;
+          for (let i = 0; i < count; i++) {
+            g.enemies.push(spawnEnemy(g.wave, g.difficultyHpMult, g.difficultyDmgMult, g.difficultySpeedMult));
+          }
+        }
       }
     }
 
@@ -4403,8 +4503,11 @@ export function GameScene({ onRestart }: GameSceneProps) {
     const trialMode = useGameStore.getState().trialMode;
     const diffTier = useGameStore.getState().difficultyTier;
     const diff = DIFFICULTY_DATA[diffTier];
+    const dkTrial = useGameStore.getState().trialDeathKnight;
     const initEnemies: EnemyRuntime[] = trialMode
-      ? [spawnChampion(cls, diff.enemyHpMult, diff.enemyDamageMult, diff.enemySpeedMult)]
+      ? [dkTrial
+          ? spawnDeathKnightChampion(diff.enemyHpMult, diff.enemyDamageMult, diff.enemySpeedMult)
+          : spawnChampion(cls, diff.enemyHpMult, diff.enemyDamageMult, diff.enemySpeedMult)]
       : [];
     const gs0: GameState = {
       player: makePlayer(startHp),
@@ -4488,10 +4591,13 @@ export function GameScene({ onRestart }: GameSceneProps) {
           useGameStore.getState().setPhase("levelup");
         };
         const resetTrialMode = useGameStore.getState().trialMode;
+        const resetDkTrial = useGameStore.getState().trialDeathKnight;
         const resetDiffTier = useGameStore.getState().difficultyTier;
         const resetDiff = DIFFICULTY_DATA[resetDiffTier];
         const resetInitEnemies: EnemyRuntime[] = resetTrialMode
-          ? [spawnChampion(cls, resetDiff.enemyHpMult, resetDiff.enemyDamageMult, resetDiff.enemySpeedMult)]
+          ? [resetDkTrial
+              ? spawnDeathKnightChampion(resetDiff.enemyHpMult, resetDiff.enemyDamageMult, resetDiff.enemySpeedMult)
+              : spawnChampion(cls, resetDiff.enemyHpMult, resetDiff.enemyDamageMult, resetDiff.enemySpeedMult)]
           : [];
         gsRef.current = {
           player: makePlayer(startHp),

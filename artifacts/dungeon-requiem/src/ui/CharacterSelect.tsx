@@ -85,6 +85,7 @@ export function CharacterSelect() {
       setSelectedClass(c);
       setDifficultyTier(difficulty);
       setTrialMode(trialMode);
+      useGameStore.getState().trialDeathKnight = false;
       setPhase("playing");
     } else {
       setCls(c);
@@ -119,6 +120,27 @@ export function CharacterSelect() {
           {trialMode && (
             <div style={S.trialBanner}>
               🏆 TRIAL OF CHAMPIONS — Defeat the Champion to claim victory
+              <button
+                style={{
+                  display: "block", margin: "8px auto 0", padding: "6px 16px",
+                  background: "rgba(20,40,20,0.8)", border: "1px solid rgba(68,255,136,0.5)",
+                  borderRadius: 6, color: "#44ff88", fontSize: 10, fontWeight: 900,
+                  letterSpacing: 3, fontFamily: "monospace", cursor: "pointer",
+                }}
+                onClick={() => {
+                  clickSfx();
+                  const store = useGameStore.getState();
+                  store.resetGame();
+                  store.trialDeathKnight = true;
+                  setSelectedRace(race);
+                  setSelectedClass(cls);
+                  setDifficultyTier(difficulty);
+                  setTrialMode(true);
+                  setPhase("playing");
+                }}
+              >
+                ⚔ DEATH KNIGHT TRIAL
+              </button>
             </div>
           )}
           <div style={S.title}>

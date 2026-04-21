@@ -9,7 +9,7 @@
  *   orange= 50× (boss)
  */
 
-export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss" | "xp_goblin" | "warrior_champion" | "mage_champion" | "rogue_champion" | "necromancer_champion" | "bard_champion";
+export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss" | "xp_goblin" | "warrior_champion" | "mage_champion" | "rogue_champion" | "necromancer_champion" | "bard_champion" | "death_knight_champion";
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
 
 export interface EnemyDef {
@@ -214,7 +214,22 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     emissive: "#4a3008",
     scale: 1.8,
   },
-  // FUTURE: enemy Bard variant ready for main dungeon enemy pool inclusion
+  death_knight_champion: {
+    type: "death_knight_champion",
+    displayName: "The Death Knight",
+    health: 3000,
+    damage: 45,
+    moveSpeed: 2.5,
+    xpReward: 0,
+    crystalTier: "orange",
+    attackRange: 3.0,
+    attackInterval: 1.4,
+    collisionRadius: 2.0,
+    scoreValue: 0,
+    color: "#1a1a2a",
+    emissive: "#0a0a18",
+    scale: 2.0,
+  },
 };
 
 export const SPAWN_TABLE: Array<[EnemyType, number][]> = [

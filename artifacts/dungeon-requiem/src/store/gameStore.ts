@@ -128,6 +128,7 @@ export interface GameUIState {
   difficultyTier: DifficultyTier;
   trialMode: boolean;
   labyrinthHardMode: boolean;
+  trialDeathKnight: boolean;
 
   // Soul shards (per-run counter — persistent total lives in metaStore)
   shardsThisRun: number;
@@ -260,6 +261,7 @@ const initialState = {
   difficultyTier: "normal" as DifficultyTier,
   trialMode: false,
   labyrinthHardMode: false,
+  trialDeathKnight: false,
   shardsThisRun: 0,
   guaranteedShards: 0,
   bossHP: 0,
