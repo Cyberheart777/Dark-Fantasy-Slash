@@ -53,7 +53,9 @@ export type EnemyKind =
   | "rival_mage"
   | "rival_rogue"
   | "rival_necromancer"
-  | "rival_bard";
+  | "rival_bard"
+  // Layer 3 final boss — replaces the Warden as the deepest encounter.
+  | "death_knight";
 
 /** Rival-champion kind predicate. Used to exclude rivals from the
  *  standard-enemy damage multiplier + any other "rivals are special"
@@ -1807,6 +1809,7 @@ export function enemyCollisionRadius(kind: EnemyKind): number {
     case "mimic": return MIMIC_COLLISION_RADIUS;
     case "shadow_stalker": return STALKER_COLLISION_RADIUS;
     case "warden": return 1.8;
+    case "death_knight": return 2.0;
     case "mini_boss": return 1.4;
     case "heavy": return HEAVY_COLLISION_RADIUS;
     case "rival_warrior": return RIVAL_WARRIOR_COLLISION_RADIUS;

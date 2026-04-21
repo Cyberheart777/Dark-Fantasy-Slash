@@ -1925,7 +1925,7 @@ function CombatEnemyLoop({
                 if (labStats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + labStats.onKillHeal);
                 shared.killCount++;
                 audioManager.play("enemy_death");
-                spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" ? "#ff40ff" : "#ff3030");
+                spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
                 spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
                 // Bonus loot roll — mirrors the treasure-chest payout.
                 const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
@@ -1956,6 +1956,12 @@ function CombatEnemyLoop({
                     shared.layerComplete = true;
                     shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
                   }
+                }
+                if (e.kind === "death_knight") {
+                  shared.layerComplete = true;
+                  clearDeathKnightState(e.id);
+                  audioManager.play("wave_clear");
+                  shared.layerBanner = { text: "DEATH KNIGHT DESTROYED", sub: "THE ABYSS IS CONQUERED", color: "#44ffaa", at: shared.zone.elapsedSec };
                 }
                 if (e.kind === "mini_boss") {
                   shared.miniBossAlive = false;
@@ -2043,6 +2049,19 @@ function CombatEnemyLoop({
       }
     }
 
+    // Sync the HUD boss-bar snapshot from the live death knight.
+    if (shared.deathKnightHud && shared.deathKnightHud.alive) {
+      const liveDK = enemies.find((e) => e.kind === "death_knight" && e.state !== "dead");
+      if (liveDK) {
+        shared.deathKnightHud.hp = liveDK.hp;
+        shared.deathKnightHud.specialWarn = getDeathKnightState(liveDK.id).slamWarning > 0;
+      } else {
+        shared.deathKnightHud.alive = false;
+        shared.deathKnightHud.hp = 0;
+        shared.deathKnightHud.specialWarn = false;
+      }
+    }
+
     // 3a) Tick wall-traps (warn → fire → cooldown state machines).
     //     On the warn→fire transition a projectile is spawned into the
     //     shared pool, which is then moved/collided by the projectile
@@ -2077,7 +2096,7 @@ function CombatEnemyLoop({
         if (labStats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + labStats.onKillHeal);
         shared.killCount++;
         audioManager.play("enemy_death");
-        spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" ? "#ff40ff" : "#ff3030");
+        spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
         spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
         const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
         if (loot.rolled) {
@@ -2108,6 +2127,12 @@ function CombatEnemyLoop({
             shared.layerComplete = true;
             shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
           }
+        }
+        if (e.kind === "death_knight") {
+          shared.layerComplete = true;
+          clearDeathKnightState(e.id);
+          audioManager.play("wave_clear");
+          shared.layerBanner = { text: "DEATH KNIGHT DESTROYED", sub: "THE ABYSS IS CONQUERED", color: "#44ffaa", at: shared.zone.elapsedSec };
         }
         if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue" || e.kind === "rival_necromancer" || e.kind === "rival_bard") {
           onRivalChampionKill(e, shared, gearDropsRef.current);
@@ -2939,6 +2964,7 @@ function LabyrinthHUD({
     warrior: null as LabSharedState["warrior"],
     equipped: { weapon: null, armor: null, trinket: null } as LabSharedState["equipped"],
     wardenHud: null as LabSharedState["wardenHud"],
+    deathKnightHud: null as LabSharedState["deathKnightHud"],
     hasKey: false,
     nearLockedVault: false,
     rivalAnnounce: null as LabSharedState["rivalAnnounce"],
@@ -3001,6 +3027,7 @@ function LabyrinthHUD({
         warrior: s.warrior,
         equipped: s.equipped,
         wardenHud: s.wardenHud,
+        deathKnightHud: s.deathKnightHud,
         hasKey: s.hasKey,
         nearLockedVault: s.nearLockedVault,
         rivalAnnounce: s.rivalAnnounce,
@@ -3494,6 +3521,31 @@ function LabyrinthHUD({
           <div style={styles.bossBarFooter}>
             <span style={{ color: "#aaa", fontSize: 11 }}>
               {Math.max(0, Math.ceil(display.wardenHud.hp)).toLocaleString()} / {display.wardenHud.maxHp.toLocaleString()}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Death Knight HP bar — same pattern as the Warden bar above. */}
+      {display.deathKnightHud && display.deathKnightHud.alive && display.deathKnightHud.maxHp > 0 && (
+        <div style={styles.bossBar}>
+          <div style={styles.bossBarHeader}>
+            <span style={styles.bossBarName}>{display.deathKnightHud.name}</span>
+            {display.deathKnightHud.specialWarn && (
+              <span style={styles.bossWarn}>GROUND SLAM INCOMING</span>
+            )}
+          </div>
+          <div style={styles.bossBarTrack}>
+            <div
+              style={{
+                ...styles.bossBarFill,
+                width: `${Math.max(0, (display.deathKnightHud.hp / display.deathKnightHud.maxHp)) * 100}%`,
+              }}
+            />
+          </div>
+          <div style={styles.bossBarFooter}>
+            <span style={{ color: "#aaa", fontSize: 11 }}>
+              {Math.max(0, Math.ceil(display.deathKnightHud.hp)).toLocaleString()} / {display.deathKnightHud.maxHp.toLocaleString()}
             </span>
           </div>
         </div>

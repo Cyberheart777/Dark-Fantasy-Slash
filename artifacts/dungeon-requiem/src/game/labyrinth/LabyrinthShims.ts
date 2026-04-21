@@ -206,6 +206,7 @@ export function enemyTypeForKind(kind: LabEnemy["kind"]): string {
     case "mimic": return "scuttler";
     case "shadow_stalker": return "wraith";
     case "warden": return "boss";
+    case "death_knight": return "boss";
     case "mini_boss": return "boss";
     // Heavy (ex-champion) — keeps the elite silhouette, but
     // demoted to a standard heavy patrol per item 9. Scale/palette
@@ -239,6 +240,8 @@ function visualsForKind(kind: LabEnemy["kind"]): {
       return { scale: 0.9, color: "#101018", emissive: "#3a2a5a" };
     case "warden":
       return { scale: 1.8, color: "#2a0a2a", emissive: "#a020ff" };
+    case "death_knight":
+      return { scale: 1.8, color: "#1a1a2a", emissive: "#0a0a18" };
     case "mini_boss":
       return { scale: 1.5, color: "#3a0a20", emissive: "#ff4488" };
     // Heavy — keeps the original orange/red champion palette but
@@ -263,7 +266,7 @@ export function createEnemyShim(labEnemy: LabEnemy, layer: number = 1): EnemyRun
   // Roll affix on Layer 2+ enemies (20% chance, non-rival only)
   let affix: "none" | "shielded" | "vampiric" | "berserker" = "none";
   let shieldHp = 0;
-  if (layer >= 2 && !labEnemy.kind.startsWith("rival") && labEnemy.kind !== "warden" && Math.random() < 0.20) {
+  if (layer >= 2 && !labEnemy.kind.startsWith("rival") && labEnemy.kind !== "warden" && labEnemy.kind !== "death_knight" && Math.random() < 0.20) {
     const AFFIX_POOL: Array<"shielded" | "vampiric" | "berserker"> = ["shielded", "vampiric", "berserker"];
     affix = AFFIX_POOL[Math.floor(Math.random() * AFFIX_POOL.length)];
     if (affix === "shielded") shieldHp = 1;
