@@ -64,8 +64,17 @@ const MINION_COUNT_P3 = 3;
 // Dark Aura (Phase 3)
 const AURA_TICK_SEC = 2.0;
 const AURA_RADIUS = 10;
-const AURA_SPEED_BOOST = 0.15;          // 15% speed boost
+const AURA_SPEED_BOOST = 0.15;
 const AURA_BOOST_DURATION = 3.0;
+
+// Death Chain — 3 slow projectiles that pull the player to the DK on hit
+const CHAIN_COOLDOWN = 8.0;
+const CHAIN_COOLDOWN_P3 = 5.0;
+const CHAIN_COUNT = 3;
+const CHAIN_SPEED = 6;
+const CHAIN_SPREAD = 0.25;
+const CHAIN_LIFETIME = 2.0;
+const CHAIN_PULL_DIST = 4.0;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +90,8 @@ export interface DeathKnightState {
   minionCooldown: number;
   /** Seconds until next dark aura tick (phase 3). */
   auraCooldown: number;
+  /** Seconds until next death chain pull (all phases). */
+  chainCooldown: number;
 }
 
 const dkStates = new Map<string, DeathKnightState>();
@@ -95,6 +106,7 @@ export function getDeathKnightState(id: string): DeathKnightState {
       lanceCooldown: LANCE_COOLDOWN_P2,
       minionCooldown: MINION_COOLDOWN_P2,
       auraCooldown: AURA_TICK_SEC,
+      chainCooldown: CHAIN_COOLDOWN,
     };
     dkStates.set(id, s);
   }
@@ -265,6 +277,35 @@ export function updateDeathKnight(
           void AURA_BOOST_DURATION; // documented for tuning reference
         }
       }
+    }
+  }
+
+  // ── Death Chain Pull (all phases) ─────────────────────────────────────────
+  state.chainCooldown -= delta;
+  if (state.chainCooldown <= 0 && dist > DK_ATTACK_RANGE * 1.5) {
+    const cd = state.phase === 3 ? CHAIN_COOLDOWN_P3 : CHAIN_COOLDOWN;
+    state.chainCooldown = cd;
+    const baseAngle = Math.atan2(dx, dz);
+    for (let i = 0; i < CHAIN_COUNT; i++) {
+      const a = baseAngle + (i - (CHAIN_COUNT - 1) / 2) * CHAIN_SPREAD;
+      spawnLabProjectile(projectiles, {
+        owner: "enemy",
+        x: dk.x,
+        z: dk.z,
+        vx: Math.sin(a) * CHAIN_SPEED,
+        vz: Math.cos(a) * CHAIN_SPEED,
+        damage: 0,
+        radius: 0.5,
+        lifetime: CHAIN_LIFETIME,
+        piercing: false,
+        color: "#88ff44",
+        glowColor: "#44aa22",
+        style: "orb",
+        pullToSource: true,
+        sourceX: dk.x,
+        sourceZ: dk.z,
+        pullDist: CHAIN_PULL_DIST,
+      });
     }
   }
 }

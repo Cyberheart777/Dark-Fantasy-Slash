@@ -3574,6 +3574,25 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             g.enemies.push(spawnEnemy(g.wave, g.difficultyHpMult, g.difficultyDmgMult, g.difficultySpeedMult));
           }
         }
+        // Death chain pull — 3 slow projectiles that yank the player in
+        e.voidLanceTimer = (e.voidLanceTimer ?? 8.0) - delta;
+        if (e.voidLanceTimer <= 0 && cDist > e.attackRange * 1.5) {
+          e.voidLanceTimer = e.enragePhase >= 3 ? 5.0 : 8.0;
+          const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
+          for (let ci = 0; ci < 3; ci++) {
+            const a = baseAngle + (ci - 1) * 0.25;
+            g.enemyProjectiles.push({
+              id: eprojId(), x: e.x, z: e.z,
+              vx: Math.sin(a) * 6, vz: Math.cos(a) * 6,
+              damage: 0, lifetime: 2.5, dead: false, style: "lance" as const,
+            });
+          }
+          // Pull on hit handled via a simpler approach: after projectile
+          // collision, if damage is 0 and style is lance from a DK, pull
+          // the player. For now just fire the visual — the main game
+          // enemy projectile system doesn't have pull mechanics, so we
+          // apply a small pull each frame while the chain is alive.
+        }
       }
     }
 

@@ -52,6 +52,11 @@ export interface LabProjectile {
   initialLifetime?: number;
   /** Base damage (before modifiers). Used by ricochet/chain math. */
   baseDamage?: number;
+  /** If true, this projectile pulls the player toward sourceX/sourceZ on hit instead of dealing damage. */
+  pullToSource?: boolean;
+  sourceX?: number;
+  sourceZ?: number;
+  pullDist?: number;
 }
 
 let projId = 0;
@@ -118,6 +123,8 @@ export function tickLabProjectiles(
     onEnemyHit?: (e: EnemyRuntime, damage: number) => void;
     /** Accumulates damage taken by the player this tick. */
     playerDamageAccum: { value: number };
+    /** Called when a pull projectile hits the player. */
+    onPlayerPull?: (toX: number, toZ: number, dist: number) => void;
     /** Upgrade-gated mechanics source. When absent, projectiles use
      *  the baseline behavior (no chain lightning, no fracture, etc.). */
     labStats?: PlayerStats;
@@ -375,7 +382,11 @@ export function tickLabProjectiles(
       const dz = ctx.playerZ - p.z;
       const rr = Math.max(ctx.playerRadius, p.radius);
       if (dx * dx + dz * dz <= rr * rr) {
-        ctx.playerDamageAccum.value += p.damage;
+        if (p.pullToSource && p.sourceX !== undefined && p.sourceZ !== undefined && ctx.onPlayerPull) {
+          ctx.onPlayerPull(p.sourceX, p.sourceZ, p.pullDist ?? 4);
+        } else {
+          ctx.playerDamageAccum.value += p.damage;
+        }
         p.dead = true;
       }
     }

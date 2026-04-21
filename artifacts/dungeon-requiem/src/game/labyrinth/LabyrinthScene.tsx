@@ -2082,6 +2082,15 @@ function CombatEnemyLoop({
       wallThickness: LABYRINTH_CONFIG.WALL_THICKNESS,
       playerDamageAccum: dmgAccum,
       labStats,
+      onPlayerPull: (toX, toZ, pullDist) => {
+        const pdx = toX - p.x, pdz = toZ - p.z;
+        const pd = Math.sqrt(pdx * pdx + pdz * pdz);
+        if (pd > pullDist) {
+          const move = pd - pullDist;
+          p.x += (pdx / pd) * move;
+          p.z += (pdz / pd) * move;
+        }
+      },
       onEnemyHit: (e, dmg) => {
         useGameStore.getState().addDamagePopup({
           id: `dmg_${e.id}_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
