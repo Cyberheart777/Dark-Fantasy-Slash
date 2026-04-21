@@ -1,17 +1,10 @@
 /**
  * LabyrinthProjectile3D.tsx
  *
- * Renders each LabProjectile. "orb" / "dagger" forward to the main
- * game's Projectile3D component (zero edits). "crescent" (the rival
- * warrior's arc slash ported from Trial of Champions) uses a
- * labyrinth-local renderer because the main-game Projectile3D
- * doesn't handle that style — only EnemyProjectile3D inside
- * GameScene.tsx does, and that component isn't exported.
- *
- * The crescent geometry + colours here mirror the main-game
- * warrior_champion arc slash visual exactly (GameScene.tsx:3060-3082,
- * read-only reference) so a labyrinth arc slash reads identically
- * to a Trial of Champions one.
+ * Renders each LabProjectile. Player projectiles forward to the main
+ * game's Projectile3D. Enemy projectiles render as simple glowing
+ * spheres (no pointLights) for performance. Crescents use a local
+ * renderer without pointLight.
  */
 
 import { useRef } from "react";
@@ -27,30 +20,42 @@ export function LabyrinthProjectiles3D({ projectiles }: { projectiles: LabProjec
       {projectiles.map((p) =>
         p.style === "crescent"
           ? <CrescentProjectile3D key={p.id} proj={p} />
-          : <Projectile3D key={p.id} proj={p as unknown as Projectile} />
+          : p.owner === "enemy"
+            ? <EnemyBall3D key={p.id} proj={p} />
+            : <Projectile3D key={p.id} proj={p as unknown as Projectile} />
       )}
     </>
   );
 }
 
-/** Arc-slash crescent. Port of the visual at GameScene.tsx:3060-3082
- *  — partial torus + glow shell + bright inner edge + point light.
- *  Flies through the air toward the player along its velocity
- *  vector; collision lives in tickLabProjectiles. */
+function EnemyBall3D({ proj }: { proj: LabProjectile }) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame(() => {
+    if (!ref.current) return;
+    ref.current.position.set(proj.x, 0.8, proj.z);
+  });
+  return (
+    <mesh ref={ref}>
+      <sphereGeometry args={[0.25, 6, 4]} />
+      <meshStandardMaterial
+        color={proj.color || "#ff4444"}
+        emissive={proj.glowColor || "#cc2222"}
+        emissiveIntensity={3}
+      />
+    </mesh>
+  );
+}
+
 function CrescentProjectile3D({ proj }: { proj: LabProjectile }) {
   const ref = useRef<THREE.Group>(null);
   useFrame(() => {
     if (!ref.current) return;
-    // Y=1.4 matches main-game crescent fly-height so projectiles
-    // sit at chest level — readable from the top-down camera.
     ref.current.position.set(proj.x, 1.4, proj.z);
-    // Face travel direction + slight forward tilt.
     ref.current.rotation.y = Math.atan2(proj.vx, proj.vz);
     ref.current.rotation.x = -0.3;
   });
   return (
     <group ref={ref}>
-      {/* Core crescent — partial torus (bright inner edge) */}
       <mesh rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[1.3, 0.18, 8, 32, Math.PI * 0.75]} />
         <meshStandardMaterial
@@ -61,7 +66,6 @@ function CrescentProjectile3D({ proj }: { proj: LabProjectile }) {
           metalness={0.9}
         />
       </mesh>
-      {/* Outer glow shell — larger, softer */}
       <mesh rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[1.3, 0.35, 6, 32, Math.PI * 0.75]} />
         <meshStandardMaterial
@@ -73,7 +77,6 @@ function CrescentProjectile3D({ proj }: { proj: LabProjectile }) {
           side={THREE.BackSide}
         />
       </mesh>
-      {/* Inner bright edge — thinner, hotter core */}
       <mesh rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[1.3, 0.06, 6, 32, Math.PI * 0.75]} />
         <meshStandardMaterial
@@ -82,7 +85,6 @@ function CrescentProjectile3D({ proj }: { proj: LabProjectile }) {
           emissiveIntensity={12}
         />
       </mesh>
-      <pointLight color="#ff4400" intensity={6} distance={10} decay={2} />
     </group>
   );
 }
