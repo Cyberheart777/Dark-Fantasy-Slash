@@ -28,7 +28,7 @@ import { spawnLabProjectile, type LabProjectile } from "./LabyrinthProjectile";
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
-export const DEATH_KNIGHT_HP = 1500;
+export const DEATH_KNIGHT_HP = 3000;
 const DK_SPEED = 2.5;
 const DK_SPEED_ENRAGE = 4.0;
 const DK_ATTACK_RANGE = 3.0;

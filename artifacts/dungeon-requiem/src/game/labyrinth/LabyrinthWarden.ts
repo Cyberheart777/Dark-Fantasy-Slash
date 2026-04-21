@@ -33,7 +33,7 @@ void _unusedGuardianSpawn;
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
-export const WARDEN_HP = 1200;
+export const WARDEN_HP = 2000;
 const WARDEN_SPEED = 3.5;
 const WARDEN_SPEED_ENRAGE = 5.0;
 const WARDEN_ATTACK_RANGE = 2.6;
