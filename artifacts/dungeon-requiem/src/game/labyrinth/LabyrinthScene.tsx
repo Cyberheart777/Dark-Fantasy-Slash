@@ -1420,6 +1420,8 @@ function MovementLoop({
     const input = inputRef.current;
     if (!input) return;
     if (sharedRef.current.defeated || sharedRef.current.extracted || sharedRef.current.victory) return;
+    const currentPhase = useGameStore.getState().phase;
+    if (currentPhase === "levelup" || currentPhase === "paused") return;
     const s = input.state;
     const p = playerRef.current;
     const dashState = labDashRef.current;
@@ -1733,7 +1735,8 @@ function CombatEnemyLoop({
       evaluateLabRunAchievements(shared, playerRef.current, gearStateRef.current, charClass);
     }
     if (shared.defeated || shared.extracted || shared.victory) return;
-    if (useGameStore.getState().phase === "levelup") return;
+    const currentPhase = useGameStore.getState().phase;
+    if (currentPhase === "levelup" || currentPhase === "paused") return;
     const input = inputRef.current;
     if (!input) return;
 
@@ -1895,8 +1898,12 @@ function CombatEnemyLoop({
                 id: `dmg_${e.id}_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
                 x: e.x, z: e.z, value: dmg, isCrit, isPlayer: false, spawnTime: performance.now(),
               });
+              if (labStats.lifesteal > 0) {
+                p.hp = Math.min(p.maxHp, p.hp + Math.round(dmg * labStats.lifesteal));
+              }
               registerHit(warriorStateRef.current);
               if (killed) {
+                if (labStats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + labStats.onKillHeal);
                 shared.killCount++;
                 audioManager.play("enemy_death");
                 spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" ? "#ff40ff" : "#ff3030");
@@ -2031,8 +2038,12 @@ function CombatEnemyLoop({
           id: `dmg_${e.id}_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
           x: e.x, z: e.z, value: dmg, isCrit: false, isPlayer: false, spawnTime: performance.now(),
         });
+        if (labStats.lifesteal > 0) {
+          p.hp = Math.min(p.maxHp, p.hp + Math.round(dmg * labStats.lifesteal));
+        }
       },
       onEnemyKilled: (e) => {
+        if (labStats.onKillHeal > 0) p.hp = Math.min(p.maxHp, p.hp + labStats.onKillHeal);
         shared.killCount++;
         audioManager.play("enemy_death");
         spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" ? "#ff40ff" : "#ff3030");
@@ -2535,6 +2546,8 @@ function ZoneTickLoop({
   useFrame((_, delta) => {
     const shared = sharedRef.current;
     if (shared.defeated || shared.extracted || shared.victory) return;
+    const currentPhase = useGameStore.getState().phase;
+    if (currentPhase === "levelup" || currentPhase === "paused") return;
 
     const hardMode = useGameStore.getState().labyrinthHardMode;
     const realElapsed = (performance.now() - runStartMs.current) / 1000;
@@ -2951,9 +2964,13 @@ function LabyrinthHUD({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "Escape") {
-        // Reset to main pause view on close so reopening starts fresh.
         setEsc((v) => {
-          if (v) setPauseView("main");
+          if (v) {
+            setPauseView("main");
+            useGameStore.getState().setPhase("labyrinth");
+          } else {
+            useGameStore.getState().setPhase("paused");
+          }
           return !v;
         });
       }
