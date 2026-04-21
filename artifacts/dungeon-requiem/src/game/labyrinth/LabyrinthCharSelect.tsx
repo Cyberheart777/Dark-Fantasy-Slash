@@ -1,16 +1,9 @@
 /**
  * LabyrinthCharSelect.tsx
  *
- * Labyrinth-specific character picker. Two-step: race → class. Differs
- * from the main game's `CharacterSelect`:
- *   - Difficulty is locked to nightmare (no picker shown).
- *   - Trial mode is off.
- *   - Only Warrior is selectable for now; Mage + Rogue show as "coming
- *     soon" but remain present so adding them later is a one-line
- *     unlock (set isClassAvailable('mage') → true).
- *
- * On confirm, writes selectedRace + selectedClass + difficultyTier
- * ("nightmare") + trialMode(false) into the game store and advances
+ * Labyrinth-specific character picker. Three-step: race -> class -> difficulty.
+ * On confirm, writes selectedRace + selectedClass + difficultyTier +
+ * labyrinthHardMode + trialMode(false) into the game store and advances
  * to the `labyrinth` phase.
  */
 
@@ -25,9 +18,6 @@ const clickSfx = () => audioManager.play("menu_click");
 
 const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue", "necromancer", "bard"];
 
-/** Which classes are playable in the labyrinth today. All three
- *  unlocked as of step 4 commit G — mage + rogue get ranged
- *  projectile attacks via LabyrinthRangedAttack.ts. */
 const LABYRINTH_CLASS_AVAILABLE: Record<CharacterClass, boolean> = {
   warrior: true,
   mage: true,
@@ -40,6 +30,8 @@ const LABYRINTH_CLASS_COMING_SOON_HINT = "Playable in a future labyrinth update.
 
 const BG_URL = `${import.meta.env.BASE_URL}images/character-menu-bg.png`;
 
+type Step = "race" | "class" | "difficulty";
+
 export function LabyrinthCharSelect() {
   const {
     setPhase,
@@ -47,17 +39,17 @@ export function LabyrinthCharSelect() {
     setSelectedRace,
     setDifficultyTier,
     setTrialMode,
+    setLabyrinthHardMode,
     selectedClass,
   } = useGameStore();
   const { unlockedRaces } = useMetaStore();
 
-  const [step, setStep] = useState<"race" | "class">("race");
+  const [step, setStep] = useState<Step>("race");
   const [race, setRace] = useState<RaceType>("human");
-  // If the currently-selected class isn't available in the labyrinth,
-  // bump the selection to warrior so the Begin button works immediately.
   const [cls, setCls] = useState<CharacterClass>(
     LABYRINTH_CLASS_AVAILABLE[selectedClass] ? selectedClass : "warrior",
   );
+  const [hardMode, setHardMode] = useState(false);
 
   const isRaceUnlocked = (r: RaceType) => unlockedRaces.includes(r);
 
@@ -65,9 +57,6 @@ export function LabyrinthCharSelect() {
     if (!isRaceUnlocked(r)) return;
     clickSfx();
     setRace(r);
-    // Auto-advance on tap. Previously this only highlighted the card
-    // and required the user to scroll to a "NEXT" button below the
-    // fold on mobile — which looked like the screen was stuck.
     setStep("class");
   };
 
@@ -75,10 +64,12 @@ export function LabyrinthCharSelect() {
     if (!LABYRINTH_CLASS_AVAILABLE[c]) return;
     clickSfx();
     setCls(c);
-    // Class tap stages the selection; the sticky footer's "DESCEND"
-    // button confirms. This is the one place where we keep two-tap
-    // semantics so the user can read the class stats card before
-    // committing to a run.
+    setStep("difficulty");
+  };
+
+  const onPickDifficulty = (hard: boolean) => {
+    clickSfx();
+    setHardMode(hard);
   };
 
   const onBeginRun = () => {
@@ -88,24 +79,36 @@ export function LabyrinthCharSelect() {
     setSelectedClass(cls);
     setDifficultyTier("nightmare");
     setTrialMode(false);
+    setLabyrinthHardMode(hardMode);
     setPhase("labyrinth");
   };
 
   const onBack = () => {
     clickSfx();
-    if (step === "class") setStep("race");
+    if (step === "difficulty") setStep("class");
+    else if (step === "class") setStep("race");
     else setPhase("menu");
   };
+
+  const stepTitle =
+    step === "race" ? "CHOOSE YOUR BLOOD" :
+    step === "class" ? "CHOOSE YOUR PATH" :
+    "CHOOSE YOUR FATE";
 
   return (
     <div style={{ ...styles.root, backgroundImage: `url(${BG_URL})` }}>
       <div style={styles.vignette} />
       <div style={styles.panel}>
         <div style={styles.header}>
-          <div style={styles.eyebrow}>THE LABYRINTH · NIGHTMARE</div>
-          <div style={styles.title}>
-            {step === "race" ? "CHOOSE YOUR BLOOD" : "CHOOSE YOUR PATH"}
+          <div style={{
+            ...styles.eyebrow,
+            color: hardMode && step === "difficulty"
+              ? "rgba(255,140,60,0.95)"
+              : "rgba(220,120,255,0.85)",
+          }}>
+            THE LABYRINTH{hardMode && step === "difficulty" ? " · HARD MODE" : ""}
           </div>
+          <div style={styles.title}>{stepTitle}</div>
           <div style={styles.steps}>
             <span style={step === "race" ? styles.stepActive : styles.stepDim}>
               1 · RACE
@@ -113,6 +116,10 @@ export function LabyrinthCharSelect() {
             <span style={styles.stepSep}>›</span>
             <span style={step === "class" ? styles.stepActive : styles.stepDim}>
               2 · CLASS
+            </span>
+            <span style={styles.stepSep}>›</span>
+            <span style={step === "difficulty" ? styles.stepActive : styles.stepDim}>
+              3 · DIFFICULTY
             </span>
           </div>
         </div>
@@ -185,21 +192,115 @@ export function LabyrinthCharSelect() {
               })}
             </div>
           )}
+
+          {step === "difficulty" && (
+            <div style={{ ...styles.grid, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+              {/* Standard card */}
+              <button
+                onClick={() => onPickDifficulty(false)}
+                style={{
+                  ...styles.card,
+                  ...(!hardMode ? styles.cardActive : {}),
+                  padding: 24,
+                }}
+              >
+                <div style={{ fontSize: 40, marginBottom: 10, textShadow: "0 0 14px rgba(160,100,255,0.5)" }}>
+                  ☽
+                </div>
+                <div style={{ ...styles.cardName, fontSize: 18, letterSpacing: 4 }}>STANDARD</div>
+                <div style={{ ...styles.cardTitle, marginTop: 4 }}>The Labyrinth Awaits</div>
+                <div style={{ ...styles.cardDesc, marginTop: 14, lineHeight: 1.5 }}>
+                  Face the labyrinth as intended. Standard enemy power and rewards.
+                </div>
+                <div style={{
+                  marginTop: 16, padding: "8px 0",
+                  borderTop: "1px solid rgba(160,80,255,0.2)",
+                  fontSize: 10, letterSpacing: 1, fontFamily: "monospace",
+                  color: "rgba(200,180,230,0.65)",
+                }}>
+                  STANDARD ENEMIES · STANDARD REWARDS
+                </div>
+              </button>
+
+              {/* Hard mode card */}
+              <button
+                onClick={() => onPickDifficulty(true)}
+                style={{
+                  ...styles.card,
+                  ...(hardMode ? {
+                    background: "rgba(80,20,10,0.7)",
+                    borderColor: "rgba(255,140,60,0.8)",
+                    boxShadow: "0 0 24px rgba(255,80,20,0.4), inset 0 0 30px rgba(255,60,20,0.08)",
+                    transform: "translateY(-2px)",
+                  } : {}),
+                  padding: 24,
+                }}
+              >
+                <div style={{
+                  fontSize: 40, marginBottom: 10,
+                  textShadow: "0 0 18px rgba(255,80,20,0.7)",
+                  animation: hardMode ? "none" : undefined,
+                }}>
+                  🔥
+                </div>
+                <div style={{
+                  ...styles.cardName, fontSize: 18, letterSpacing: 4,
+                  color: hardMode ? "#ffaa44" : "#ddd",
+                }}>
+                  HARD MODE
+                </div>
+                <div style={{
+                  ...styles.cardTitle, marginTop: 4,
+                  color: hardMode ? "rgba(255,180,100,0.85)" : "rgba(220,180,255,0.75)",
+                }}>
+                  The Abyss Hungers
+                </div>
+                <div style={{ ...styles.cardDesc, marginTop: 14, lineHeight: 1.5 }}>
+                  Enemies hit harder, move faster, and have double HP. But the spoils are legendary.
+                </div>
+                <div style={{
+                  marginTop: 14, padding: "8px 12px",
+                  background: "rgba(255,60,20,0.08)",
+                  borderRadius: 6,
+                  border: "1px solid rgba(255,100,40,0.2)",
+                }}>
+                  <div style={{
+                    fontSize: 10, letterSpacing: 1, fontFamily: "monospace",
+                    color: "rgba(255,160,100,0.9)", fontWeight: 900,
+                    lineHeight: 1.8,
+                  }}>
+                    +100% ENEMY HP · +25% DAMAGE · +10% SPEED
+                  </div>
+                </div>
+                <div style={{
+                  marginTop: 10, padding: "8px 12px",
+                  background: "rgba(255,200,60,0.06)",
+                  borderRadius: 6,
+                  border: "1px solid rgba(255,200,60,0.15)",
+                }}>
+                  <div style={{
+                    fontSize: 10, letterSpacing: 1, fontFamily: "monospace",
+                    color: "rgba(255,220,120,0.9)", fontWeight: 900,
+                    lineHeight: 1.8,
+                  }}>
+                    2x CRYSTALS · 1.5x DROPS · 2-4x XP
+                  </div>
+                </div>
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Sticky footer so the primary CTA and back button are always
-            visible on mobile, even when the card grid overflows. */}
         <div style={styles.footer}>
           <button style={styles.backBtn} onClick={onBack}>
             ← {step === "race" ? "MAIN MENU" : "BACK"}
           </button>
-          {step === "class" && (
+          {step === "difficulty" && (
             <button
-              style={LABYRINTH_CLASS_AVAILABLE[cls] ? styles.nextBtn : styles.nextBtnDim}
+              style={hardMode ? styles.nextBtnHard : styles.nextBtn}
               onClick={onBeginRun}
-              disabled={!LABYRINTH_CLASS_AVAILABLE[cls]}
             >
-              DESCEND →
+              {hardMode ? "DESCEND INTO DARKNESS →" : "DESCEND →"}
             </button>
           )}
         </div>
@@ -247,8 +348,6 @@ const styles: Record<string, React.CSSProperties> = {
     boxSizing: "border-box",
   },
   scrollBody: {
-    // Card list scrolls INSIDE the panel while header + footer stay
-    // pinned. Gives every mobile viewport a visible NEXT/BACK button.
     flex: 1,
     overflowY: "auto",
     paddingBottom: 14,
@@ -290,7 +389,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "inherit",
     cursor: "pointer",
     textAlign: "center",
-    transition: "transform 0.1s, border-color 0.1s, background 0.1s",
+    transition: "transform 0.1s, border-color 0.1s, background 0.1s, box-shadow 0.15s",
   },
   cardActive: {
     background: "rgba(60,25,100,0.7)",
@@ -362,13 +461,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "inherit",
     boxShadow: "0 0 14px rgba(180,100,255,0.35)",
   },
-  nextBtnDim: {
+  nextBtnHard: {
     padding: "12px 22px", fontSize: 13, fontWeight: 900, letterSpacing: 4,
-    color: "rgba(200,180,220,0.5)",
-    background: "rgba(40,20,60,0.5)",
-    border: "1px solid rgba(120,80,180,0.3)",
+    color: "#fff",
+    background: "rgba(140,40,10,0.8)",
+    border: "1px solid rgba(255,140,60,0.8)",
     borderRadius: 8,
-    cursor: "not-allowed",
+    cursor: "pointer",
     fontFamily: "inherit",
+    boxShadow: "0 0 18px rgba(255,80,20,0.45)",
   },
 };

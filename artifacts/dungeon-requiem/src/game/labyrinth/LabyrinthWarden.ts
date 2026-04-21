@@ -152,13 +152,13 @@ export function updateWarden(
   if (warden.attackCooldown > 0) warden.attackCooldown = Math.max(0, warden.attackCooldown - delta);
   if (warden.hitFlashTimer > 0) warden.hitFlashTimer = Math.max(0, warden.hitFlashTimer - delta);
   if (dist <= WARDEN_ATTACK_RANGE && warden.attackCooldown <= 0) {
-    playerDamage.value += WARDEN_ATTACK_DAMAGE;
+    playerDamage.value += WARDEN_ATTACK_DAMAGE * (warden.damageMult ?? 1);
     warden.attackCooldown = WARDEN_ATTACK_COOLDOWN;
   }
 
   // Chase movement (unless swinging, then hold position briefly)
   if (dist > WARDEN_ATTACK_RANGE * 0.85) {
-    const speed = state.phase === 3 ? WARDEN_SPEED_ENRAGE : WARDEN_SPEED;
+    const speed = (state.phase === 3 ? WARDEN_SPEED_ENRAGE : WARDEN_SPEED) * (warden.speedMult ?? 1);
     const nx = dx / dist;
     const nz = dz / dist;
     warden.x += nx * speed * delta;
@@ -182,7 +182,7 @@ export function updateWarden(
             z: warden.z,
             vx: Math.cos(a) * STARBURST_PROJECTILE_SPEED,
             vz: Math.sin(a) * STARBURST_PROJECTILE_SPEED,
-            damage: STARBURST_PROJECTILE_DAMAGE,
+            damage: STARBURST_PROJECTILE_DAMAGE * (warden.damageMult ?? 1),
             radius: 0.5,
             lifetime: STARBURST_PROJECTILE_LIFETIME,
             piercing: false,
@@ -219,7 +219,7 @@ export function updateWarden(
         z: spawnZ,
         vx: Math.sin(a) * VOID_LANCE_SPEED,
         vz: Math.cos(a) * VOID_LANCE_SPEED,
-        damage: VOID_LANCE_DAMAGE,
+        damage: VOID_LANCE_DAMAGE * (warden.damageMult ?? 1),
         radius: 0.4,
         lifetime: VOID_LANCE_LIFETIME,
         piercing: false,

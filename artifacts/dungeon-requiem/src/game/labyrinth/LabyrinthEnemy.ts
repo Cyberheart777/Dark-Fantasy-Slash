@@ -23,7 +23,7 @@
  * don't apply here (DoTs, gear drops, poison/bleed state, etc.).
  */
 
-import { LABYRINTH_CONFIG } from "./LabyrinthConfig";
+import { LABYRINTH_CONFIG, LABYRINTH_HARD_MODE } from "./LabyrinthConfig";
 import {
   cellToWorld,
   extractWallSegments,
@@ -124,6 +124,11 @@ export interface EnemyRuntime {
   /** Seconds remaining while confused (bard Discordant Chord). While
    *  > 0 the enemy stops pursuing the player. Counted down externally. */
   confuseTimer?: number;
+  /** Hard-mode multipliers. Default to 1 when omitted. */
+  speedMult?: number;
+  damageMult?: number;
+  /** If this enemy is a necro minion, the id of its master champion. */
+  masterEnemyId?: string;
 }
 
 export interface RivalAbilityState {
@@ -153,6 +158,17 @@ function makeRivalState(): RivalAbilityState {
     secondaryCooldown: 0,
     poisonArmed: false,
   };
+}
+
+/** Apply hard-mode multipliers to an already-created enemy. Call
+ *  immediately after any factory function when hard mode is active. */
+export function applyHardMode(e: EnemyRuntime): EnemyRuntime {
+  const hm = LABYRINTH_HARD_MODE;
+  e.hp = Math.round(e.hp * hm.enemyHpMult);
+  e.maxHp = Math.round(e.maxHp * hm.enemyHpMult);
+  e.speedMult = hm.enemySpeedMult;
+  e.damageMult = hm.enemyDamageMult;
+  return e;
 }
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
@@ -1034,7 +1050,7 @@ export function updateEnemy(
         if (distA > RIVAL_WARRIOR_ARC_SLASH_MIN_DIST && distA < RIVAL_WARRIOR_ARC_SLASH_MAX_DIST) {
           const baseAngle = Math.atan2(dxA, dzA);
           const speed = RIVAL_WARRIOR_ARC_SLASH_SPEED;
-          let dmg = RIVAL_WARRIOR_ATTACK_DAMAGE * RIVAL_WARRIOR_ARC_SLASH_DAMAGE_MULT;
+          let dmg = RIVAL_WARRIOR_ATTACK_DAMAGE * RIVAL_WARRIOR_ARC_SLASH_DAMAGE_MULT * (enemy.damageMult ?? 1);
           if (r.buffActive) dmg *= RIVAL_WARRIOR_WARCRY_MULT;
           projectiles.push({
             id: `arcslash${rivalIdCounter++}`,
@@ -1188,7 +1204,7 @@ export function updateEnemy(
             x: enemy.x, z: enemy.z,
             vx: Math.sin(a) * RIVAL_ROGUE_DAGGER_SPEED,
             vz: Math.cos(a) * RIVAL_ROGUE_DAGGER_SPEED,
-            damage: tuning.damage,
+            damage: tuning.damage * (enemy.damageMult ?? 1),
             radius: 0.3,
             lifetime: RIVAL_ROGUE_DAGGER_LIFETIME,
             piercing: false,
@@ -1203,7 +1219,7 @@ export function updateEnemy(
         }
       } else {
         // Melee attackers (warrior, standard enemies).
-        let dmg = tuning.damage;
+        let dmg = tuning.damage * (enemy.damageMult ?? 1);
         if (enemy.kind === "rival_warrior" && enemy.rival?.buffActive) {
           dmg *= RIVAL_WARRIOR_WARCRY_MULT;
         }
@@ -1272,8 +1288,9 @@ export function updateEnemy(
   if (moveLen > 0.0001) {
     const nx = desiredDx / moveLen;
     const nz = desiredDz / moveLen;
-    const stepX = nx * tuning.speed * delta;
-    const stepZ = nz * tuning.speed * delta;
+    const sm = enemy.speedMult ?? 1;
+    const stepX = nx * tuning.speed * sm * delta;
+    const stepZ = nz * tuning.speed * sm * delta;
     const nextX = enemy.x + stepX;
     const nextZ = enemy.z + stepZ;
     if (!collidesWithAnyWallLocal(nextX, enemy.z, tuning.collR, segments)) enemy.x = nextX;
@@ -1387,8 +1404,8 @@ function runRivalMageAI(
   }
 
   if (moveX !== 0 || moveZ !== 0) {
-    const stepX = moveX * RIVAL_MAGE_SPEED * delta;
-    const stepZ = moveZ * RIVAL_MAGE_SPEED * delta;
+    const stepX = moveX * RIVAL_MAGE_SPEED * (enemy.speedMult ?? 1) * delta;
+    const stepZ = moveZ * RIVAL_MAGE_SPEED * (enemy.speedMult ?? 1) * delta;
     const coll = RIVAL_MAGE_COLLISION_RADIUS;
     const nextX = enemy.x + stepX;
     const nextZ = enemy.z + stepZ;
@@ -1408,7 +1425,7 @@ function runRivalMageAI(
       z: enemy.z,
       vx: dirX * RIVAL_MAGE_PROJECTILE_SPEED,
       vz: dirZ * RIVAL_MAGE_PROJECTILE_SPEED,
-      damage: RIVAL_MAGE_PROJECTILE_DAMAGE,
+      damage: RIVAL_MAGE_PROJECTILE_DAMAGE * (enemy.damageMult ?? 1),
       radius: 0.35,
       lifetime: 1.0, // halved from 2.0
       piercing: false,
@@ -1439,7 +1456,7 @@ function runRivalMageAI(
       z: enemy.z,
       vx: dirX * 10,
       vz: dirZ * 10,
-      damage: RIVAL_MAGE_ATTACK_DAMAGE,
+      damage: RIVAL_MAGE_ATTACK_DAMAGE * (enemy.damageMult ?? 1),
       radius: 0.35,
       lifetime: 0.25,
       piercing: false,
@@ -1491,8 +1508,8 @@ function runRivalNecromancerAI(
   }
 
   if (moveX !== 0 || moveZ !== 0) {
-    const stepX = moveX * RIVAL_NECROMANCER_SPEED * delta;
-    const stepZ = moveZ * RIVAL_NECROMANCER_SPEED * delta;
+    const stepX = moveX * RIVAL_NECROMANCER_SPEED * (enemy.speedMult ?? 1) * delta;
+    const stepZ = moveZ * RIVAL_NECROMANCER_SPEED * (enemy.speedMult ?? 1) * delta;
     const coll = RIVAL_NECROMANCER_COLLISION_RADIUS;
     const nextX = enemy.x + stepX;
     const nextZ = enemy.z + stepZ;
@@ -1512,7 +1529,7 @@ function runRivalNecromancerAI(
       z: enemy.z,
       vx: dirX * RIVAL_NECROMANCER_PROJECTILE_SPEED,
       vz: dirZ * RIVAL_NECROMANCER_PROJECTILE_SPEED,
-      damage: RIVAL_NECROMANCER_PROJECTILE_DAMAGE,
+      damage: RIVAL_NECROMANCER_PROJECTILE_DAMAGE * (enemy.damageMult ?? 1),
       radius: 0.4,
       lifetime: 1.0, // halved from 2.0
       piercing: false,
@@ -1536,7 +1553,7 @@ function runRivalNecromancerAI(
         z: enemy.z,
         vx: Math.sin(angle) * RIVAL_NECROMANCER_BURST_SPEED,
         vz: Math.cos(angle) * RIVAL_NECROMANCER_BURST_SPEED,
-        damage: RIVAL_NECROMANCER_BURST_DAMAGE,
+        damage: RIVAL_NECROMANCER_BURST_DAMAGE * (enemy.damageMult ?? 1),
         radius: 0.35,
         lifetime: 1.0, // halved from 2.0
         piercing: false,
@@ -1559,7 +1576,7 @@ function runRivalNecromancerAI(
       z: enemy.z,
       vx: dirX * 10,
       vz: dirZ * 10,
-      damage: RIVAL_NECROMANCER_ATTACK_DAMAGE,
+      damage: RIVAL_NECROMANCER_ATTACK_DAMAGE * (enemy.damageMult ?? 1),
       radius: 0.35,
       lifetime: 0.25,
       piercing: false,
@@ -1612,8 +1629,8 @@ function runRivalBardAI(
   }
 
   if (moveX !== 0 || moveZ !== 0) {
-    const stepX = moveX * RIVAL_BARD_SPEED * delta;
-    const stepZ = moveZ * RIVAL_BARD_SPEED * delta;
+    const stepX = moveX * RIVAL_BARD_SPEED * (enemy.speedMult ?? 1) * delta;
+    const stepZ = moveZ * RIVAL_BARD_SPEED * (enemy.speedMult ?? 1) * delta;
     const coll = RIVAL_BARD_COLLISION_RADIUS;
     const nextX = enemy.x + stepX;
     const nextZ = enemy.z + stepZ;
@@ -1633,7 +1650,7 @@ function runRivalBardAI(
       z: enemy.z,
       vx: dirX * RIVAL_BARD_PROJECTILE_SPEED,
       vz: dirZ * RIVAL_BARD_PROJECTILE_SPEED,
-      damage: RIVAL_BARD_PROJECTILE_DAMAGE,
+      damage: RIVAL_BARD_PROJECTILE_DAMAGE * (enemy.damageMult ?? 1),
       radius: 0.35,
       lifetime: 1.0, // halved from 2.0
       piercing: false,
@@ -1681,7 +1698,7 @@ function runRivalBardAI(
       z: enemy.z,
       vx: dirX * 10,
       vz: dirZ * 10,
-      damage: RIVAL_BARD_ATTACK_DAMAGE,
+      damage: RIVAL_BARD_ATTACK_DAMAGE * (enemy.damageMult ?? 1),
       radius: 0.35,
       lifetime: 0.25,
       piercing: false,
@@ -1735,7 +1752,7 @@ function updateTrapSpawner(
     x: enemy.x,
     z: enemy.z,
     vx, vz,
-    damage: TRAP_SPAWNER_PROJECTILE_DAMAGE * LAB_ENEMY_DAMAGE_MULT,
+    damage: TRAP_SPAWNER_PROJECTILE_DAMAGE * LAB_ENEMY_DAMAGE_MULT * (enemy.damageMult ?? 1),
     radius: 0.4,
     lifetime: TRAP_SPAWNER_PROJECTILE_LIFETIME,
     piercing: false,

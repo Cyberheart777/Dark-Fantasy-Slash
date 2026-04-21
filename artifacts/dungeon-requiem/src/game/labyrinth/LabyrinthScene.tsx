@@ -24,6 +24,7 @@ import {
   LABYRINTH_CONFIG,
   LABYRINTH_HALF,
   LAYER_CONFIG,
+  LABYRINTH_HARD_MODE,
   type LayerConfig,
 } from "./LabyrinthConfig";
 import {
@@ -92,6 +93,7 @@ import {
   findOuterRingSpawnCell,
   findMidRingSpawnCell,
   type EnemyRuntime,
+  applyHardMode,
 } from "./LabyrinthEnemy";
 import {
   makeWarden,
@@ -317,6 +319,7 @@ export function LabyrinthScene() {
   // LabyrinthCharSelect — this component just reads whatever was set.
   const selectedClass = useGameStore((s) => s.selectedClass) as CharacterClass;
   const selectedRace = useGameStore((s) => s.selectedRace);
+  const hardMode = useGameStore((s) => s.labyrinthHardMode);
   const classDef = CHARACTER_DATA[selectedClass];
 
   // Resolved player stats — composes class + race + Soul Forge +
@@ -605,7 +608,9 @@ export function LabyrinthScene() {
       })),
       "lootguard",
     );
-    enemiesRef.current = [...guardians, ...turrets, ...heavies, ...lootGuards];
+    const allEnemies = [...guardians, ...turrets, ...heavies, ...lootGuards];
+    if (hardMode) allEnemies.forEach(applyHardMode);
+    enemiesRef.current = allEnemies;
     sharedRef.current.enemyCount = enemiesRef.current.length;
   }
   const runStartMs = useRef(performance.now());
@@ -1706,7 +1711,8 @@ function CombatEnemyLoop({
     if ((shared.defeated || shared.extracted || shared.victory) && !ranSalvageRef.current) {
       ranSalvageRef.current = true;
       const total = salvageLabGear(gearStateRef.current, gearDropsRef.current);
-      const crystalTotal = total * shared.soulCrystalMult;
+      const hardCrystalMult = hardMode ? LABYRINTH_HARD_MODE.crystalMult : 1;
+      const crystalTotal = Math.round(total * shared.soulCrystalMult * hardCrystalMult);
       shared.crystalsEarned = crystalTotal + (shared.layer === 3 && shared.victory ? 500 : 0);
       if (crystalTotal > 0) {
         useMetaStore.getState().addShards(crystalTotal);
@@ -1901,7 +1907,7 @@ function CombatEnemyLoop({
                 }
                 // Gear drop roll — uses main-game tryRollGear() via the
                 // labyrinth wrapper. Separate from the XP-orb loot above.
-                const gearRoll = rollLabGearDrop(e.kind);
+                const gearRoll = rollLabGearDrop(e.kind, hardMode ? LABYRINTH_HARD_MODE.gearDropMult : 1);
                 if (gearRoll) {
                   spawnLabGearDrop(gearDropsRef.current, gearRoll, e.x, e.z);
                 }
@@ -1963,7 +1969,7 @@ function CombatEnemyLoop({
           e, p.x, p.z, delta,
           dmgAccum,
           projectilesRef.current,
-          (mx, mz) => enemies.push(makeCorridorGuardianAt(mx, mz)),
+          (mx, mz) => { const g = makeCorridorGuardianAt(mx, mz); if (hardMode) applyHardMode(g); enemies.push(g); },
         );
       } else if (e.kind === "mini_boss") {
         updateMiniBoss(e, p.x, p.z, delta, dmgAccum, projectilesRef.current);
@@ -2035,7 +2041,7 @@ function CombatEnemyLoop({
           }
         }
         // Gear drop roll — also fires on ranged kills.
-        const gearRoll = rollLabGearDrop(e.kind);
+        const gearRoll = rollLabGearDrop(e.kind, hardMode ? LABYRINTH_HARD_MODE.gearDropMult : 1);
         if (gearRoll) {
           spawnLabGearDrop(gearDropsRef.current, gearRoll, e.x, e.z);
         }
@@ -2204,7 +2210,10 @@ function CombatEnemyLoop({
       // base orb values stay unchanged and the multiplier scales the
       // total the player banks each pickup batch.
       const layerXpMult = LAYER_CONFIG[shared.layer]?.xpMultiplier ?? 1;
-      addLabXp(progressionRef.current, orbTick.awardedXp * layerXpMult);
+      const hardXpMult = hardMode
+        ? (shared.layer === 1 ? LABYRINTH_HARD_MODE.xpMultLayer1 : shared.layer === 2 ? LABYRINTH_HARD_MODE.xpMultLayer2 : 1)
+        : 1;
+      addLabXp(progressionRef.current, orbTick.awardedXp * layerXpMult * hardXpMult);
       if (progressionRef.current.pendingLevelUps > 0) {
         progressionRef.current.pendingLevelUps -= 1;
         p.maxHp += 3;
@@ -2245,7 +2254,9 @@ function CombatEnemyLoop({
       if (!stalkerAlive) {
         const spawnPos = findStalkerSpawnCell(maze, p.x, p.z);
         if (spawnPos) {
-          enemies.push(makeShadowStalker(spawnPos.x, spawnPos.z));
+          const stalker = makeShadowStalker(spawnPos.x, spawnPos.z);
+          if (hardMode) applyHardMode(stalker);
+          enemies.push(stalker);
           onEnemiesChange(enemies.slice());
           shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
         }
@@ -2274,7 +2285,9 @@ function CombatEnemyLoop({
             ? [r1, r2, r3, r4]   // 4 champions: cycle all rival classes
             : [r1, r2, r3];      // 3 champions
           const kind = championKinds[shared.championSpawnIndex % championKinds.length];
-          enemies.push(makeRivalChampion(kind, 0, 0));
+          const champ = makeRivalChampion(kind, 0, 0);
+          if (hardMode) applyHardMode(champ);
+          enemies.push(champ);
           onEnemiesChange(enemies.slice());
           shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
           shared.rivalAnnounce = { kind, announcedAt: shared.zone.elapsedSec };
@@ -2587,6 +2600,7 @@ function ZoneTickLoop({
       : (LAYER_CONFIG[shared.layer].hasWarden && shouldSpawnWarden(elapsedSec, zone.radius, ZONE_INITIAL_RADIUS, shared.wardenSpawned));
     if (wardenGate) {
       const warden = makeWarden(maze);
+      if (hardMode) applyHardMode(warden);
       enemiesRef.current.push(warden);
       onEnemiesChange(enemiesRef.current.slice());
       shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
@@ -2611,6 +2625,7 @@ function ZoneTickLoop({
       const hasMiniBossEntity = enemiesRef.current.some((e) => e.kind === "mini_boss" && e.state !== "dead");
       if (!hasMiniBossEntity) {
         const mb = makeMiniBoss(p.x + 8, p.z + 8);
+        if (hardMode) applyHardMode(mb);
         enemiesRef.current.push(mb);
         onEnemiesChange(enemiesRef.current.slice());
         shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
@@ -2940,9 +2955,9 @@ function LabyrinthHUD({
         p.z = portal.z;
       }
       if (s.layer === 3) {
-        // Layer 3 victory: 500 bonus crystals
         useMetaStore.getState().addShards(500);
         s.victory = true;
+        if (hardMode) useAchievementStore.getState().tryUnlock("lab_hard_conqueror");
       }
       s.extracted = true;
     } else {
@@ -3191,6 +3206,20 @@ function LabyrinthHUD({
           </div>
         )}
       </div>
+      )}
+
+      {/* Hard mode badge */}
+      {hardMode && (
+        <div style={{
+          position: "absolute", top: isMob ? 4 : 8, left: "50%", transform: "translateX(-50%)",
+          padding: "3px 14px", borderRadius: 4,
+          background: "rgba(180,40,10,0.7)", border: "1px solid rgba(255,100,40,0.6)",
+          color: "#ffaa44", fontSize: 10, fontWeight: 900, letterSpacing: 4,
+          fontFamily: "monospace", zIndex: 30, pointerEvents: "none",
+          textShadow: "0 0 8px rgba(255,80,20,0.5)",
+        }}>
+          HARD MODE
+        </div>
       )}
 
       {/* Top-right: zone timer (desktop only — mobile uses connected strip) */}

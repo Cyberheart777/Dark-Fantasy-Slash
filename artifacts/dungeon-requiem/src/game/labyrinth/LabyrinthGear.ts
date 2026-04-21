@@ -64,10 +64,10 @@ const ENEMY_TYPE_FOR_ROLL: Record<string, { type: string; mult: number }> = {
 /** Attempt a gear drop for the given labyrinth enemy kind. Returns
  *  a GearDef or null if nothing rolls. Wraps the main-game
  *  tryRollGear() with labyrinth-specific type mapping + dropMult. */
-export function rollLabGearDrop(enemyKind: string): GearDef | null {
+export function rollLabGearDrop(enemyKind: string, extraMult = 1): GearDef | null {
   const mapping = ENEMY_TYPE_FOR_ROLL[enemyKind];
   if (!mapping) return null;
-  return tryRollGear(mapping.type, LAB_DROP_MULT * mapping.mult);
+  return tryRollGear(mapping.type, LAB_DROP_MULT * mapping.mult * extraMult);
 }
 
 // ─── Ground drops ────────────────────────────────────────────────────────────

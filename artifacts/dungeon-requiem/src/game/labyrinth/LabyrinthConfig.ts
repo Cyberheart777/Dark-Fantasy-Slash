@@ -159,3 +159,14 @@ export const LAYER_CONFIG: Record<1 | 2 | 3, LayerConfig> = {
     hpBonusOnEntry: 20,
   },
 };
+
+// ─── Hard-mode multipliers ──────────────────────────────────────────────────
+export const LABYRINTH_HARD_MODE = {
+  enemyHpMult: 2.0,
+  enemyDamageMult: 1.25,
+  enemySpeedMult: 1.10,
+  gearDropMult: 1.5,
+  crystalMult: 2.0,
+  xpMultLayer1: 2.0,
+  xpMultLayer2: 4.0,
+};

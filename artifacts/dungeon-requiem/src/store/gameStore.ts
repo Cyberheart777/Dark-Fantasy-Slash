@@ -127,6 +127,7 @@ export interface GameUIState {
   // Difficulty & mode
   difficultyTier: DifficultyTier;
   trialMode: boolean;
+  labyrinthHardMode: boolean;
 
   // Soul shards (per-run counter — persistent total lives in metaStore)
   shardsThisRun: number;
@@ -198,6 +199,7 @@ export interface GameUIState {
   setSelectedRace: (race: RaceType) => void;
   setDifficultyTier: (tier: DifficultyTier) => void;
   setTrialMode: (trial: boolean) => void;
+  setLabyrinthHardMode: (hard: boolean) => void;
   setPlayerHP: (hp: number, maxHp: number) => void;
   setPlayerPos: (x: number, z: number, angle: number) => void;
   setProgression: (level: number, xp: number, xpToNext: number) => void;
@@ -257,6 +259,7 @@ const initialState = {
   selectedRace: "human" as RaceType,
   difficultyTier: "normal" as DifficultyTier,
   trialMode: false,
+  labyrinthHardMode: false,
   shardsThisRun: 0,
   guaranteedShards: 0,
   bossHP: 0,
@@ -287,6 +290,7 @@ export const useGameStore = create<GameUIState>((set, get) => ({
   setSelectedRace: (selectedRace) => set({ selectedRace }),
   setDifficultyTier: (difficultyTier) => set({ difficultyTier }),
   setTrialMode: (trialMode) => set({ trialMode }),
+  setLabyrinthHardMode: (labyrinthHardMode: boolean) => set({ labyrinthHardMode }),
   addRunShards: (n) => set((s) => ({ shardsThisRun: s.shardsThisRun + n })),
   addGuaranteedShards: (n) => set((s) => ({
     shardsThisRun: s.shardsThisRun + n,
