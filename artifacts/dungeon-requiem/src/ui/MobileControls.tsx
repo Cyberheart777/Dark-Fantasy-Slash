@@ -247,14 +247,14 @@ export function MobileControls({ gsRef }: Props) {
       <div style={styles.moveHint}>MOVE</div>
       <div style={styles.aimHint}>AIM</div>
 
-      {/* Action button — above dash button */}
+      {/* Action button — right of dash button */}
       <div
         data-ctrl="action"
         style={{
           position: "absolute",
-          bottom: 104,
+          bottom: 24,
           left: "50%",
-          transform: "translateX(-50%)",
+          transform: "translateX(46px)",
           width: 72,
           height: 72,
           borderRadius: 18,
@@ -373,7 +373,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute",
     bottom: 24,
     left: "50%",
-    transform: "translateX(-50%)",
+    transform: "translateX(-118px)",
     width: 72,
     height: 72,
     borderRadius: 18,

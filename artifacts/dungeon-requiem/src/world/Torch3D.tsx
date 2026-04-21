@@ -1,6 +1,6 @@
 /**
  * Torch3D.tsx
- * Animated wall torch with flickering PointLight.
+ * Animated wall torch with flickering emissive flame (no pointLight).
  */
 
 import { useRef } from "react";
@@ -12,27 +12,11 @@ interface TorchProps {
 }
 
 export function Torch3D({ position }: TorchProps) {
-  const lightRef = useRef<THREE.PointLight>(null);
   const flameRef = useRef<THREE.Mesh>(null);
   const t = useRef(Math.random() * 100);
 
   useFrame((_, delta) => {
     t.current += delta;
-    // Flicker intensity
-    const flicker =
-      1.2 +
-      Math.sin(t.current * 8.3) * 0.3 +
-      Math.sin(t.current * 13.1) * 0.15 +
-      Math.sin(t.current * 5.7) * 0.1;
-
-    if (lightRef.current) {
-      lightRef.current.intensity = flicker * 2.5;
-      // Slight color variation
-      const r = 1.0;
-      const g = 0.45 + Math.sin(t.current * 6) * 0.05;
-      lightRef.current.color.setRGB(r, g, 0.05);
-    }
-
     if (flameRef.current) {
       flameRef.current.scale.y = 0.9 + Math.sin(t.current * 11) * 0.2;
       flameRef.current.scale.x = 0.85 + Math.sin(t.current * 7.3) * 0.15;
@@ -73,14 +57,6 @@ export function Torch3D({ position }: TorchProps) {
           opacity={0.95}
         />
       </mesh>
-      {/* Point light */}
-      <pointLight
-        ref={lightRef}
-        color="#ff8800"
-        intensity={3.5}
-        distance={22}
-        decay={1}
-      />
     </group>
   );
 }
