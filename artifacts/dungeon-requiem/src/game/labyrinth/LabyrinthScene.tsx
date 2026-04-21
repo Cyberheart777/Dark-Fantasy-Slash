@@ -94,6 +94,7 @@ import {
   findMidRingSpawnCell,
   type EnemyRuntime,
   applyHardMode,
+  hasLineOfSight,
 } from "./LabyrinthEnemy";
 import {
   makeWarden,
@@ -1835,7 +1836,7 @@ function CombatEnemyLoop({
         for (const e of enemies) {
           if (e.state === "dead") continue;
           const dx = e.x - p.x, dz = e.z - p.z;
-          if (dx * dx + dz * dz <= DISCORD_RADIUS * DISCORD_RADIUS) {
+          if (dx * dx + dz * dz <= DISCORD_RADIUS * DISCORD_RADIUS && hasLineOfSight(p.x, p.z, e.x, e.z, segments)) {
             e.confuseTimer = 6.0;
           }
         }
@@ -1848,7 +1849,7 @@ function CombatEnemyLoop({
         if (e.state === "dead") continue;
         const sx = p.x - e.x, sz = p.z - e.z;
         const sd = Math.sqrt(sx * sx + sz * sz);
-        if (sd <= 10 && sd > 0.5) {
+        if (sd <= 10 && sd > 0.5 && hasLineOfSight(p.x, p.z, e.x, e.z, segments)) {
           const pullStr = 8 * delta;
           e.x += (sx / sd) * pullStr;
           e.z += (sz / sd) * pullStr;
@@ -1884,7 +1885,7 @@ function CombatEnemyLoop({
           audioManager.play("attack_melee");
           for (const e of enemies) {
             if (e.state === "dead") continue;
-            if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange)) {
+            if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange) && hasLineOfSight(p.x, p.z, e.x, e.z, segments)) {
               let dmg = modifyOutgoingDamage(warriorStateRef.current, effectiveStats.damage, effectiveCrit);
               dmg = Math.round(dmg * p.actionDmgMult);
               if (p.actionVulnerabilityTimer > 0) dmg = Math.round(dmg * 1.2);
@@ -2160,7 +2161,7 @@ function CombatEnemyLoop({
           if (e.state === "dead") continue;
           const dx = e.x - m.x, dz = e.z - m.z;
           const d = dx * dx + dz * dz;
-          if (d < nearDist) { nearDist = d; nearE = e; }
+          if (d < nearDist && hasLineOfSight(m.x, m.z, e.x, e.z, segments)) { nearDist = d; nearE = e; }
         }
         if (nearE) m.angle = Math.atan2(nearE.x - m.x, nearE.z - m.z);
 

@@ -1766,7 +1766,7 @@ function updateTrapSpawner(
 /** Bresenham-ish LOS: sample the segment from (ax,az) to (bx,bz) at
  *  0.4u intervals and check if any sample is inside a wall box. Good
  *  enough for turret-to-player sight; not pixel-perfect but very cheap. */
-function hasLineOfSight(
+export function hasLineOfSight(
   ax: number, az: number,
   bx: number, bz: number,
   segments: ReturnType<typeof extractWallSegments>,
