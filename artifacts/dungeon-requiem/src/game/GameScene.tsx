@@ -3020,9 +3020,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           inventoryChanged = true;
           // Overflow: if we're above 20, drop the oldest common for shards.
           // Preserves rares/epics so players don't lose meaningful loot.
-          while (g.inventory.length > 20) {
+          while (g.inventory.length > 50) {
             const commonIdx = g.inventory.findIndex((it) => it.rarity === "common");
-            if (commonIdx < 0) break; // no commons to cull — let it ride
+            if (commonIdx < 0) break;
             const culled = g.inventory.splice(commonIdx, 1)[0];
             store.addRunShards(5);
             spawnTextPopup(p.x, p.z, `Auto-sold ${culled.icon} +5 shards`, "#aaaaaa", 2.0);

@@ -45,7 +45,7 @@ export const LAB_SALVAGE_VALUE: Record<string, number> = {
  *  before auto-salvage at extraction. Hardcoded both here and in
  *  the character-view render (PauseMenu.tsx uses the same 20 for
  *  "SPARE GEAR (N/20)") — bump in both places if changed. */
-export const LAB_INVENTORY_CAPACITY = 20;
+export const LAB_INVENTORY_CAPACITY = 50;
 
 // ─── Enemy-kind → main-game enemy-type mapping ───────────────────────────────
 

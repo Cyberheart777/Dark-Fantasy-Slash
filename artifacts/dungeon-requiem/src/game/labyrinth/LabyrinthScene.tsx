@@ -2736,13 +2736,12 @@ function ZoneTickLoop({
       shared.descentPortalsSpawned = true;
       const portalSec = shared.zone.elapsedSec;
       if (shared.layer < 3) {
-        // Two portals: descent + extraction, 3u apart
         shared.portals.push({
-          id: `descent_${portalSec}`, x: p.x + 1.5, z: p.z, col: 0, row: 0,
+          id: `descent_${portalSec}`, x: p.x + 4, z: p.z, col: 0, row: 0,
           spawnedAtSec: portalSec, consumed: false, fadeElapsedSec: 0,
         });
         shared.portals.push({
-          id: `extract_${portalSec}`, x: p.x - 1.5, z: p.z, col: 0, row: 0,
+          id: `extract_${portalSec}`, x: p.x - 4, z: p.z, col: 0, row: 0,
           spawnedAtSec: portalSec, consumed: false, fadeElapsedSec: 0,
         });
       } else {
@@ -3446,20 +3445,15 @@ function LabyrinthHUD({
             <div style={styles.extractedStats}>
               TIME · {formatZoneTime(display.elapsedSec)} · KILLS · {display.killCount}
             </div>
-            {display.layer === 3 && (
-              <GearKeepSelection equipped={display.equipped} onKeep={(gear) => {
-                if (gear) {
-                  const kept = { ...gear, enhanceLevel: 0 };
-                  useMetaStore.getState().addGearToStash(kept as any);
-                }
-                exit();
-              }} />
-            )}
-            {display.layer !== 3 && (
-              <button style={styles.escBtn} onClick={exit}>
-                ⌂ RETURN TO MAIN MENU
-              </button>
-            )}
+            <GearKeepSelection equipped={display.equipped} onKeep={(gear) => {
+              if (gear) {
+                const kept = { ...gear, enhanceLevel: 0 };
+                useMetaStore.getState().addGearToStash(kept as any);
+              }
+            }} />
+            <button style={{ ...styles.escBtn, marginTop: 12 }} onClick={exit}>
+              ⌂ RETURN TO MAIN MENU
+            </button>
           </div>
         </div>
       )}
@@ -3478,7 +3472,13 @@ function LabyrinthHUD({
             <div style={styles.extractedStats}>
               TIME SURVIVED · {formatZoneTime(display.elapsedSec)}
             </div>
-            <button style={styles.escBtn} onClick={exit}>
+            <GearKeepSelection equipped={display.equipped} onKeep={(gear) => {
+              if (gear) {
+                const kept = { ...gear, enhanceLevel: 0 };
+                useMetaStore.getState().addGearToStash(kept as any);
+              }
+            }} />
+            <button style={{ ...styles.escBtn, marginTop: 12 }} onClick={exit}>
               ⌂ RETURN TO MAIN MENU
             </button>
           </div>
@@ -3908,6 +3908,7 @@ function GearKeepSelection({ equipped, onKeep }: {
   equipped: { weapon: GearDef | null; armor: GearDef | null; trinket: GearDef | null };
   onKeep: (gear: GearDef | null) => void;
 }) {
+  const [kept, setKept] = useState<Set<string>>(new Set());
   const slots = [
     { label: "WEAPON", gear: equipped.weapon, icon: "⚔" },
     { label: "ARMOR", gear: equipped.armor, icon: "🛡" },
@@ -3916,30 +3917,39 @@ function GearKeepSelection({ equipped, onKeep }: {
   const hasAny = slots.some((s) => s.gear !== null);
   return (
     <div style={{ display: "flex", flexDirection: "column" as const, gap: 10, marginTop: 16, width: "100%" }}>
+      <div style={{ color: "#cc88ff", fontSize: 11, letterSpacing: 3, fontFamily: "monospace", textAlign: "center" as const, fontWeight: 900 }}>
+        KEEP GEAR — TAP TO STASH
+      </div>
       {slots.map((s) => s.gear ? (
-        <button key={s.label} style={{
+        <button key={s.label} disabled={kept.has(s.label)} style={{
           display: "flex", alignItems: "center", gap: 14,
-          padding: "14px 18px", background: "rgba(40,15,70,0.7)",
-          border: "1px solid rgba(180,80,255,0.5)", borderRadius: 8,
-          cursor: "pointer", fontFamily: "monospace", textAlign: "left" as const,
-        }} onClick={() => onKeep(s.gear)}>
+          padding: "14px 18px",
+          background: kept.has(s.label) ? "rgba(20,60,20,0.7)" : "rgba(40,15,70,0.7)",
+          border: kept.has(s.label) ? "1px solid rgba(80,200,80,0.5)" : "1px solid rgba(180,80,255,0.5)",
+          borderRadius: 8,
+          cursor: kept.has(s.label) ? "default" : "pointer",
+          fontFamily: "monospace", textAlign: "left" as const,
+          opacity: kept.has(s.label) ? 0.7 : 1,
+        }} onClick={() => {
+          if (!kept.has(s.label)) {
+            onKeep(s.gear);
+            setKept(new Set([...kept, s.label]));
+          }
+        }}>
           <span style={{ fontSize: 28 }}>{s.gear!.icon}</span>
           <div>
-            <div style={{ color: "#ddaaff", fontSize: 14, fontWeight: "bold", letterSpacing: 1 }}>{s.gear!.name}</div>
-            <div style={{ color: "#aa88cc", fontSize: 10, letterSpacing: 2 }}>{s.label} · {s.gear!.rarity.toUpperCase()}</div>
+            <div style={{ color: kept.has(s.label) ? "#88ff88" : "#ddaaff", fontSize: 14, fontWeight: "bold", letterSpacing: 1 }}>
+              {kept.has(s.label) ? `✓ ${s.gear!.name}` : s.gear!.name}
+            </div>
+            <div style={{ color: kept.has(s.label) ? "#66aa66" : "#aa88cc", fontSize: 10, letterSpacing: 2 }}>
+              {kept.has(s.label) ? "SAVED TO STASH" : `${s.label} · ${s.gear!.rarity.toUpperCase()}`}
+            </div>
           </div>
         </button>
       ) : null)}
       {!hasAny && (
         <div style={{ color: "#888", fontSize: 12, textAlign: "center" as const, padding: 20 }}>No gear equipped to keep.</div>
       )}
-      <button style={{
-        padding: "10px 16px", background: "rgba(30,30,30,0.8)",
-        border: "1px solid #444", borderRadius: 6, color: "#aaa",
-        cursor: "pointer", fontFamily: "monospace", fontSize: 11, letterSpacing: 2,
-      }} onClick={() => onKeep(null)}>
-        SKIP — RETURN TO MENU
-      </button>
     </div>
   );
 }

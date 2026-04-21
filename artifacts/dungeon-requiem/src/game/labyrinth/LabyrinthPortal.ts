@@ -47,7 +47,7 @@ const PORTAL_NEXT_BOUNDARY_BUFFER = LABYRINTH_CONFIG.CELL_SIZE;
 const PORTAL_CURRENT_BOUNDARY_BUFFER = LABYRINTH_CONFIG.CELL_SIZE * 0.5;
 
 /** Minimum Manhattan cell distance between two portals at the same milestone. */
-const PORTAL_MIN_CELL_SPACING = 2;
+const PORTAL_MIN_CELL_SPACING = 3;
 
 /** Elliptical collision radii (world units) — wider than tall to match
  *  the oval visual. */
