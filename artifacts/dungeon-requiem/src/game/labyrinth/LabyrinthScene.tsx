@@ -108,7 +108,6 @@ import {
   updateDeathKnight,
   getDeathKnightState,
   clearDeathKnightState,
-  DEATH_KNIGHT_HP,
 } from "./LabyrinthDeathKnight";
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
 import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";

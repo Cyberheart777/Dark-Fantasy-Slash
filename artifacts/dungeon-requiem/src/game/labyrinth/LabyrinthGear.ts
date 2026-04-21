@@ -58,6 +58,7 @@ const ENEMY_TYPE_FOR_ROLL: Record<string, { type: string; mult: number }> = {
   mimic:             { type: "elite",             mult: 4.0 },
   shadow_stalker:    { type: "elite",             mult: 2.5 },
   warden:            { type: "boss",              mult: 5.0 },
+  death_knight:      { type: "boss",              mult: 6.0 },
   champion:          { type: "warrior_champion",  mult: 2.0 },
 };
 

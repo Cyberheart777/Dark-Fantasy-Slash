@@ -148,6 +148,7 @@ const ENEMY_LOOT_CHANCE: Record<string, number> = {
   mimic: 0.95,
   shadow_stalker: 0.80,
   warden: 1.0,
+  death_knight: 1.0,
 };
 
 export interface LabLootDrop {
@@ -180,6 +181,7 @@ export function rollEnemyLoot(
     mimic: [8, 12],
     shadow_stalker: [6, 9],
     warden: [20, 28],
+    death_knight: [25, 35],
   };
   const [lo, hi] = burstByKind[kind] ?? [4, 7];
   const extra = lo + Math.floor(Math.random() * (hi - lo + 1));
