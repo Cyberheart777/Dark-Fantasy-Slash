@@ -33,31 +33,34 @@ void _unusedGuardianSpawn;
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
-export const WARDEN_HP = 800;
-const WARDEN_SPEED = 3.0;
-const WARDEN_SPEED_ENRAGE = 4.5;         // Phase 3 = 1.5×
+export const WARDEN_HP = 1200;
+const WARDEN_SPEED = 3.5;
+const WARDEN_SPEED_ENRAGE = 5.0;
 const WARDEN_ATTACK_RANGE = 2.6;
-const WARDEN_ATTACK_DAMAGE = 35;
-const WARDEN_ATTACK_COOLDOWN = 1.6;
+const WARDEN_ATTACK_DAMAGE = 40;
+const WARDEN_ATTACK_COOLDOWN = 1.4;
 const WARDEN_COLLISION_RADIUS = 1.8;
 
-const STARBURST_PROJECTILE_COUNT = 8;
-const STARBURST_PROJECTILE_DAMAGE = 22;
+const STARBURST_PROJECTILE_COUNT = 10;
+const STARBURST_PROJECTILE_DAMAGE = 25;
 const STARBURST_PROJECTILE_SPEED = 10;
-const STARBURST_PROJECTILE_LIFETIME = 1.4; // reduced from 2.8 for tight corridors
+const STARBURST_PROJECTILE_LIFETIME = 1.4;
 const STARBURST_WARN_SEC = 0.6;
-const STARBURST_COOLDOWN_SEC = 5.0;
+const STARBURST_COOLDOWN_SEC = 4.5;
 
-// Void Lance — aimed 3-shot cone (mirrors main-game boss pattern).
-// Reduced range via shorter lifetime for labyrinth corridors.
 const VOID_LANCE_SPEED = 14;
-const VOID_LANCE_SPREAD = 0.12;       // radians between each lance
-const VOID_LANCE_SPAWN_DIST = 2.5;    // closer spawn for tight spaces
-const VOID_LANCE_DAMAGE = 18;
-const VOID_LANCE_LIFETIME = 1.2;      // short range — corridor-friendly
-const VOID_LANCE_COOLDOWN_SEC = 6.0;
+const VOID_LANCE_SPREAD = 0.12;
+const VOID_LANCE_SPAWN_DIST = 2.5;
+const VOID_LANCE_DAMAGE = 20;
+const VOID_LANCE_LIFETIME = 1.2;
+const VOID_LANCE_COOLDOWN_SEC = 5.0;
 
-const MINION_SPAWN_INTERVAL_SEC = 10;
+const GROUND_SLAM_COOLDOWN_SEC = 6.0;
+const GROUND_SLAM_WARN_SEC = 0.8;
+const GROUND_SLAM_RADIUS = 6;
+const GROUND_SLAM_DAMAGE_MULT = 2.5;
+
+const MINION_SPAWN_INTERVAL_SEC = 8;
 const MINIONS_PER_BURST = 2;
 
 /** Gate: warden appears at elapsedSec >= this. */
@@ -69,14 +72,12 @@ export const WARDEN_ZONE_GATE_FRAC = 0.5;
  *  aiTimer + fireTimer fields that other kinds use differently). */
 export interface WardenState {
   phase: 1 | 2 | 3;
-  /** Seconds until next starburst fires (phase ≥2). */
   starburstCooldown: number;
-  /** If >0, starburst is telegraphing — fire when it hits 0. */
   starburstWarning: number;
-  /** Seconds until next minion-summon (phase 3). */
   minionCooldown: number;
-  /** Seconds until next void-lance volley (all phases). */
   voidLanceCooldown: number;
+  groundSlamCooldown: number;
+  groundSlamWarning: number;
 }
 
 /** Storage: we piggyback on the enemy's fireTimer/aiTimer fields and a
@@ -93,6 +94,8 @@ export function getWardenState(id: string): WardenState {
       starburstWarning: 0,
       minionCooldown: MINION_SPAWN_INTERVAL_SEC,
       voidLanceCooldown: VOID_LANCE_COOLDOWN_SEC,
+      groundSlamCooldown: GROUND_SLAM_COOLDOWN_SEC,
+      groundSlamWarning: 0,
     };
     wardenStates.set(id, s);
   }
@@ -230,16 +233,37 @@ export function updateWarden(
     }
   }
 
-  // Minion summons (phase 3)
-  if (state.phase === 3) {
+  // Ground slam — telegraphed AoE (all phases)
+  if (state.groundSlamWarning > 0) {
+    state.groundSlamWarning -= delta;
+    if (state.groundSlamWarning <= 0) {
+      const slamDmg = WARDEN_ATTACK_DAMAGE * GROUND_SLAM_DAMAGE_MULT * (warden.damageMult ?? 1);
+      const radius = state.phase === 3 ? GROUND_SLAM_RADIUS + 2 : GROUND_SLAM_RADIUS;
+      if (dist <= radius) {
+        playerDamage.value += slamDmg;
+      }
+      const slamCd = state.phase === 3 ? 3.5 : state.phase === 2 ? 4.5 : GROUND_SLAM_COOLDOWN_SEC;
+      state.groundSlamCooldown = slamCd;
+    }
+  } else {
+    state.groundSlamCooldown -= delta;
+    if (state.groundSlamCooldown <= 0) {
+      state.groundSlamWarning = GROUND_SLAM_WARN_SEC;
+    }
+  }
+
+  // Minion summons (phase 2+)
+  if (state.phase >= 2) {
     state.minionCooldown -= delta;
     if (state.minionCooldown <= 0) {
-      for (let i = 0; i < MINIONS_PER_BURST; i++) {
+      const count = state.phase === 3 ? 3 : MINIONS_PER_BURST;
+      for (let i = 0; i < count; i++) {
         const a = Math.random() * Math.PI * 2;
         const r = LABYRINTH_CONFIG.CELL_SIZE * 1.2;
         onSpawnMinion(warden.x + Math.cos(a) * r, warden.z + Math.sin(a) * r);
       }
-      state.minionCooldown = MINION_SPAWN_INTERVAL_SEC;
+      const minionCd = state.phase === 3 ? 6 : MINION_SPAWN_INTERVAL_SEC;
+      state.minionCooldown = minionCd;
     }
   }
 }

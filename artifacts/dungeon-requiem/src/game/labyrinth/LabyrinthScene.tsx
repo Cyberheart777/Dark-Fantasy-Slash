@@ -103,6 +103,13 @@ import {
   clearWardenState,
   getWardenState,
 } from "./LabyrinthWarden";
+import {
+  makeDeathKnight,
+  updateDeathKnight,
+  getDeathKnightState,
+  clearDeathKnightState,
+  DEATH_KNIGHT_HP,
+} from "./LabyrinthDeathKnight";
 import { LabyrinthEnemies3D } from "./LabyrinthEnemy3D";
 import { LabyrinthPlayer3D } from "./LabyrinthPlayer3D";
 import { LabyrinthCanvasErrorBoundary } from "./LabyrinthCanvasErrorBoundary";
@@ -238,6 +245,7 @@ interface LabSharedState {
   extracted: boolean;
   victory: boolean;
   wardenSpawned: boolean;
+  deathKnightSpawned: boolean;
   firstRivalSpawned: boolean;
   secondRivalSpawned: boolean;
   rivalKillCount: number;
@@ -256,6 +264,13 @@ interface LabSharedState {
   crystalsEarned: number;
   rivalAnnounce: { kind: "rival_warrior" | "rival_mage" | "rival_rogue" | "rival_necromancer" | "rival_bard"; announcedAt: number } | null;
   wardenHud: {
+    alive: boolean;
+    hp: number;
+    maxHp: number;
+    name: string;
+    specialWarn: boolean;
+  } | null;
+  deathKnightHud: {
     alive: boolean;
     hp: number;
     maxHp: number;
@@ -380,6 +395,8 @@ export function LabyrinthScene() {
     victory: false,
     wardenSpawned: false,
     wardenHud: null,
+    deathKnightSpawned: false,
+    deathKnightHud: null,
     firstRivalSpawned: false,
     secondRivalSpawned: false,
     rivalKillCount: 0,
@@ -645,15 +662,17 @@ export function LabyrinthScene() {
       s.rivalKillCount = 0;
       s.keyPickups = [];
       s.wardenSpawned = false;
+      s.deathKnightSpawned = false;
       s.rivalAnnounce = null;
       s.wardenHud = null;
+      s.deathKnightHud = null;
       s.pendingLayerChange = null;
       s.spawnedMilestones = new Set<number>();
       // Layer intro banner
       if (next === 2) {
-        s.layerBanner = { text: "LAYER 2 — THE DEEP LABYRINTH", sub: "DEFEAT 3 CHAMPIONS TO DESCEND", color: "#cc88ff", at: 0 };
+        s.layerBanner = { text: "LAYER 2 — THE DEEP LABYRINTH", sub: "DEFEAT THE WARDEN AND 3 CHAMPIONS", color: "#cc88ff", at: 0 };
       } else {
-        s.layerBanner = { text: "LAYER 3 — THE ABYSS", sub: "DEFEAT THE WARDEN REBORN", color: "#ff4488", at: 0 };
+        s.layerBanner = { text: "LAYER 3 — THE ABYSS", sub: "SLAY THE DEATH KNIGHT", color: "#ff4488", at: 0 };
       }
       // Clear enemies + projectiles
       enemiesRef.current.length = 0;
@@ -1928,15 +1947,19 @@ function CombatEnemyLoop({
                   p.hp = Math.min(p.maxHp, p.hp + gained);
                 }
                 if (e.kind === "warden") {
-                  shared.layerComplete = true;
                   clearWardenState(e.id);
                   audioManager.play("wave_clear");
-                  shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
+                  if (shared.layer === 2) {
+                    shared.layerBanner = { text: "WARDEN SLAIN", sub: "THE LABYRINTH TREMBLES", color: "#ff60ff", at: shared.zone.elapsedSec };
+                    if (shared.championsKilled >= shared.championsToKill) shared.layerComplete = true;
+                  } else {
+                    shared.layerComplete = true;
+                    shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
+                  }
                 }
                 if (e.kind === "mini_boss") {
                   shared.miniBossAlive = false;
                   clearMiniBossState(e.id);
-                  // All champions + mini-boss dead → open portals
                   shared.layerComplete = true;
                   shared.layerBanner = { text: "PORTALS OPENED — CHOOSE YOUR PATH", sub: shared.layer < 3 ? "DESCEND DEEPER OR EXTRACT" : "THE ABYSS IS CONQUERED", color: "#44ff88", at: shared.zone.elapsedSec };
                   audioManager.play("wave_clear");
@@ -1981,6 +2004,14 @@ function CombatEnemyLoop({
           dmgAccum,
           projectilesRef.current,
           (mx, mz) => { const g = makeCorridorGuardianAt(mx, mz); if (hardMode) applyHardMode(g); enemies.push(g); },
+        );
+      } else if (e.kind === "death_knight") {
+        updateDeathKnight(
+          e, p.x, p.z, delta,
+          dmgAccum,
+          projectilesRef.current,
+          (mx, mz) => { const g = makeCorridorGuardianAt(mx, mz); if (hardMode) applyHardMode(g); enemies.push(g); },
+          enemies,
         );
       } else if (e.kind === "mini_boss") {
         updateMiniBoss(e, p.x, p.z, delta, dmgAccum, projectilesRef.current);
@@ -2068,10 +2099,15 @@ function CombatEnemyLoop({
           }
         }
         if (e.kind === "warden") {
-          shared.layerComplete = true;
           clearWardenState(e.id);
           audioManager.play("wave_clear");
-          shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
+          if (shared.layer === 2) {
+            shared.layerBanner = { text: "WARDEN SLAIN", sub: "THE LABYRINTH TREMBLES", color: "#ff60ff", at: shared.zone.elapsedSec };
+            if (shared.championsKilled >= shared.championsToKill) shared.layerComplete = true;
+          } else {
+            shared.layerComplete = true;
+            shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
+          }
         }
         if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue" || e.kind === "rival_necromancer" || e.kind === "rival_bard") {
           onRivalChampionKill(e, shared, gearDropsRef.current);
@@ -2630,6 +2666,25 @@ function ZoneTickLoop({
         hp: warden.hp,
         maxHp: warden.maxHp,
         name: "THE WARDEN",
+        specialWarn: false,
+      };
+      audioManager.play("boss_spawn");
+    }
+
+    // ── Death Knight spawn (layer 3) ────────────────────────────────────
+    // Spawns immediately at center on Layer 3 as the final boss.
+    if (shared.layer === 3 && !shared.deathKnightSpawned) {
+      const dk = makeDeathKnight(maze);
+      if (hardMode) applyHardMode(dk);
+      enemiesRef.current.push(dk);
+      onEnemiesChange(enemiesRef.current.slice());
+      shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
+      shared.deathKnightSpawned = true;
+      shared.deathKnightHud = {
+        alive: true,
+        hp: dk.hp,
+        maxHp: dk.maxHp,
+        name: "THE DEATH KNIGHT",
         specialWarn: false,
       };
       audioManager.play("boss_spawn");
@@ -4140,8 +4195,13 @@ function onRivalChampionKill(
       shared.miniBossAlive = true;
       shared.layerBanner = { text: "A CHAMPION BOSS EMERGES", sub: "DEFEAT IT TO OPEN PORTALS", color: "#ff4488", at: shared.zone.elapsedSec };
     } else if (!lc.hasMiniBoss || !shared.miniBossAlive) {
-      shared.layerComplete = true;
-      shared.layerBanner = { text: "PORTALS OPENED — CHOOSE YOUR PATH", sub: shared.layer < 3 ? "DESCEND DEEPER OR EXTRACT" : "THE ABYSS IS CONQUERED", color: "#44ff88", at: shared.zone.elapsedSec };
+      const wardenAlive = lc.hasWarden && (shared.wardenHud?.alive ?? !shared.wardenSpawned);
+      if (!wardenAlive) {
+        shared.layerComplete = true;
+        shared.layerBanner = { text: "PORTALS OPENED — CHOOSE YOUR PATH", sub: shared.layer < 3 ? "DESCEND DEEPER OR EXTRACT" : "THE ABYSS IS CONQUERED", color: "#44ff88", at: shared.zone.elapsedSec };
+      } else {
+        shared.layerBanner = { text: "CHAMPIONS SLAIN — SLAY THE WARDEN", sub: "THE FINAL CHALLENGE AWAITS", color: "#ff60ff", at: shared.zone.elapsedSec };
+      }
     }
   }
 }
