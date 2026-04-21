@@ -298,6 +298,7 @@ interface LabSharedState {
   layerComplete: boolean;
   miniBossSpawned: boolean;
   miniBossAlive: boolean;
+  hardBossSpawned: boolean;
   soulCrystalMult: number;
   descentPortalsSpawned: boolean;
   pendingLayerChange: 2 | 3 | null;
@@ -417,6 +418,7 @@ export function LabyrinthScene() {
     layerComplete: false,
     miniBossSpawned: false,
     miniBossAlive: false,
+    hardBossSpawned: false,
     soulCrystalMult: LAYER_CONFIG[1].crystalMult,
     descentPortalsSpawned: false,
     pendingLayerChange: null,
@@ -635,6 +637,7 @@ export function LabyrinthScene() {
       s.layerComplete = false;
       s.miniBossSpawned = false;
       s.miniBossAlive = false;
+      s.hardBossSpawned = false;
       s.soulCrystalMult = nlc.crystalMult;
       s.descentPortalsSpawned = false;
       s.portals = [];
@@ -2630,6 +2633,26 @@ function ZoneTickLoop({
         enemiesRef.current.push(mb);
         onEnemiesChange(enemiesRef.current.slice());
         shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
+        audioManager.play("boss_spawn");
+      }
+    }
+
+    // ── Hard-mode chaos boss (last 60s) ──────────────────────────────
+    if (hardMode && !shared.hardBossSpawned && zone.timeRemaining <= 60 && zone.timeRemaining > 0) {
+      const chaosKind = shared.layer === 1 ? "rival_mage" as const : shared.layer === 2 ? "rival_rogue" as const : null;
+      if (chaosKind) {
+        shared.hardBossSpawned = true;
+        const boss = makeRivalChampion(chaosKind, p.x + 10, p.z + 10);
+        applyHardMode(boss);
+        enemiesRef.current.push(boss);
+        onEnemiesChange(enemiesRef.current.slice());
+        shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
+        shared.layerBanner = {
+          text: chaosKind === "rival_mage" ? "A TRIAL MAGE ENTERS THE FRAY" : "A TRIAL ROGUE STALKS THE DARK",
+          sub: "HARD MODE — CHAOS APPROACHES",
+          color: "#ff4444",
+          at: shared.zone.elapsedSec,
+        };
         audioManager.play("boss_spawn");
       }
     }
