@@ -515,9 +515,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   iron_skin: {
     id: "iron_skin", name: "Iron Skin",
-    description: "+5% dodge chance",
+    description: "+8% dodge chance",
     icon: "🪬", maxStacks: 4, rarity: "common", classes: "all",
-    apply: (s) => { s.dodgeChance += 0.05; },
+    apply: (s) => { s.dodgeChance += 0.08; },
   },
   soul_feast: {
     id: "soul_feast", name: "Soul Feast",

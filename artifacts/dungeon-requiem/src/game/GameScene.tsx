@@ -2325,7 +2325,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           if (dist <= 3.5 && !p.dead && p.invTimer <= 0 && !p.isDashing) {
             const rawDmg = e.damage * 1.4 * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE) * (1 - (e.weakenPct || 0));
             const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
-            if (!isDodged) {
+            if (isDodged) {
+              useGameStore.getState().addDamagePopup({ id: popupId(), x: p.x, z: p.z, value: 0, isCrit: false, isPlayer: false, spawnTime: performance.now(), text: "DODGE", color: "#44ddff" });
+              if (stats.evasionMatrixEnabled) { p.invisTimer = 1.0; p.guaranteedCrit = true; }
+            } else {
               // Mana Shield absorption
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
               const afterShield = rawDmg - shielded;
@@ -2371,11 +2374,8 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             const rawDmg = e.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE) * (1 - (e.weakenPct || 0));
             const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
             if (isDodged) {
-              // ── Evasion Matrix: dodge → invis + guaranteed crit ──
-              if (stats.evasionMatrixEnabled) {
-                p.invisTimer = 1.0;
-                p.guaranteedCrit = true;
-              }
+              useGameStore.getState().addDamagePopup({ id: popupId(), x: p.x, z: p.z, value: 0, isCrit: false, isPlayer: false, spawnTime: performance.now(), text: "DODGE", color: "#44ddff" });
+              if (stats.evasionMatrixEnabled) { p.invisTimer = 1.0; p.guaranteedCrit = true; }
             } else {
               // Mana Shield absorption
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
@@ -2945,7 +2945,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           ep.dead = true;
           const rawDmg = ep.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
           const isDodged = stats.dodgeChance > 0 && Math.random() < stats.dodgeChance;
-          if (!isDodged) {
+          if (isDodged) {
+            useGameStore.getState().addDamagePopup({ id: popupId(), x: p.x, z: p.z, value: 0, isCrit: false, isPlayer: false, spawnTime: performance.now(), text: "DODGE", color: "#44ddff" });
+            if (stats.evasionMatrixEnabled) { p.invisTimer = 1.0; p.guaranteedCrit = true; }
+          } else {
             const effective = applyArmor(rawDmg, stats.armor + p.actionArmorBuff, stats.incomingDamageMult);
             p.hp -= effective; spawnPlayerDmgPopup(p, effective);
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.6;
