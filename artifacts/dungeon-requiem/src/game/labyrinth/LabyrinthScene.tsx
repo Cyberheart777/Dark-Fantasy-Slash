@@ -763,8 +763,8 @@ export function LabyrinthScene() {
 
 // ─── Layer-aware lighting ────────────────────────────────────────────────────
 
-const LAYER_LIGHT_MULT: Record<number, number> = { 1: 1.0, 2: 0.8, 3: 0.6 };
-const LAYER_FOG_NEAR:   Record<number, number> = { 1: 50,  2: 35,  3: 25  };
+const LAYER_LIGHT_MULT: Record<number, number> = { 1: 0.8, 2: 0.5, 3: 0.3 };
+const LAYER_FOG_NEAR:   Record<number, number> = { 1: 40,  2: 25,  3: 15  };
 
 function LayerLighting({ sharedRef }: { sharedRef: React.MutableRefObject<LabSharedState> }) {
   const ambRef = useRef<THREE.AmbientLight>(null);
@@ -930,7 +930,7 @@ function LabyrinthWorld({
           of the scene visible, so a partial scene is visible instead
           of a fully black canvas. */}
       <LabyrinthCanvasErrorBoundary label="Map3D" fallback={null}>
-        <LabyrinthMap3D maze={maze} />
+        <LabyrinthMap3D maze={maze} layer={sharedRef.current.layer} />
       </LabyrinthCanvasErrorBoundary>
       <LabyrinthCanvasErrorBoundary label="Zone3D" fallback={null}>
         <LabyrinthZone3D radius={currentRadius} isPaused={paused} />

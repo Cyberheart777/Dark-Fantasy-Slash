@@ -383,6 +383,11 @@ export function SoulForge() {
                               {formatBonuses(scaleBonuses(equipped.bonuses as Record<string, number>, enh))}
                             </div>
                           )}
+                          {equipped.description && (
+                            <div style={{ fontSize: 9, color: "#8a70a0", fontStyle: "italic", marginTop: 2, lineHeight: 1.3 }}>
+                              {equipped.description}
+                            </div>
+                          )}
                           <div style={styles.slotUnequipHint}>click to unequip</div>
                         </>
                       ) : (
@@ -435,6 +440,11 @@ export function SoulForge() {
                         {item.bonuses && (
                           <div style={styles.stashStats}>
                             {formatBonuses(scaleBonuses(item.bonuses as Record<string, number>, enh))}
+                          </div>
+                        )}
+                        {(item as any).description && (
+                          <div style={{ fontSize: 9, color: "#8a70a0", fontStyle: "italic", marginTop: 2, lineHeight: 1.3, padding: "0 8px" }}>
+                            {(item as any).description}
                           </div>
                         )}
                         <div style={styles.stashActions}>

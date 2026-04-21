@@ -219,7 +219,7 @@ export const GEAR_POOL: GearDef[] = [
   { id: "abyssal_plate",    name: "Abyssal Plate",      slot: "armor",  rarity: "epic",   icon: "🦴", description: "+6 armor, +20 HP, +5% crit dmg",                                                    bonuses: { armor: 6, maxHealth: 20, critDamageBonus: 0.05 } },
   { id: "wraithbound_mail", name: "Wraithbound Mail",   slot: "armor",  rarity: "epic",   icon: "👁️", description: "+3 armor, +3% lifesteal",                                                           bonuses: { armor: 3, lifesteal: 0.03 } },
   { id: "phantom_wrap",     name: "Phantom Wrap",       slot: "armor",  rarity: "epic",   icon: "🕸️", description: "+2 armor, +0.15 move speed · when hit <30% HP: intangible 1.5s (10s CD)",          bonuses: { armor: 2, moveSpeed: 0.15 }, proc: "phantom_wrap_intangible" },
-  { id: "glacial_robe",     name: "Glacial Robe",       slot: "armor",  rarity: "epic",   icon: "❄️", description: "+3 armor, +2 dmg · damage taken slows nearby 70% 2s; slowed take +20% dmg (20s CD)", bonuses: { armor: 3, damage: 2 }, class: "mage", proc: "glacial_robe_slow" },
+  { id: "glacial_robe",     name: "Glacial Robe",       slot: "armor",  rarity: "epic",   icon: "❄️", description: "+2 armor, +2 dmg · damage taken slows nearby 70% 2s; slowed take +20% dmg (20s CD)", bonuses: { armor: 2, damage: 2 }, class: "mage", proc: "glacial_robe_slow" },
 
   // ═══ TRINKETS ═══
   // Common

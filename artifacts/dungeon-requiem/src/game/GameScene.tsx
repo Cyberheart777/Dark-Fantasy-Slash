@@ -690,6 +690,7 @@ function gearToStash(gear: GearDef) {
     id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity,
     slot: gear.slot, enhanceLevel: gear.enhanceLevel ?? 0,
     bonuses: { ...gear.bonuses } as Record<string, number>,
+    ...(gear.description ? { description: gear.description } : {}),
     ...(gear.proc ? { proc: gear.proc } : {}),
     ...(gear.class ? { class: gear.class } : {}),
   };
