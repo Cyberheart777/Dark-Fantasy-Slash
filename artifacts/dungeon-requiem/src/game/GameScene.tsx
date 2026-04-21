@@ -690,6 +690,8 @@ function gearToStash(gear: GearDef) {
     id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity,
     slot: gear.slot, enhanceLevel: gear.enhanceLevel ?? 0,
     bonuses: { ...gear.bonuses } as Record<string, number>,
+    ...(gear.proc ? { proc: gear.proc } : {}),
+    ...(gear.class ? { class: gear.class } : {}),
   };
 }
 
@@ -3624,7 +3626,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     store.setPlayerHP(p.hp, p.maxHp);
     store.setPlayerPos(p.x, p.z, p.angle);
     store.setAttackState(p.attackTrigger, p.isDashing);
-    store.setActionState(p.actionCooldownTimer, stats.actionCooldown);
+    store.setActionState(p.actionCooldownTimer, stats.actionCooldown * (1 - stats.actionCdrPct));
     store.setProgression(
       g.progression.level,
       g.progression.xp,
@@ -4447,9 +4449,11 @@ export function GameScene({ onRestart }: GameSceneProps) {
       const fullGear: GearDef = {
         id: stashItem.id, name: stashItem.name, slot: stashItem.slot as any,
         rarity: stashItem.rarity as any, icon: stashItem.icon,
-        description: "", // not needed at runtime
+        description: "",
         bonuses: stashItem.bonuses ?? {},
         enhanceLevel: stashItem.enhanceLevel ?? 0,
+        ...(stashItem.proc ? { proc: stashItem.proc as any } : {}),
+        ...(stashItem.class ? { class: stashItem.class as any } : {}),
       };
       equipGear(fullGear, gs0);
       useGameStore.getState().setGearEquipped(slot, fullGear);

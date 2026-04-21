@@ -101,6 +101,10 @@ export interface StashItem {
   enhanceLevel?: number;
   /** Stored bonuses from the original GearDef. Needed for stat display in UI. */
   bonuses?: Record<string, number>;
+  /** Proc identifier for gear with special effects (e.g. arc_warblade_slash). */
+  proc?: string;
+  /** Class restriction if any. */
+  class?: string;
 }
 
 export interface MetaState {

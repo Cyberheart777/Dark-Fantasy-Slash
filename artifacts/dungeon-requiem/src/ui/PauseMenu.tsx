@@ -11,6 +11,7 @@
 import type { MutableRefObject } from "react";
 import { useState } from "react";
 import { useGameStore } from "../store/gameStore";
+import { useMetaStore } from "../store/metaStore";
 import { audioManager } from "../audio/AudioManager";
 import { GEAR_RARITY_COLOR, type GearDef } from "../data/GearData";
 import { SettingsPanel } from "./SettingsPanel";
@@ -54,6 +55,19 @@ export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory
     const s = useGameStore.getState();
     const prevBest = s.bestScore;
     const prevWave = s.bestWave;
+    const meta = useMetaStore.getState();
+    for (const slot of ["weapon", "armor", "trinket"] as const) {
+      const gear = s[slot === "weapon" ? "equippedWeapon" : slot === "armor" ? "equippedArmor" : "equippedTrinket"];
+      if (gear) {
+        meta.addGearToStash({
+          id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity,
+          slot: gear.slot, enhanceLevel: gear.enhanceLevel ?? 0,
+          bonuses: { ...gear.bonuses } as Record<string, number>,
+          ...(gear.proc ? { proc: gear.proc } : {}),
+          ...(gear.class ? { class: gear.class } : {}),
+        });
+      }
+    }
     s.resetGame();
     s.setBestScore(prevBest, prevWave);
     s.setPhase("menu");
