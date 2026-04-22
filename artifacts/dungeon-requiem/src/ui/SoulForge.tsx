@@ -386,7 +386,7 @@ export function SoulForge() {
                   const enh = equipped?.enhanceLevel ?? 0;
                   const enhColor = ENHANCE_COLORS[enh] ?? ENHANCE_COLORS[0];
                   const rarityColor = equipped
-                    ? equipped.rarity === "epic" ? "#aa44ff" : equipped.rarity === "rare" ? "#4488dd" : enhColor.border
+                    ? equipped.rarity === "epic" ? "#aa44ff" : equipped.rarity === "rare" ? "#4488dd" : "#8a8a7a"
                     : "#2a1f3d";
                   return (
                     <button
@@ -458,7 +458,7 @@ export function SoulForge() {
                     const item = gearStash[i];
                     const enh = item.enhanceLevel ?? 0;
                     const enhColor = ENHANCE_COLORS[enh] ?? ENHANCE_COLORS[0];
-                    const rarityColor = item.rarity === "epic" ? "#aa44ff" : item.rarity === "rare" ? "#4488dd" : enhColor.border;
+                    const rarityColor = item.rarity === "epic" ? "#aa44ff" : item.rarity === "rare" ? "#4488dd" : "#8a8a7a";
                     const sellVal = item.rarity === "epic" ? 35 : item.rarity === "rare" ? 15 : 5;
                     const enhMax = ENHANCE_MAX[item.rarity as keyof typeof ENHANCE_MAX] ?? 3;
                     const canEnhance = enh < enhMax;
