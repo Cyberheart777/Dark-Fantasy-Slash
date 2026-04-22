@@ -321,6 +321,7 @@ interface LabSharedState {
    *  the HUD dialog when the player accepts or cancels. */
   pendingPortalDecision: { type: "extract" | "descent"; portalId: string } | null;
   layerBanner: { text: string; sub: string; color: string; at: number } | null;
+  isPaused: boolean;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -440,6 +441,7 @@ export function LabyrinthScene() {
     descentPortalsSpawned: false,
     pendingLayerChange: null,
     pendingPortalDecision: null,
+    isPaused: false,
     layerBanner: { text: "DEFEAT 4 CHAMPIONS TO DESCEND", sub: "THE HUNT BEGINS", color: "#cc88ff", at: 0 },
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
@@ -1438,8 +1440,7 @@ function MovementLoop({
     const input = inputRef.current;
     if (!input) return;
     if (sharedRef.current.defeated || sharedRef.current.extracted || sharedRef.current.victory) return;
-    const currentPhase = useGameStore.getState().phase;
-    if (currentPhase === "levelup" || currentPhase === "paused") return;
+    if (useGameStore.getState().phase === "levelup" || sharedRef.current.isPaused) return;
     const s = input.state;
     const p = playerRef.current;
     const dashState = labDashRef.current;
@@ -1753,8 +1754,7 @@ function CombatEnemyLoop({
       evaluateLabRunAchievements(shared, playerRef.current, gearStateRef.current, charClass);
     }
     if (shared.defeated || shared.extracted || shared.victory) return;
-    const currentPhase = useGameStore.getState().phase;
-    if (currentPhase === "levelup" || currentPhase === "paused") return;
+    if (useGameStore.getState().phase === "levelup" || sharedRef.current.isPaused) return;
     const input = inputRef.current;
     if (!input) return;
 
@@ -2615,8 +2615,7 @@ function ZoneTickLoop({
   useFrame((_, delta) => {
     const shared = sharedRef.current;
     if (shared.defeated || shared.extracted || shared.victory) return;
-    const currentPhase = useGameStore.getState().phase;
-    if (currentPhase === "levelup" || currentPhase === "paused") return;
+    if (useGameStore.getState().phase === "levelup" || sharedRef.current.isPaused) return;
 
     const hardMode = useGameStore.getState().labyrinthHardMode;
     const realElapsed = (performance.now() - runStartMs.current) / 1000;
@@ -3057,9 +3056,9 @@ function LabyrinthHUD({
         setEsc((v) => {
           if (v) {
             setPauseView("main");
-            useGameStore.getState().setPhase("labyrinth");
+            sharedRef.current.isPaused = false;
           } else {
-            useGameStore.getState().setPhase("paused");
+            sharedRef.current.isPaused = true;
           }
           return !v;
         });
