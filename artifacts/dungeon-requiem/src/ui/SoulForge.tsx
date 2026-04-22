@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useMetaStore, TRIAL_BUFFS, getEarnedTrialBuffs, type StashItem } from "../store/metaStore";
 import { META_UPGRADES, buildMetaModifiers, buildTrialModifiers, nextRankCost, nextRankLine } from "../data/MetaUpgradeData";
 import { DIFFICULTIES, DIFFICULTY_DATA } from "../data/DifficultyData";
-import { ENHANCE_MULT, ENHANCE_COST, ENHANCE_MAX, ENHANCE_COLORS, PERCENTAGE_BONUS_KEYS, PERCENTAGE_ENHANCE_CAP, formatBonuses, type GearDef } from "../data/GearData";
+import { ENHANCE_MULT, ENHANCE_COST, ENHANCE_MAX, ENHANCE_COLORS, PERCENTAGE_BONUS_KEYS, PERCENTAGE_ENHANCE_CAP, formatBonuses, rollGearDrop, type GearDef, type GearRarity } from "../data/GearData";
 import { useGameStore } from "../store/gameStore";
 import { audioManager } from "../audio/AudioManager";
 import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
@@ -102,9 +102,11 @@ export function SoulForge() {
   const setPhase = useGameStore((s) => s.setPhase);
   const selectedClass = useGameStore((s) => s.selectedClass);
   const [flash, setFlash] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"forge" | "armory">("forge");
+  const [activeTab, setActiveTab] = useState<"forge" | "armory" | "gambler">("forge");
   const [previewClass, setPreviewClass] = useState<CharacterClass>(selectedClass);
   const [sortBy, setSortBy] = useState<"default" | "slot" | "rarity" | "name">("default");
+  const [lastGamble, setLastGamble] = useState<StashItem | null>(null);
+  const [gambleAnim, setGambleAnim] = useState(false);
 
   const duplicateCounts = new Map<string, number>();
   for (const item of gearStash) {
@@ -184,6 +186,15 @@ export function SoulForge() {
             {gearStash.length > 0 && (
               <span style={styles.tabBadge}>{gearStash.length}</span>
             )}
+          </button>
+          <button
+            style={{
+              ...styles.tabBtn,
+              ...(activeTab === "gambler" ? styles.tabBtnActive : {}),
+            }}
+            onClick={() => { clickSfx(); setActiveTab("gambler"); }}
+          >
+            🎲 GAMBLER
           </button>
         </div>
 
@@ -540,6 +551,174 @@ export function SoulForge() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {activeTab === "gambler" && (
+          <div style={styles.armoryContainer}>
+            <div style={{
+              ...styles.armoryIntro,
+              borderLeftColor: "#806020",
+              background: "rgba(20,14,6,0.5)",
+            }}>
+              "Every shard you offer… the darkness remembers.
+              It may reward you… or it may not."
+            </div>
+
+            {/* Gamble options */}
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: 14 }}>
+              {([
+                {
+                  id: "whisper",
+                  name: "Whisper of Fate",
+                  cost: 25,
+                  icon: "🕯",
+                  desc: "A faint echo from the void. Mostly common, occasionally something more.",
+                  color: "#8a8a70",
+                  rates: { common: 0.72, rare: 0.23, epic: 0.05 } as Record<GearRarity, number>,
+                },
+                {
+                  id: "murmur",
+                  name: "Tempt the Abyss",
+                  cost: 75,
+                  icon: "🔮",
+                  desc: "Reach deeper. The abyss guarantees rare quality or better.",
+                  color: "#4488dd",
+                  rates: { common: 0, rare: 0.80, epic: 0.20 } as Record<GearRarity, number>,
+                },
+                {
+                  id: "pact",
+                  name: "Dark Pact",
+                  cost: 250,
+                  icon: "💀",
+                  desc: "Bind your soul to the darkness. An epic artifact, guaranteed.",
+                  color: "#aa44ff",
+                  rates: { common: 0, rare: 0, epic: 1.0 } as Record<GearRarity, number>,
+                },
+              ] as const).map(tier => {
+                const canAfford = shards >= tier.cost;
+                const handleGamble = () => {
+                  if (!canAfford || gambleAnim) return;
+                  clickSfx();
+                  const ok = useMetaStore.getState().spendShards(tier.cost);
+                  if (!ok) return;
+                  setGambleAnim(true);
+                  setLastGamble(null);
+                  setTimeout(() => {
+                    const roll = Math.random();
+                    let rarity: GearRarity = "common";
+                    if (roll < tier.rates.epic) rarity = "epic";
+                    else if (roll < tier.rates.epic + tier.rates.rare) rarity = "rare";
+                    const gear = rollGearDrop(rarity);
+                    const stashItem: StashItem = {
+                      id: gear.id,
+                      name: gear.name,
+                      icon: gear.icon,
+                      rarity: gear.rarity,
+                      slot: gear.slot,
+                      enhanceLevel: 0,
+                      bonuses: { ...gear.bonuses } as Record<string, number>,
+                      ...(gear.description ? { description: gear.description } : {}),
+                      ...(gear.proc ? { proc: gear.proc } : {}),
+                      ...(gear.class ? { class: gear.class } : {}),
+                    };
+                    useMetaStore.getState().addGearToStash(stashItem);
+                    setLastGamble(stashItem);
+                    setGambleAnim(false);
+                    audioManager.play("gear_drop");
+                  }, 800);
+                };
+                return (
+                  <div key={tier.id} style={{
+                    ...styles.armorySection,
+                    borderColor: `${tier.color}40`,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                      <div style={{ fontSize: 36, textShadow: `0 0 14px ${tier.color}80` }}>{tier.icon}</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 15, fontWeight: 900, letterSpacing: 2, color: tier.color, fontFamily: "monospace" }}>
+                          {tier.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: "#806090", fontFamily: "monospace", marginTop: 4, lineHeight: 1.4 }}>
+                          {tier.desc}
+                        </div>
+                        <div style={{ fontSize: 10, color: "#504060", fontFamily: "monospace", marginTop: 6, letterSpacing: 1 }}>
+                          {tier.rates.epic > 0 && tier.rates.epic < 1 && `${Math.round(tier.rates.epic * 100)}% EPIC · `}
+                          {tier.rates.epic === 1 && "100% EPIC · "}
+                          {tier.rates.rare > 0 && `${Math.round(tier.rates.rare * 100)}% RARE · `}
+                          {tier.rates.common > 0 && `${Math.round(tier.rates.common * 100)}% COMMON`}
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleGamble}
+                        disabled={!canAfford || gambleAnim}
+                        style={{
+                          padding: "14px 20px",
+                          background: canAfford && !gambleAnim ? `${tier.color}18` : "#0a0610",
+                          border: `2px solid ${canAfford && !gambleAnim ? tier.color : "#2a1f3d"}`,
+                          borderRadius: 8,
+                          color: canAfford && !gambleAnim ? tier.color : "#3a2850",
+                          fontSize: 14,
+                          fontWeight: 900,
+                          fontFamily: "monospace",
+                          letterSpacing: 2,
+                          cursor: canAfford && !gambleAnim ? "pointer" : "default",
+                          opacity: canAfford && !gambleAnim ? 1 : 0.4,
+                          minWidth: 100,
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        {gambleAnim ? "..." : <>◈{tier.cost}</>}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Last roll result */}
+            {lastGamble && (
+              <div style={{
+                ...styles.armorySection,
+                borderColor: lastGamble.rarity === "epic" ? "#aa44ff60" : lastGamble.rarity === "rare" ? "#4488dd60" : "#60606040",
+                background: lastGamble.rarity === "epic" ? "#12061a" : "#080612",
+              }}>
+                <div style={styles.armorySectionTitle}>
+                  {lastGamble.rarity === "epic" ? "THE DARKNESS REWARDS YOU" : lastGamble.rarity === "rare" ? "A WORTHY OFFERING" : "THE VOID STIRS"}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <div style={{ fontSize: 40 }}>{lastGamble.icon}</div>
+                  <div>
+                    <div style={{
+                      fontSize: 16, fontWeight: 900, letterSpacing: 2, fontFamily: "monospace",
+                      color: lastGamble.rarity === "epic" ? "#aa44ff" : lastGamble.rarity === "rare" ? "#4488dd" : "#aaa",
+                    }}>
+                      {lastGamble.name}
+                    </div>
+                    <div style={{ fontSize: 10, letterSpacing: 2, fontFamily: "monospace", marginTop: 4 }}>
+                      <span style={{ color: lastGamble.rarity === "epic" ? "#aa44ff" : lastGamble.rarity === "rare" ? "#4488dd" : "#888" }}>
+                        {lastGamble.rarity.toUpperCase()}
+                      </span>
+                      <span style={{ color: "#504060" }}> · </span>
+                      <span style={{ color: "#806090" }}>{lastGamble.slot.toUpperCase()}</span>
+                    </div>
+                    {lastGamble.bonuses && (
+                      <div style={{ fontSize: 12, color: "#a080c0", marginTop: 6, lineHeight: 1.5 }}>
+                        {formatBonuses(lastGamble.bonuses as Record<string, number>)}
+                      </div>
+                    )}
+                    {lastGamble.description && (
+                      <div style={{ fontSize: 10, color: "#8a70a0", fontStyle: "italic", marginTop: 4, lineHeight: 1.3 }}>
+                        {lastGamble.description}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: "#504060", fontFamily: "monospace", letterSpacing: 1, textAlign: "center" as const }}>
+                  Added to your stash
+                </div>
+              </div>
+            )}
           </div>
         )}
 
