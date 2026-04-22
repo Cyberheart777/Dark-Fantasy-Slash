@@ -200,6 +200,9 @@ export interface MetaState {
   equipToLoadout: (stashIndex: number) => void;
   unequipFromLoadout: (slot: string) => void;
   enhanceGear: (stashIndex: number) => boolean;
+  /** Find the best duplicate fuel for enhancing an item at stashIndex.
+   *  Returns the fuel stash index, or -1 if no duplicate is available. */
+  findDuplicateFuel: (stashIndex: number) => number;
   markTutorialSeen: () => void;
   setSettings: (patch: Partial<MetaState["settings"]>) => void;
 }
@@ -474,22 +477,46 @@ export const useMetaStore = create<MetaState>()(
         });
       },
 
+      findDuplicateFuel: (stashIndex: number) => {
+        const s = get();
+        const item = s.gearStash[stashIndex];
+        if (!item) return -1;
+        let bestIdx = -1;
+        let bestLevel = Infinity;
+        for (let i = 0; i < s.gearStash.length; i++) {
+          if (i === stashIndex) continue;
+          const other = s.gearStash[i];
+          if (other.id === item.id) {
+            const lvl = other.enhanceLevel ?? 0;
+            if (lvl < bestLevel) { bestLevel = lvl; bestIdx = i; }
+          }
+        }
+        return bestIdx;
+      },
+
       enhanceGear: (stashIndex: number) => {
         const s = get();
         const item = s.gearStash[stashIndex];
         if (!item) return false;
         const currentLevel = item.enhanceLevel ?? 0;
-        // Max enhancement by rarity: common +3, rare +5, epic +7 (from GearData)
         const rarity = item.rarity as keyof typeof ENHANCE_MAX;
         const maxLevel = ENHANCE_MAX[rarity] ?? 3;
         if (currentLevel >= maxLevel) return false;
         const cost = ENHANCE_COST[currentLevel + 1] ?? ENHANCE_COST[ENHANCE_COST.length - 1];
         if (s.shards < cost) return false;
+        const fuelIdx = get().findDuplicateFuel(stashIndex);
+        if (fuelIdx < 0) return false;
         const newStash = [...s.gearStash];
         const newLevel = currentLevel + 1;
-        newStash[stashIndex] = { ...item, enhanceLevel: newLevel };
+        // Remove fuel first (splice from higher index first to avoid shift)
+        if (fuelIdx > stashIndex) {
+          newStash.splice(fuelIdx, 1);
+          newStash[stashIndex] = { ...item, enhanceLevel: newLevel };
+        } else {
+          newStash.splice(fuelIdx, 1);
+          newStash[stashIndex - 1] = { ...item, enhanceLevel: newLevel };
+        }
         set({ gearStash: newStash, shards: s.shards - cost });
-        // Achievement: max enhancement + golden arsenal
         if (newLevel >= maxLevel) {
           const ach = useAchievementStore.getState();
           ach.tryUnlock("perfection");

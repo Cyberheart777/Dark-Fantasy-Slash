@@ -98,12 +98,30 @@ function computePreviewStats(
 const SOUL_FORGE_BG_URL = `${import.meta.env.BASE_URL}images/Soul-Forge-bg.png`;
 
 export function SoulForge() {
-  const { shards, totalShardsEarned, purchased, purchaseRank, trialWins, gearStash, sellGear, equippedLoadout, equipToLoadout, unequipFromLoadout, enhanceGear } = useMetaStore();
+  const { shards, totalShardsEarned, purchased, purchaseRank, trialWins, gearStash, sellGear, equippedLoadout, equipToLoadout, unequipFromLoadout, enhanceGear, findDuplicateFuel } = useMetaStore();
   const setPhase = useGameStore((s) => s.setPhase);
   const selectedClass = useGameStore((s) => s.selectedClass);
   const [flash, setFlash] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"forge" | "armory">("forge");
   const [previewClass, setPreviewClass] = useState<CharacterClass>(selectedClass);
+  const [sortBy, setSortBy] = useState<"default" | "slot" | "rarity" | "name">("default");
+
+  const duplicateCounts = new Map<string, number>();
+  for (const item of gearStash) {
+    duplicateCounts.set(item.id, (duplicateCounts.get(item.id) ?? 0) + 1);
+  }
+
+  const RARITY_ORDER: Record<string, number> = { epic: 0, rare: 1, common: 2 };
+  const SLOT_ORDER: Record<string, number> = { weapon: 0, armor: 1, trinket: 2 };
+
+  const sortedStashIndices = gearStash.map((_, i) => i);
+  if (sortBy === "slot") {
+    sortedStashIndices.sort((a, b) => (SLOT_ORDER[gearStash[a].slot] ?? 9) - (SLOT_ORDER[gearStash[b].slot] ?? 9));
+  } else if (sortBy === "rarity") {
+    sortedStashIndices.sort((a, b) => (RARITY_ORDER[gearStash[a].rarity] ?? 9) - (RARITY_ORDER[gearStash[b].rarity] ?? 9));
+  } else if (sortBy === "name") {
+    sortedStashIndices.sort((a, b) => gearStash[a].name.localeCompare(gearStash[b].name));
+  }
 
   const previewStats = computePreviewStats(previewClass, purchased, trialWins, equippedLoadout);
 
@@ -310,8 +328,8 @@ export function SoulForge() {
         {activeTab === "armory" && (
           <div style={styles.armoryContainer}>
             <div style={styles.armoryIntro}>
-              Equip gear from your stash before your next run. Each slot holds
-              one item. Click an equipped slot to unequip.
+              Equip gear before your next run. Enhancement requires a duplicate
+              of the same gear as fusion material, plus soul shards.
             </div>
 
             {/* ── Stats preview (with class picker) ── */}
@@ -401,12 +419,32 @@ export function SoulForge() {
 
             {/* ── Stash ── */}
             <div style={styles.armorySection}>
-              <div style={styles.armorySectionTitle}>
-                STASH {gearStash.length > 0 && <span style={{ color: "#a060c0" }}>({gearStash.length})</span>}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                <div style={styles.armorySectionTitle}>
+                  STASH {gearStash.length > 0 && <span style={{ color: "#a060c0" }}>({gearStash.length})</span>}
+                </div>
+                {gearStash.length > 1 && (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {(["default", "slot", "rarity", "name"] as const).map(s => (
+                      <button
+                        key={s}
+                        onClick={() => { clickSfx(); setSortBy(s); }}
+                        style={{
+                          padding: "4px 10px", fontSize: 10, fontWeight: 900, letterSpacing: 1,
+                          fontFamily: "monospace", borderRadius: 4, cursor: "pointer",
+                          background: sortBy === s ? "#5020a0" : "transparent",
+                          border: `1px solid ${sortBy === s ? "#8040d0" : "#2a1f3d"}`,
+                          color: sortBy === s ? "#d0a0ff" : "#504060",
+                        }}
+                      >{s === "default" ? "ALL" : s.toUpperCase()}</button>
+                    ))}
+                  </div>
+                )}
               </div>
               {gearStash.length > 0 ? (
                 <div style={styles.stashGrid}>
-                  {gearStash.map((item, i) => {
+                  {sortedStashIndices.map((i) => {
+                    const item = gearStash[i];
                     const enh = item.enhanceLevel ?? 0;
                     const enhColor = ENHANCE_COLORS[enh] ?? ENHANCE_COLORS[0];
                     const rarityColor = item.rarity === "epic" ? "#aa44ff" : item.rarity === "rare" ? "#4488dd" : enhColor.border;
@@ -415,6 +453,9 @@ export function SoulForge() {
                     const canEnhance = enh < enhMax;
                     const enhanceCost = canEnhance ? (ENHANCE_COST[enh + 1] ?? ENHANCE_COST[ENHANCE_COST.length - 1]) : 0;
                     const canAffordEnhance = shards >= enhanceCost;
+                    const hasDuplicate = findDuplicateFuel(i) >= 0;
+                    const canFuse = canEnhance && canAffordEnhance && hasDuplicate;
+                    const dupeCount = duplicateCounts.get(item.id) ?? 1;
                     return (
                       <div
                         key={`${item.id}-${i}`}
@@ -425,7 +466,19 @@ export function SoulForge() {
                         }}
                       >
                         <div style={styles.stashCardHeader}>
-                          <span style={styles.stashIcon}>{item.icon}</span>
+                          <div style={{ position: "relative" as const }}>
+                            <span style={styles.stashIcon}>{item.icon}</span>
+                            {dupeCount > 1 && (
+                              <span style={{
+                                position: "absolute" as const, top: -4, right: -8,
+                                background: "#5020a0", color: "#d0a0ff",
+                                fontSize: 10, fontWeight: 900, fontFamily: "monospace",
+                                borderRadius: 8, padding: "1px 5px", minWidth: 16,
+                                textAlign: "center" as const, lineHeight: "14px",
+                                border: "1px solid #8040d0",
+                              }}>x{dupeCount}</span>
+                            )}
+                          </div>
                           <div style={styles.stashCardTitles}>
                             <div style={{ ...styles.stashName, color: rarityColor }}>
                               {item.name}{enh > 0 ? ` +${enh}` : ""}
@@ -459,15 +512,22 @@ export function SoulForge() {
                           {canEnhance && (
                             <button
                               onClick={() => { clickSfx(); enhanceGear(i); }}
+                              disabled={!canFuse}
+                              title={!hasDuplicate ? "Needs a duplicate to fuse" : !canAffordEnhance ? "Not enough shards" : `Fuse duplicate + ◈${enhanceCost}`}
                               style={{
                                 ...styles.enhanceBtn,
-                                background: canAffordEnhance ? "#0a2010" : "#1a1040",
-                                borderColor: canAffordEnhance ? "#40aa40" : "#2a3030",
-                                color: canAffordEnhance ? "#60cc60" : "#3a4a3a",
-                                cursor: canAffordEnhance ? "pointer" : "default",
-                                opacity: canAffordEnhance ? 1 : 0.5,
+                                background: canFuse ? "#0a2010" : "#1a1040",
+                                borderColor: canFuse ? "#40aa40" : "#2a3030",
+                                color: canFuse ? "#60cc60" : "#3a4a3a",
+                                cursor: canFuse ? "pointer" : "default",
+                                opacity: canFuse ? 1 : 0.4,
                               }}
-                            >+{enh + 1} ◈{enhanceCost}</button>
+                            >
+                              {hasDuplicate
+                                ? <>FUSE +{enh + 1} ◈{enhanceCost}</>
+                                : <>+{enh + 1} NO DUPE</>
+                              }
+                            </button>
                           )}
                         </div>
                       </div>
