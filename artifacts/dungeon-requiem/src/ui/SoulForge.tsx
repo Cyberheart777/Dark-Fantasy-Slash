@@ -565,116 +565,84 @@ export function SoulForge() {
               It may reward you… or it may not."
             </div>
 
-            {/* Gamble options */}
-            <div style={{ display: "flex", flexDirection: "column" as const, gap: 14 }}>
-              {([
-                {
-                  id: "whisper",
-                  name: "Whisper of Fate",
-                  cost: 25,
-                  icon: "🕯",
-                  desc: "A faint echo from the void. Mostly common, occasionally something more.",
-                  color: "#8a8a70",
-                  rates: { common: 0.72, rare: 0.23, epic: 0.05 } as Record<GearRarity, number>,
-                },
-                {
-                  id: "murmur",
-                  name: "Tempt the Abyss",
-                  cost: 75,
-                  icon: "🔮",
-                  desc: "Reach deeper. The abyss guarantees rare quality or better.",
-                  color: "#4488dd",
-                  rates: { common: 0, rare: 0.80, epic: 0.20 } as Record<GearRarity, number>,
-                },
-                {
-                  id: "pact",
-                  name: "Dark Pact",
-                  cost: 250,
-                  icon: "💀",
-                  desc: "Bind your soul to the darkness. An epic artifact, guaranteed.",
-                  color: "#aa44ff",
-                  rates: { common: 0, rare: 0, epic: 1.0 } as Record<GearRarity, number>,
-                },
-              ] as const).map(tier => {
-                const canAfford = shards >= tier.cost;
-                const handleGamble = () => {
-                  if (!canAfford || gambleAnim) return;
-                  clickSfx();
-                  const ok = useMetaStore.getState().spendShards(tier.cost);
-                  if (!ok) return;
-                  setGambleAnim(true);
-                  setLastGamble(null);
-                  setTimeout(() => {
-                    const roll = Math.random();
-                    let rarity: GearRarity = "common";
-                    if (roll < tier.rates.epic) rarity = "epic";
-                    else if (roll < tier.rates.epic + tier.rates.rare) rarity = "rare";
-                    const gear = rollGearDrop(rarity);
-                    const stashItem: StashItem = {
-                      id: gear.id,
-                      name: gear.name,
-                      icon: gear.icon,
-                      rarity: gear.rarity,
-                      slot: gear.slot,
-                      enhanceLevel: 0,
-                      bonuses: { ...gear.bonuses } as Record<string, number>,
-                      ...(gear.description ? { description: gear.description } : {}),
-                      ...(gear.proc ? { proc: gear.proc } : {}),
-                      ...(gear.class ? { class: gear.class } : {}),
-                    };
-                    useMetaStore.getState().addGearToStash(stashItem);
-                    setLastGamble(stashItem);
-                    setGambleAnim(false);
-                    audioManager.play("gear_drop");
-                  }, 800);
-                };
-                return (
-                  <div key={tier.id} style={{
-                    ...styles.armorySection,
-                    borderColor: `${tier.color}40`,
-                  }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div style={{ fontSize: 36, textShadow: `0 0 14px ${tier.color}80` }}>{tier.icon}</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 15, fontWeight: 900, letterSpacing: 2, color: tier.color, fontFamily: "monospace" }}>
-                          {tier.name}
-                        </div>
-                        <div style={{ fontSize: 11, color: "#806090", fontFamily: "monospace", marginTop: 4, lineHeight: 1.4 }}>
-                          {tier.desc}
-                        </div>
-                        <div style={{ fontSize: 10, color: "#504060", fontFamily: "monospace", marginTop: 6, letterSpacing: 1 }}>
-                          {tier.rates.epic > 0 && tier.rates.epic < 1 && `${Math.round(tier.rates.epic * 100)}% EPIC · `}
-                          {tier.rates.epic === 1 && "100% EPIC · "}
-                          {tier.rates.rare > 0 && `${Math.round(tier.rates.rare * 100)}% RARE · `}
-                          {tier.rates.common > 0 && `${Math.round(tier.rates.common * 100)}% COMMON`}
-                        </div>
+            {/* Single gamble option */}
+            {(() => {
+              const GAMBLE_COST = 500;
+              const canAfford = shards >= GAMBLE_COST;
+              const handleGamble = () => {
+                if (!canAfford || gambleAnim) return;
+                clickSfx();
+                const ok = useMetaStore.getState().spendShards(GAMBLE_COST);
+                if (!ok) return;
+                setGambleAnim(true);
+                setLastGamble(null);
+                setTimeout(() => {
+                  const roll = Math.random();
+                  let rarity: GearRarity = "common";
+                  if (roll < 0.01) rarity = "epic";
+                  else if (roll < 0.16) rarity = "rare";
+                  const gear = rollGearDrop(rarity);
+                  const stashItem: StashItem = {
+                    id: gear.id,
+                    name: gear.name,
+                    icon: gear.icon,
+                    rarity: gear.rarity,
+                    slot: gear.slot,
+                    enhanceLevel: 0,
+                    bonuses: { ...gear.bonuses } as Record<string, number>,
+                    ...(gear.description ? { description: gear.description } : {}),
+                    ...(gear.proc ? { proc: gear.proc } : {}),
+                    ...(gear.class ? { class: gear.class } : {}),
+                  };
+                  useMetaStore.getState().addGearToStash(stashItem);
+                  setLastGamble(stashItem);
+                  setGambleAnim(false);
+                  audioManager.play("gear_drop");
+                }, 800);
+              };
+              return (
+                <div style={{
+                  ...styles.armorySection,
+                  borderColor: "rgba(180,140,60,0.3)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    <div style={{ fontSize: 40, textShadow: "0 0 16px rgba(180,140,60,0.5)" }}>🎲</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: 3, color: "#c0a050", fontFamily: "monospace" }}>
+                        TEMPT FATE
                       </div>
-                      <button
-                        onClick={handleGamble}
-                        disabled={!canAfford || gambleAnim}
-                        style={{
-                          padding: "14px 20px",
-                          background: canAfford && !gambleAnim ? `${tier.color}18` : "#0a0610",
-                          border: `2px solid ${canAfford && !gambleAnim ? tier.color : "#2a1f3d"}`,
-                          borderRadius: 8,
-                          color: canAfford && !gambleAnim ? tier.color : "#3a2850",
-                          fontSize: 14,
-                          fontWeight: 900,
-                          fontFamily: "monospace",
-                          letterSpacing: 2,
-                          cursor: canAfford && !gambleAnim ? "pointer" : "default",
-                          opacity: canAfford && !gambleAnim ? 1 : 0.4,
-                          minWidth: 100,
-                          transition: "all 0.15s",
-                        }}
-                      >
-                        {gambleAnim ? "..." : <>◈{tier.cost}</>}
-                      </button>
+                      <div style={{ fontSize: 11, color: "#806090", fontFamily: "monospace", marginTop: 6, lineHeight: 1.5 }}>
+                        Offer 500 shards to the void. Receive a random piece of gear.
+                      </div>
+                      <div style={{ fontSize: 10, color: "#504060", fontFamily: "monospace", marginTop: 8, letterSpacing: 1 }}>
+                        84% COMMON · 15% RARE · 1% EPIC
+                      </div>
                     </div>
+                    <button
+                      onClick={handleGamble}
+                      disabled={!canAfford || gambleAnim}
+                      style={{
+                        padding: "16px 24px",
+                        background: canAfford && !gambleAnim ? "rgba(180,140,60,0.1)" : "#0a0610",
+                        border: `2px solid ${canAfford && !gambleAnim ? "#c0a050" : "#2a1f3d"}`,
+                        borderRadius: 8,
+                        color: canAfford && !gambleAnim ? "#c0a050" : "#3a2850",
+                        fontSize: 15,
+                        fontWeight: 900,
+                        fontFamily: "monospace",
+                        letterSpacing: 2,
+                        cursor: canAfford && !gambleAnim ? "pointer" : "default",
+                        opacity: canAfford && !gambleAnim ? 1 : 0.4,
+                        minWidth: 110,
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      {gambleAnim ? "..." : "◈500"}
+                    </button>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })()}
 
             {/* Last roll result */}
             {lastGamble && (
