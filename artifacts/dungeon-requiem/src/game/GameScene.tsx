@@ -181,6 +181,9 @@ export interface EnemyProjectile {
   lifetime: number;
   dead: boolean;
   style: "default" | "orb" | "dagger" | "sword" | "crescent" | "lance";
+  pullToX?: number;
+  pullToZ?: number;
+  pullDist?: number;
 }
 
 export interface Projectile {
@@ -1044,7 +1047,7 @@ function spawnEnemy(wave: number, hpMult = 1, dmgMult = 1, speedMult = 1): Enemy
     damage: finalDmg, moveSpeed: finalSpd,
     attackRange: def.attackRange,
     attackInterval: def.attackInterval,
-    attackTimer: def.attackInterval * 0.5,
+    attackTimer: def.attackInterval * 0.2,
     collisionRadius: def.collisionRadius,
     xpReward: def.xpReward,
     scoreValue: def.scoreValue,
@@ -1170,6 +1173,27 @@ function spawnDeathKnightChampion(hpMult = 1, dmgMult = 1, speedMult = 1): Enemy
     minionTimer: 8.0,
     radialTimer: 5.0,
     enragePhase: 0, baseMoveSpeed: finalSpd, baseDamage: finalDmg,
+    poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
+    affix: "none" as const, shieldHp: 0, affixPulseTimer: 0,
+  };
+}
+
+function spawnDKMinion(dkX: number, dkZ: number, hpMult = 1, dmgMult = 1): EnemyRuntime {
+  const a = Math.random() * Math.PI * 2;
+  const r = 4 + Math.random() * 3;
+  const ARENA = GAME_CONFIG.ARENA_HALF;
+  return {
+    id: enemyId(), type: "wraith", x: Math.max(-ARENA, Math.min(ARENA, dkX + Math.cos(a) * r)), z: Math.max(-ARENA, Math.min(ARENA, dkZ + Math.sin(a) * r)),
+    hp: Math.round(50 * hpMult), maxHp: Math.round(50 * hpMult),
+    damage: Math.round(12 * dmgMult), moveSpeed: 5.0,
+    attackRange: 1.8, attackInterval: 0.9, attackTimer: 0.3,
+    collisionRadius: 0.7, xpReward: 0, scoreValue: 0,
+    dead: false, hitFlashTimer: 0,
+    scale: 0.7, color: "#2a4a2a", emissive: "#003300",
+    vx: 0, vz: 0, phasing: false, phaseTimer: 0,
+    specialTimer: 0, specialWarning: false, specialWarnTimer: 0,
+    minionTimer: 0, radialTimer: 0,
+    enragePhase: 0, baseMoveSpeed: 5.0, baseDamage: Math.round(12 * dmgMult),
     poisonStacks: 0, poisonDps: 0, bleedDps: 0, bleedTimer: 0, slowPct: 0, slowTimer: 0, weakenPct: 0, markTimer: 0, convergenceHits: 0, convergenceTimer: 0,
     affix: "none" as const, shieldHp: 0, affixPulseTimer: 0,
   };
@@ -2977,12 +3001,22 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             useGameStore.getState().addDamagePopup({ id: popupId(), x: p.x, z: p.z, value: 0, isCrit: false, isPlayer: false, spawnTime: performance.now(), text: "DODGE", color: "#44ddff" });
             if (stats.evasionMatrixEnabled) { p.invisTimer = 1.0; p.guaranteedCrit = true; }
           } else {
-            const effective = applyArmor(rawDmg, stats.armor + p.actionArmorBuff, stats.incomingDamageMult);
-            p.hp -= effective; spawnPlayerDmgPopup(p, effective);
+            if (ep.damage > 0) {
+              const effective = applyArmor(rawDmg, stats.armor + p.actionArmorBuff, stats.incomingDamageMult);
+              p.hp -= effective; spawnPlayerDmgPopup(p, effective);
+              handlePlayerDamageTakenProcs(p, stats, g);
+              if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
+              else { audioManager.play("player_hurt"); }
+            }
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.6;
-            handlePlayerDamageTakenProcs(p, stats, g);
-            if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
-            else { audioManager.play("player_hurt"); }
+            if (ep.pullToX != null && ep.pullToZ != null) {
+              const pdx = ep.pullToX - p.x;
+              const pdz = ep.pullToZ - p.z;
+              const pDist = Math.sqrt(pdx * pdx + pdz * pdz) || 1;
+              const pull = Math.min(ep.pullDist ?? 5, pDist);
+              p.x += (pdx / pDist) * pull;
+              p.z += (pdz / pDist) * pull;
+            }
           }
         }
       }
@@ -3504,13 +3538,15 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       } else if (e.type === "death_knight_champion") {
         const cx = p.x - e.x, cz = p.z - e.z;
         const clen = Math.sqrt(cx * cx + cz * cz) || 1;
+        // Chase — faster at higher enrage
         if (cDist > e.attackRange * 0.85) {
-          const spd = (e.enragePhase >= 3 ? 4.0 : e.moveSpeed) * (1 + e.enragePhase * 0.1);
+          const spd = (e.enragePhase >= 3 ? 5.0 : e.enragePhase >= 2 ? 4.0 : e.moveSpeed) * (1 + e.enragePhase * 0.1);
           e.x += (cx / clen) * spd * delta;
           e.z += (cz / clen) * spd * delta;
           e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
           e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
         }
+        // Melee
         if (cDist <= e.attackRange && e.attackTimer <= 0) {
           e.attackTimer = e.attackInterval;
           const rawDmg = e.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
@@ -3522,6 +3558,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (p.hp <= 0) handlePlayerFatalDmg(p, g);
           }
         }
+        // Ground slam — telegraphed AoE, active from the start
         if (e.specialWarning) {
           e.specialWarnTimer -= delta;
           if (e.specialWarnTimer <= 0) {
@@ -3529,7 +3566,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             store.setBossSpecialWarn(false);
             triggerShake(g, 0.65, 0.4);
             triggerFreeze(g, 60);
-            const slamRadius = e.enragePhase >= 3 ? 10 : 7;
+            const slamRadius = e.enragePhase >= 3 ? 10 : e.enragePhase >= 2 ? 8 : 7;
             if (cDist <= slamRadius && p.invTimer <= 0 && !p.dead) {
               const slamDmg = e.damage * 2.5;
               const effective = applyArmor(slamDmg, stats.armor + p.actionArmorBuff, stats.incomingDamageMult, 100);
@@ -3542,56 +3579,72 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         } else {
           e.specialTimer -= delta;
           if (e.specialTimer <= 0) {
-            e.specialTimer = e.enragePhase >= 3 ? 3.5 : e.enragePhase >= 2 ? 4.5 : 6.0;
+            e.specialTimer = e.enragePhase >= 3 ? 3.0 : e.enragePhase >= 2 ? 4.0 : 5.0;
             e.specialWarning = true;
             e.specialWarnTimer = 0.8;
             audioManager.play("boss_special");
             store.setBossSpecialWarn(true);
           }
         }
-        if (e.enragePhase >= 1) {
-          e.radialTimer -= delta;
-          if (e.radialTimer <= 0) {
-            e.radialTimer = e.enragePhase >= 3 ? 3.0 : e.enragePhase >= 2 ? 4.0 : 5.0;
-            const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
-            const lanceCount = e.enragePhase >= 3 ? 5 : 3;
-            for (let i = 0; i < lanceCount; i++) {
-              const a = baseAngle + (i - (lanceCount - 1) / 2) * 0.12;
-              g.enemyProjectiles.push({
-                id: eprojId(), x: e.x + Math.sin(a) * 3, z: e.z + Math.cos(a) * 3,
-                vx: Math.sin(a) * 12, vz: Math.cos(a) * 12,
-                damage: e.damage * 0.5, lifetime: 2.0, dead: false, style: "lance" as const,
-              });
-            }
-            audioManager.play("boss_special");
-          }
-        }
-        e.minionTimer -= delta;
-        if (e.enragePhase >= 1 && e.minionTimer <= 0) {
-          e.minionTimer = e.enragePhase >= 3 ? 6.0 : 8.0;
-          const count = e.enragePhase >= 3 ? 3 : 2;
-          for (let i = 0; i < count; i++) {
-            g.enemies.push(spawnEnemy(g.wave, g.difficultyHpMult, g.difficultyDmgMult, g.difficultySpeedMult));
-          }
-        }
-        // Death chain pull — 3 slow projectiles that yank the player in
-        e.voidLanceTimer = (e.voidLanceTimer ?? 8.0) - delta;
-        if (e.voidLanceTimer <= 0 && cDist > e.attackRange * 1.5) {
-          e.voidLanceTimer = e.enragePhase >= 3 ? 5.0 : 8.0;
+        // Soul lance volley — fires from the START, more aggressive per phase
+        e.radialTimer -= delta;
+        if (e.radialTimer <= 0) {
+          const lanceCount = e.enragePhase >= 3 ? 7 : e.enragePhase >= 2 ? 5 : 3;
+          e.radialTimer = e.enragePhase >= 3 ? 2.5 : e.enragePhase >= 2 ? 3.5 : 4.5;
           const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
-          for (let ci = 0; ci < 3; ci++) {
-            const a = baseAngle + (ci - 1) * 0.25;
+          for (let i = 0; i < lanceCount; i++) {
+            const a = baseAngle + (i - (lanceCount - 1) / 2) * 0.14;
             g.enemyProjectiles.push({
-              id: eprojId(), x: e.x, z: e.z,
-              vx: Math.sin(a) * 6, vz: Math.cos(a) * 6,
-              damage: 0, lifetime: 2.5, dead: false, style: "lance" as const,
+              id: eprojId(), x: e.x + Math.sin(a) * 3, z: e.z + Math.cos(a) * 3,
+              vx: Math.sin(a) * 14, vz: Math.cos(a) * 14,
+              damage: e.damage * 0.45, lifetime: 2.0, dead: false, style: "lance" as const,
             });
           }
-          // Pull on hit handled via a simpler approach: after projectile
-          // collision, if damage is 0 and style is lance from a DK, pull
-          // the player. For now just fire the visual — the main game
-          // enemy projectile system doesn't have pull mechanics, so we
-          // apply a small pull each frame while the chain is alive.
+          audioManager.play("boss_special");
+        }
+        // Undead minion spawns — active from enrage 1+
+        e.minionTimer -= delta;
+        if (e.enragePhase >= 1 && e.minionTimer <= 0) {
+          e.minionTimer = e.enragePhase >= 3 ? 5.0 : 7.0;
+          const count = e.enragePhase >= 3 ? 3 : 2;
+          for (let i = 0; i < count; i++) {
+            g.enemies.push(spawnDKMinion(e.x, e.z, g.difficultyHpMult, g.difficultyDmgMult));
+          }
+        }
+        // Death chain pull — 3 slow projectiles that ACTUALLY pull the player
+        e.voidLanceTimer = (e.voidLanceTimer ?? 6.0) - delta;
+        if (e.voidLanceTimer <= 0 && cDist > e.attackRange * 1.2) {
+          e.voidLanceTimer = e.enragePhase >= 3 ? 4.0 : e.enragePhase >= 2 ? 5.0 : 6.0;
+          const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
+          for (let ci = 0; ci < 3; ci++) {
+            const a = baseAngle + (ci - 1) * 0.2;
+            g.enemyProjectiles.push({
+              id: eprojId(), x: e.x, z: e.z,
+              vx: Math.sin(a) * 7, vz: Math.cos(a) * 7,
+              damage: 0, lifetime: 2.5, dead: false, style: "orb" as const,
+              pullToX: e.x, pullToZ: e.z, pullDist: 5,
+            });
+          }
+          audioManager.play("dash");
+        }
+        // Dark nova — expanding ring of projectiles (enrage 2+)
+        if (e.enragePhase >= 2) {
+          e.phaseTimer = (e.phaseTimer ?? 0) + delta;
+          const novaCd = e.enragePhase >= 3 ? 6.0 : 8.0;
+          if (e.phaseTimer >= novaCd) {
+            e.phaseTimer = 0;
+            const novaCount = e.enragePhase >= 3 ? 16 : 12;
+            for (let i = 0; i < novaCount; i++) {
+              const a = (i / novaCount) * Math.PI * 2;
+              g.enemyProjectiles.push({
+                id: eprojId(), x: e.x, z: e.z,
+                vx: Math.sin(a) * 8, vz: Math.cos(a) * 8,
+                damage: e.damage * 0.35, lifetime: 2.5, dead: false, style: "orb" as const,
+              });
+            }
+            triggerShake(g, 0.5, 0.3);
+            audioManager.play("boss_special");
+          }
         }
       }
     }
