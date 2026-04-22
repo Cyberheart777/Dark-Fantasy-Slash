@@ -36,18 +36,19 @@ export const useAchievementStore = create<AchievementState>()(
 
       tryUnlock: (id: string) => {
         const s = get();
-        // Already unlocked — no-op
         if (s.unlocked[id]) return false;
-        // Unknown achievement — guard
-        if (!ACHIEVEMENT_MAP[id]) return false;
+        const def = ACHIEVEMENT_MAP[id];
+        if (!def) return false;
 
         set({
           unlocked: { ...s.unlocked, [id]: Date.now() },
           toastQueue: [...s.toastQueue, id],
         });
 
-        // Future Steam SDK hook point:
-        // steamworks?.unlockAchievement(id);
+        if (def.shardReward && def.shardReward > 0) {
+          const { useMetaStore } = require("./metaStore");
+          useMetaStore.getState().addShards(def.shardReward);
+        }
 
         return true;
       },
