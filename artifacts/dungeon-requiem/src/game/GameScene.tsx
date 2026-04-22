@@ -3516,17 +3516,15 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           }
         }
 
-        // Skeleton summon — spawns 1-2 scuttlers every 8s
+        // Undead summon — spawns wraith minions near the necro
         e.minionTimer -= delta;
         if (e.minionTimer <= 0) {
-          e.minionTimer = 8.0 - e.enragePhase * 1.5;
-          const count = 1 + (e.enragePhase >= 2 ? 1 : 0);
+          e.minionTimer = 7.0 - e.enragePhase * 1.2;
+          const count = e.enragePhase >= 3 ? 3 : e.enragePhase >= 2 ? 2 : 1;
           for (let i = 0; i < count; i++) {
-            const sa = Math.random() * Math.PI * 2;
-            const sr = 2 + Math.random() * 2;
-            const minion = spawnEnemy(g.wave, g.difficultyHpMult, g.difficultyDmgMult, g.difficultySpeedMult);
-            minion.x = e.x + Math.cos(sa) * sr;
-            minion.z = e.z + Math.sin(sa) * sr;
+            const minion = spawnDKMinion(e.x, e.z, g.difficultyHpMult, g.difficultyDmgMult);
+            minion.color = "#3a1a5a";
+            minion.emissive = "#220044";
             g.enemies.push(minion);
           }
         }
@@ -3595,11 +3593,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       } else if (e.type === "death_knight_champion") {
         const cx = p.x - e.x, cz = p.z - e.z;
         const clen = Math.sqrt(cx * cx + cz * cz) || 1;
-        // Chase — faster at higher enrage
+        // Chase — constant speed, the threat escalation comes from more minions + abilities
         if (cDist > e.attackRange * 0.85) {
-          const spd = (e.enragePhase >= 3 ? 5.0 : e.enragePhase >= 2 ? 4.0 : e.moveSpeed) * (1 + e.enragePhase * 0.1);
-          e.x += (cx / clen) * spd * delta;
-          e.z += (cz / clen) * spd * delta;
+          e.x += (cx / clen) * e.moveSpeed * delta;
+          e.z += (cz / clen) * e.moveSpeed * delta;
           e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
           e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
         }
@@ -3659,11 +3656,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           }
           audioManager.play("boss_special");
         }
-        // Undead minion spawns — active from enrage 1+
+        // Undead minion spawns — active from enrage 1+, escalates heavily
         e.minionTimer -= delta;
         if (e.enragePhase >= 1 && e.minionTimer <= 0) {
-          e.minionTimer = e.enragePhase >= 3 ? 5.0 : 7.0;
-          const count = e.enragePhase >= 3 ? 3 : 2;
+          e.minionTimer = e.enragePhase >= 3 ? 4.0 : e.enragePhase >= 2 ? 5.0 : 6.0;
+          const count = e.enragePhase >= 3 ? 4 : e.enragePhase >= 2 ? 3 : 2;
           for (let i = 0; i < count; i++) {
             g.enemies.push(spawnDKMinion(e.x, e.z, g.difficultyHpMult, g.difficultyDmgMult));
           }
@@ -3677,9 +3674,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             const a = baseAngle + (ci - 1) * 0.2;
             g.enemyProjectiles.push({
               id: eprojId(), x: e.x, z: e.z,
-              vx: Math.sin(a) * 7, vz: Math.cos(a) * 7,
-              damage: 0, lifetime: 2.5, dead: false, style: "chain" as const,
-              pullToX: e.x, pullToZ: e.z, pullDist: 5,
+              vx: Math.sin(a) * 8.4, vz: Math.cos(a) * 8.4,
+              damage: 0, lifetime: 5.0, dead: false, style: "chain" as const,
+              pullToX: e.x, pullToZ: e.z, pullDist: 6,
             });
           }
           audioManager.play("dash");
