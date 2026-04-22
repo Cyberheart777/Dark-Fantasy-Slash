@@ -180,7 +180,7 @@ export interface EnemyProjectile {
   damage: number;
   lifetime: number;
   dead: boolean;
-  style: "default" | "orb" | "dagger" | "sword" | "crescent" | "lance";
+  style: "default" | "orb" | "dagger" | "sword" | "crescent" | "lance" | "chain";
   pullToX?: number;
   pullToZ?: number;
   pullDist?: number;
@@ -2992,7 +2992,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (!p.dead && p.invTimer <= 0 && !p.isDashing) {
         const hdx = p.x - ep.x;
         const hdz = p.z - ep.z;
-        const hitRadius = ep.style === "crescent" ? 1.8 : 0.9;
+        const hitRadius = ep.style === "crescent" ? 1.8 : ep.style === "chain" ? 1.2 : 0.9;
         if (Math.sqrt(hdx * hdx + hdz * hdz) < hitRadius) {
           ep.dead = true;
           const rawDmg = ep.damage * (1 + g.wave * GAME_CONFIG.DIFFICULTY.DAMAGE_SCALE_PER_WAVE);
@@ -3621,7 +3621,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             g.enemyProjectiles.push({
               id: eprojId(), x: e.x, z: e.z,
               vx: Math.sin(a) * 7, vz: Math.cos(a) * 7,
-              damage: 0, lifetime: 2.5, dead: false, style: "orb" as const,
+              damage: 0, lifetime: 2.5, dead: false, style: "chain" as const,
               pullToX: e.x, pullToZ: e.z, pullDist: 5,
             });
           }
@@ -4354,9 +4354,11 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
       ref.current.rotation.y = Math.atan2(ep.vx, ep.vz);
       ref.current.rotation.x = -0.3;
     } else if (ep.style === "lance") {
-      // Face travel direction; flat-laid so the long axis aligns with velocity
       ref.current.rotation.y = Math.atan2(ep.vx, ep.vz);
       ref.current.rotation.z = 0;
+    } else if (ep.style === "chain") {
+      ref.current.rotation.y = Math.atan2(ep.vx, ep.vz);
+      ref.current.rotation.z = Math.sin(t.current * 6) * 0.15;
     } else {
       ref.current.rotation.y = t.current * 6;
     }
@@ -4435,6 +4437,32 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
           <meshStandardMaterial color="#ffaaff" emissive="#ff00ff" emissiveIntensity={8} />
         </mesh>
         <pointLight color="#cc00ff" intensity={3} distance={6} decay={2} />
+      </group>
+    );
+  }
+
+  // ── Death Knight chain hook ──
+  if (ep.style === "chain") {
+    return (
+      <group ref={ref}>
+        {/* Chain links — repeating small segments */}
+        {[0, 0.3, 0.6, 0.9, 1.2].map((z, i) => (
+          <mesh key={i} position={[0, 0, -z]} rotation={[0, 0, i % 2 === 0 ? 0 : Math.PI / 4]}>
+            <torusGeometry args={[0.1, 0.03, 4, 6]} />
+            <meshStandardMaterial color="#556655" emissive="#224422" emissiveIntensity={2} metalness={0.9} roughness={0.3} />
+          </mesh>
+        ))}
+        {/* Hook at the tip */}
+        <mesh position={[0, 0, -1.55]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.15, 0.04, 4, 8, Math.PI * 1.2]} />
+          <meshStandardMaterial color="#88ff44" emissive="#44ff22" emissiveIntensity={5} metalness={0.8} roughness={0.1} />
+        </mesh>
+        {/* Hook point */}
+        <mesh position={[0.12, 0, -1.68]} rotation={[Math.PI / 2, 0, -0.3]}>
+          <coneGeometry args={[0.05, 0.18, 4]} />
+          <meshStandardMaterial color="#88ff44" emissive="#44ff22" emissiveIntensity={6} />
+        </mesh>
+        <pointLight color="#44ff22" intensity={2} distance={5} decay={2} />
       </group>
     );
   }
