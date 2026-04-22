@@ -3,7 +3,7 @@
  * Defines the four playable classes: Warrior, Mage, Rogue, Necromancer.
  */
 
-export type CharacterClass = "warrior" | "mage" | "rogue" | "necromancer" | "bard";
+export type CharacterClass = "warrior" | "mage" | "rogue" | "necromancer" | "bard" | "death_knight";
 
 export interface CharacterDef {
   id: CharacterClass;
@@ -176,5 +176,33 @@ export const CHARACTER_DATA: Record<CharacterClass, CharacterDef> = {
     accentColor: "#ffd040",
     auraColor: "#d4a830",
     image: "bard.png",
+  },
+
+  death_knight: {
+    id: "death_knight",
+    name: "DEATH KNIGHT",
+    title: "Abyssal Revenant",
+    description: "Slow, devastating melee strikes. Chains pull enemies in. Summons undead minions to overwhelm.",
+    lore: "You died once. The dungeon brought you back — not as a savior, but as its weapon.",
+    story: "The armor fused to your bones the moment you fell. The Vault does not waste its dead. It recycles them. You are its finest work — and its most reluctant servant.",
+    hp: 150,
+    damage: 55,
+    attackSpeed: 0.8,
+    moveSpeed: 7.5,
+    armor: 12,
+    dashCooldown: 3.0,
+    critChance: 0.05,
+    attackType: "melee",
+    attackRange: 3.2,
+    projectileSpeed: 0,
+    projectilePiercing: false,
+    projectileCount: 0,
+    projectileSpread: 0,
+    projectileRadius: 0,
+    projectileLifetime: 0,
+    color: "#1a4a2a",
+    accentColor: "#44ff66",
+    auraColor: "#226633",
+    image: "death-knight.png",
   },
 };

@@ -17,14 +17,15 @@ import type { LabyrinthDifficulty } from "./LabyrinthConfig";
 
 const clickSfx = () => audioManager.play("menu_click");
 
-const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue", "necromancer", "bard"];
+const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue", "necromancer", "bard", "death_knight"];
 
 const LABYRINTH_CLASS_AVAILABLE: Record<CharacterClass, boolean> = {
   warrior: true,
   mage: true,
   rogue: true,
-  necromancer: true,
-  bard: true,
+  necromancer: false,
+  bard: false,
+  death_knight: false,
 };
 
 const LABYRINTH_CLASS_COMING_SOON_HINT = "Playable in a future labyrinth update.";
