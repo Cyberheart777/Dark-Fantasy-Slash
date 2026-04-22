@@ -180,7 +180,7 @@ export interface EnemyProjectile {
   damage: number;
   lifetime: number;
   dead: boolean;
-  style: "default" | "orb" | "dagger" | "sword" | "crescent" | "lance" | "chain";
+  style: "default" | "orb" | "dagger" | "sword" | "crescent" | "lance" | "chain" | "note";
   pullToX?: number;
   pullToZ?: number;
   pullDist?: number;
@@ -3498,35 +3498,58 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         }
 
       } else if (e.type === "bard_champion") {
-        // ── Bard Champion: ranged kiter, rapid note projectiles ────
-        const keepDist = 15;
+        // ── Bard Champion: ranged kiter with note spreads ────
+        const keepDist = 12;
         const cx = p.x - e.x, cz = p.z - e.z;
         const clen = Math.sqrt(cx * cx + cz * cz) || 1;
-        if (cDist < keepDist - 2) {
-          e.x -= (cx / clen) * e.moveSpeed * delta;
-          e.z -= (cz / clen) * e.moveSpeed * delta;
-        } else if (cDist > keepDist + 3) {
-          e.x += (cx / clen) * e.moveSpeed * 0.6 * delta;
-          e.z += (cz / clen) * e.moveSpeed * 0.6 * delta;
+        // Kite: backpedal if close, close in if too far, hold at range
+        if (cDist < keepDist - 3) {
+          const spd = e.moveSpeed * (1 + e.enragePhase * 0.1);
+          e.x -= (cx / clen) * spd * 0.7 * delta;
+          e.z -= (cz / clen) * spd * 0.7 * delta;
+        } else if (cDist > keepDist + 4) {
+          e.x += (cx / clen) * e.moveSpeed * 0.5 * delta;
+          e.z += (cz / clen) * e.moveSpeed * 0.5 * delta;
         }
         e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
         e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
 
+        // 3-note spread toward player
         e.radialTimer -= delta;
         if (e.radialTimer <= 0) {
-          e.radialTimer = e.attackInterval;
+          const fireCd = e.enragePhase >= 3 ? 1.0 : e.enragePhase >= 2 ? 1.3 : 1.6;
+          e.radialTimer = fireCd;
           const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
-          g.enemyProjectiles.push({
-            id: eprojId(), x: e.x, z: e.z,
-            vx: Math.sin(baseAngle) * 18,
-            vz: Math.cos(baseAngle) * 18,
-            damage: e.damage, lifetime: 3.0, dead: false, style: "dagger" as const,
-          });
+          const noteCount = e.enragePhase >= 3 ? 5 : 3;
+          for (let n = 0; n < noteCount; n++) {
+            const a = baseAngle + (n - (noteCount - 1) / 2) * 0.2;
+            g.enemyProjectiles.push({
+              id: eprojId(), x: e.x, z: e.z,
+              vx: Math.sin(a) * 16, vz: Math.cos(a) * 16,
+              damage: e.damage * 0.4, lifetime: 1.5, dead: false, style: "note" as const,
+            });
+          }
         }
 
+        // Melee burst — ring of notes if player gets too close
+        if (cDist <= e.attackRange * 1.5 && e.attackTimer <= 0) {
+          e.attackTimer = 2.0;
+          const burstCount = 8;
+          for (let i = 0; i < burstCount; i++) {
+            const a = (i / burstCount) * Math.PI * 2;
+            g.enemyProjectiles.push({
+              id: eprojId(), x: e.x, z: e.z,
+              vx: Math.sin(a) * 10, vz: Math.cos(a) * 10,
+              damage: e.damage * 0.3, lifetime: 1.0, dead: false, style: "note" as const,
+            });
+          }
+          audioManager.play("boss_special");
+        }
+
+        // Blink away periodically
         e.minionTimer -= delta;
         if (e.minionTimer <= 0) {
-          e.minionTimer = 5.0 - e.enragePhase * 0.8;
+          e.minionTimer = 4.5 - e.enragePhase * 0.6;
           const blinkAngle = Math.random() * Math.PI * 2;
           const blinkDist = 10 + Math.random() * 6;
           e.x = Math.max(-ARENA, Math.min(ARENA, p.x + Math.sin(blinkAngle) * blinkDist));
@@ -4359,6 +4382,9 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
     } else if (ep.style === "chain") {
       ref.current.rotation.y = Math.atan2(ep.vx, ep.vz);
       ref.current.rotation.z = Math.sin(t.current * 6) * 0.15;
+    } else if (ep.style === "note") {
+      ref.current.position.y = 0.8 + Math.sin(t.current * 3 + ep.x * 0.5) * 0.1;
+      ref.current.rotation.y = t.current * 1.5;
     } else {
       ref.current.rotation.y = t.current * 6;
     }
@@ -4437,6 +4463,27 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
           <meshStandardMaterial color="#ffaaff" emissive="#ff00ff" emissiveIntensity={8} />
         </mesh>
         <pointLight color="#cc00ff" intensity={3} distance={6} decay={2} />
+      </group>
+    );
+  }
+
+  // ── Bard note projectile ──
+  if (ep.style === "note") {
+    return (
+      <group ref={ref}>
+        <mesh rotation={[-Math.PI / 4, 0, 0]}>
+          <circleGeometry args={[0.2, 8]} />
+          <meshStandardMaterial color="#ffd040" emissive="#ffaa00" emissiveIntensity={4} side={THREE.DoubleSide} />
+        </mesh>
+        <mesh position={[0.18, 0.24, 0]} rotation={[-Math.PI / 4, 0, 0]}>
+          <boxGeometry args={[0.03, 0.45, 0.01]} />
+          <meshStandardMaterial color="#ffaa22" emissive="#ff8800" emissiveIntensity={3} />
+        </mesh>
+        <mesh position={[0.24, 0.42, 0]} rotation={[-Math.PI / 4, 0, 0.3]}>
+          <boxGeometry args={[0.14, 0.03, 0.01]} />
+          <meshStandardMaterial color="#ffaa22" emissive="#ff8800" emissiveIntensity={3} />
+        </mesh>
+        <pointLight color="#ffaa00" intensity={2} distance={4} decay={2} />
       </group>
     );
   }
