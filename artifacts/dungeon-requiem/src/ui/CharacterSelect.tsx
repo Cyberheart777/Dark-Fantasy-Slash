@@ -85,7 +85,7 @@ export function CharacterSelect() {
       setSelectedClass(c);
       setDifficultyTier(difficulty);
       setTrialMode(trialMode);
-      useGameStore.getState().trialDeathKnight = false;
+      useGameStore.setState({ trialDeathKnight: false });
       setPhase("playing");
     } else {
       setCls(c);
@@ -131,7 +131,7 @@ export function CharacterSelect() {
                   clickSfx();
                   const store = useGameStore.getState();
                   store.resetGame();
-                  store.trialDeathKnight = true;
+                  useGameStore.setState({ trialDeathKnight: true });
                   setSelectedRace(race);
                   setSelectedClass(cls);
                   setDifficultyTier(difficulty);

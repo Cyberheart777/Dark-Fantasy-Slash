@@ -3598,13 +3598,13 @@ function LabyrinthHUD({
         </div>
       )}
 
-      {/* Extracted (portal win) screen */}
+      {/* Extracted (portal win) screen — gear salvaged, no keep */}
       {display.extracted && !display.victory && (
         <div style={styles.extractedOverlay}>
           <div style={styles.extractedPanel}>
             <div style={styles.extractedTitle}>⬭ EXTRACTED</div>
             <div style={styles.extractedSub}>
-              You escaped the labyrinth. The vault lets you pass.
+              You escaped the labyrinth. Gear has been salvaged into crystals.
             </div>
             <div style={{ fontSize: 18, fontWeight: 900, color: "#ffcc44", fontFamily: "monospace", letterSpacing: 2, marginTop: 6, textShadow: "0 0 10px #ffaa00" }}>
               💎 {display.crystalsEarned} CRYSTALS EARNED
@@ -3612,12 +3612,9 @@ function LabyrinthHUD({
             <div style={styles.extractedStats}>
               TIME SURVIVED · {formatZoneTime(display.elapsedSec)}
             </div>
-            <GearKeepSelection equipped={display.equipped} onKeep={(gear) => {
-              if (gear) {
-                const kept = { ...gear, enhanceLevel: 0 };
-                useMetaStore.getState().addGearToStash(kept as any);
-              }
-            }} />
+            <div style={{ fontSize: 11, color: "#806090", fontFamily: "monospace", marginTop: 10, textAlign: "center" as const, lineHeight: 1.5 }}>
+              Complete Layer 3 to keep gear from the labyrinth.
+            </div>
             <button style={{ ...styles.escBtn, marginTop: 12 }} onClick={exit}>
               ⌂ RETURN TO MAIN MENU
             </button>
