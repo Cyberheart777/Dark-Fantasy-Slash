@@ -180,7 +180,7 @@ export interface EnemyProjectile {
   damage: number;
   lifetime: number;
   dead: boolean;
-  style: "default" | "orb" | "dagger" | "sword" | "crescent" | "lance" | "chain" | "note";
+  style: "default" | "orb" | "dagger" | "sword" | "crescent" | "lance" | "chain" | "note" | "poison_dagger";
   pullToX?: number;
   pullToZ?: number;
   pullDist?: number;
@@ -3388,34 +3388,68 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         }
 
       } else if (e.type === "rogue_champion") {
-        // ── Rogue Champion: fast, rapid twin shots, periodic dash ─────
-        const strafeAngle = Math.atan2(p.x - e.x, p.z - e.z) + 0.015 * e.moveSpeed;
+        // ── Rogue Champion: fast, aimed daggers, poison pools ─────
+        const cx = p.x - e.x, cz = p.z - e.z;
+        const clen = Math.sqrt(cx * cx + cz * cz) || 1;
+        // Strafe at mid-range
+        const strafeAngle = Math.atan2(cx, cz) + 0.015 * e.moveSpeed;
         const targetX = p.x - Math.sin(strafeAngle) * 8;
         const targetZ = p.z - Math.cos(strafeAngle) * 8;
         const toX = targetX - e.x, toZ = targetZ - e.z;
         const toLen = Math.sqrt(toX * toX + toZ * toZ) || 1;
-        e.x += (toX / toLen) * e.moveSpeed * delta;
-        e.z += (toZ / toLen) * e.moveSpeed * delta;
+        const spd = e.moveSpeed * (1 + e.enragePhase * 0.1);
+        e.x += (toX / toLen) * spd * delta;
+        e.z += (toZ / toLen) * spd * delta;
         e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
         e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
 
+        // Track attack count for special attacks
+        e.convergenceHits = e.convergenceHits ?? 0;
+
         e.radialTimer -= delta;
         if (e.radialTimer <= 0) {
-          e.radialTimer = e.attackInterval;
-          const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
-          const spreadAmt = 0.18;
-          for (let k = -1; k <= 1; k += 2) {
-            const shotAngle = baseAngle + k * spreadAmt;
-            const speed = 20;
+          const fireCd = e.enragePhase >= 3 ? 0.6 : e.enragePhase >= 2 ? 0.75 : 0.9;
+          e.radialTimer = fireCd;
+          e.convergenceHits += 1;
+          const baseAngle = Math.atan2(cx / clen, cz / clen);
+
+          if (e.convergenceHits % 5 === 0) {
+            // Every 5th attack: double spread daggers + poison pool at player
+            for (let k = -2; k <= 2; k++) {
+              const a = baseAngle + k * 0.12;
+              g.enemyProjectiles.push({
+                id: eprojId(), x: e.x, z: e.z,
+                vx: Math.sin(a) * 18, vz: Math.cos(a) * 18,
+                damage: e.damage * 0.5, lifetime: 1.8, dead: false, style: "poison_dagger" as const,
+              });
+            }
+            // Spawn poison pool at player's current position
+            g.enemyProjectiles.push({
+              id: eprojId(), x: p.x, z: p.z,
+              vx: 0, vz: 0,
+              damage: e.damage * 0.15, lifetime: 3.0, dead: false, style: "poison_dagger" as const,
+            });
+            audioManager.play("boss_special");
+          } else {
+            // Normal attack: aimed center dagger + slight offset twin
             g.enemyProjectiles.push({
               id: eprojId(), x: e.x, z: e.z,
-              vx: Math.sin(shotAngle) * speed,
-              vz: Math.cos(shotAngle) * speed,
-              damage: e.damage, lifetime: 1.5, dead: false, style: "dagger" as const,
+              vx: Math.sin(baseAngle) * 20, vz: Math.cos(baseAngle) * 20,
+              damage: e.damage * 0.7, lifetime: 1.5, dead: false, style: "poison_dagger" as const,
             });
+            // Twin flankers
+            for (let k = -1; k <= 1; k += 2) {
+              const a = baseAngle + k * 0.1;
+              g.enemyProjectiles.push({
+                id: eprojId(), x: e.x, z: e.z,
+                vx: Math.sin(a) * 18, vz: Math.cos(a) * 18,
+                damage: e.damage * 0.4, lifetime: 1.5, dead: false, style: "poison_dagger" as const,
+              });
+            }
           }
         }
 
+        // Dash periodically
         e.minionTimer -= delta;
         if (e.minionTimer <= 0) {
           e.minionTimer = 3.0 - e.enragePhase * 0.5;
@@ -4368,7 +4402,7 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
     if (!ref.current) return;
     const yOff = ep.style === "crescent" ? 1.4 : 0.9 + Math.sin(t.current * 8) * 0.08;
     ref.current.position.set(ep.x, yOff, ep.z);
-    if (ep.style === "dagger") {
+    if (ep.style === "dagger" || ep.style === "poison_dagger") {
       const angle = Math.atan2(ep.vx, ep.vz);
       ref.current.rotation.y = angle + Math.PI;
       ref.current.rotation.z = t.current * 12;
@@ -4526,6 +4560,23 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
           <boxGeometry args={[0.16, 0.05, 0.05]} />
           <meshStandardMaterial color="#18b870" metalness={0.7} roughness={0.2} />
         </mesh>
+      </group>
+    );
+  }
+
+  // ── Rogue champion poison dagger — same shape, sickly purple/green ──
+  if (ep.style === "poison_dagger") {
+    return (
+      <group ref={ref}>
+        <mesh position={[0, 0, -0.18]}>
+          <boxGeometry args={[0.06, 0.06, 0.4]} />
+          <meshStandardMaterial color="#aa30dd" emissive="#8800cc" emissiveIntensity={3} metalness={0.9} roughness={0.1} />
+        </mesh>
+        <mesh position={[0, 0, 0.04]}>
+          <boxGeometry args={[0.16, 0.05, 0.05]} />
+          <meshStandardMaterial color="#6620aa" metalness={0.7} roughness={0.2} />
+        </mesh>
+        <pointLight color="#8800cc" intensity={1.5} distance={3} decay={2} />
       </group>
     );
   }
