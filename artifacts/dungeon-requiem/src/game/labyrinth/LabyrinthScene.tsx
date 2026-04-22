@@ -24,7 +24,9 @@ import {
   LABYRINTH_CONFIG,
   LABYRINTH_HALF,
   LAYER_CONFIG,
-  LABYRINTH_HARD_MODE,
+  getDifficultyConfig,
+  type LabyrinthDifficulty,
+  type DifficultyMults,
   type LayerConfig,
 } from "./LabyrinthConfig";
 import {
@@ -93,7 +95,7 @@ import {
   findOuterRingSpawnCell,
   findMidRingSpawnCell,
   type EnemyRuntime,
-  applyHardMode,
+  applyDifficultyMode,
   hasLineOfSight,
 } from "./LabyrinthEnemy";
 import {
@@ -336,7 +338,7 @@ export function LabyrinthScene() {
   // LabyrinthCharSelect — this component just reads whatever was set.
   const selectedClass = useGameStore((s) => s.selectedClass) as CharacterClass;
   const selectedRace = useGameStore((s) => s.selectedRace);
-  const hardMode = useGameStore((s) => s.labyrinthHardMode);
+  const labDifficulty = useGameStore((s) => s.labyrinthDifficulty);
   const classDef = CHARACTER_DATA[selectedClass];
 
   // Resolved player stats — composes class + race + Soul Forge +
@@ -630,7 +632,8 @@ export function LabyrinthScene() {
       "lootguard",
     );
     const allEnemies = [...guardians, ...turrets, ...heavies, ...lootGuards];
-    if (hardMode) allEnemies.forEach(applyHardMode);
+    const diffCfg = getDifficultyConfig(labDifficulty);
+    if (diffCfg) allEnemies.forEach((e) => applyDifficultyMode(e, diffCfg));
     enemiesRef.current = allEnemies;
     sharedRef.current.enemyCount = enemiesRef.current.length;
   }
@@ -1712,7 +1715,7 @@ function CombatEnemyLoop({
   labStats: PlayerStats;
 }) {
   const segments = useMemo(() => extractWallSegments(maze), [maze]);
-  const hardMode = useGameStore((s) => s.labyrinthHardMode);
+  const labDifficulty = useGameStore((s) => s.labyrinthDifficulty);
   // don't re-render on every frame just because the tick ran.
   const lastEmittedFxLen = useRef(0);
   // Same pattern for the XP-orb render mirror.
@@ -1736,8 +1739,8 @@ function CombatEnemyLoop({
     if ((shared.defeated || shared.extracted || shared.victory) && !ranSalvageRef.current) {
       ranSalvageRef.current = true;
       const total = salvageLabGear(gearStateRef.current, gearDropsRef.current);
-      const hardCrystalMult = hardMode ? LABYRINTH_HARD_MODE.crystalMult : 1;
-      const crystalTotal = Math.round(total * shared.soulCrystalMult * hardCrystalMult);
+      const dCfg = getDifficultyConfig(labDifficulty);
+      const crystalTotal = Math.round(total * shared.soulCrystalMult * (dCfg?.crystalMult ?? 1));
       shared.crystalsEarned = crystalTotal + (shared.layer === 3 && shared.victory ? 500 : 0);
       if (crystalTotal > 0) {
         useMetaStore.getState().addShards(crystalTotal);
@@ -1936,7 +1939,7 @@ function CombatEnemyLoop({
                 }
                 // Gear drop roll — uses main-game tryRollGear() via the
                 // labyrinth wrapper. Separate from the XP-orb loot above.
-                const gearRoll = rollLabGearDrop(e.kind, hardMode ? LABYRINTH_HARD_MODE.gearDropMult : 1);
+                const gearRoll = rollLabGearDrop(e.kind, getDifficultyConfig(labDifficulty)?.gearDropMult ?? 1);
                 if (gearRoll) {
                   spawnLabGearDrop(gearDropsRef.current, gearRoll, e.x, e.z);
                 }
@@ -2008,15 +2011,16 @@ function CombatEnemyLoop({
           e, p.x, p.z, delta,
           dmgAccum,
           projectilesRef.current,
-          (mx, mz) => { const g = makeCorridorGuardianAt(mx, mz); if (hardMode) applyHardMode(g); enemies.push(g); },
+          (mx, mz) => { const g = makeCorridorGuardianAt(mx, mz); const dc = getDifficultyConfig(labDifficulty); if (dc) applyDifficultyMode(g, dc); enemies.push(g); },
         );
       } else if (e.kind === "death_knight") {
         updateDeathKnight(
           e, p.x, p.z, delta,
           dmgAccum,
           projectilesRef.current,
-          (mx, mz) => { const g = makeCorridorGuardianAt(mx, mz); if (hardMode) applyHardMode(g); enemies.push(g); },
+          (mx, mz) => { const g = makeCorridorGuardianAt(mx, mz); const dc = getDifficultyConfig(labDifficulty); if (dc) applyDifficultyMode(g, dc); enemies.push(g); },
           enemies,
+          labDifficulty === "nightmare",
         );
       } else if (e.kind === "mini_boss") {
         updateMiniBoss(e, p.x, p.z, delta, dmgAccum, projectilesRef.current);
@@ -2114,7 +2118,7 @@ function CombatEnemyLoop({
           }
         }
         // Gear drop roll — also fires on ranged kills.
-        const gearRoll = rollLabGearDrop(e.kind, hardMode ? LABYRINTH_HARD_MODE.gearDropMult : 1);
+        const gearRoll = rollLabGearDrop(e.kind, getDifficultyConfig(labDifficulty)?.gearDropMult ?? 1);
         if (gearRoll) {
           spawnLabGearDrop(gearDropsRef.current, gearRoll, e.x, e.z);
         }
@@ -2294,10 +2298,11 @@ function CombatEnemyLoop({
       // base orb values stay unchanged and the multiplier scales the
       // total the player banks each pickup batch.
       const layerXpMult = LAYER_CONFIG[shared.layer]?.xpMultiplier ?? 1;
-      const hardXpMult = hardMode
-        ? (shared.layer === 1 ? LABYRINTH_HARD_MODE.xpMultLayer1 : shared.layer === 2 ? LABYRINTH_HARD_MODE.xpMultLayer2 : 1)
+      const dXp = getDifficultyConfig(labDifficulty);
+      const diffXpMult = dXp
+        ? (shared.layer === 1 ? dXp.xpMultLayer1 : shared.layer === 2 ? dXp.xpMultLayer2 : 1)
         : 1;
-      addLabXp(progressionRef.current, orbTick.awardedXp * layerXpMult * hardXpMult);
+      addLabXp(progressionRef.current, orbTick.awardedXp * layerXpMult * diffXpMult);
       if (progressionRef.current.pendingLevelUps > 0) {
         progressionRef.current.pendingLevelUps -= 1;
         p.maxHp += 3;
@@ -2339,7 +2344,7 @@ function CombatEnemyLoop({
         const spawnPos = findStalkerSpawnCell(maze, p.x, p.z);
         if (spawnPos) {
           const stalker = makeShadowStalker(spawnPos.x, spawnPos.z);
-          if (hardMode) applyHardMode(stalker);
+          { const dc = getDifficultyConfig(labDifficulty); if (dc) applyDifficultyMode(stalker, dc); }
           enemies.push(stalker);
           onEnemiesChange(enemies.slice());
           shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
@@ -2370,7 +2375,7 @@ function CombatEnemyLoop({
             : [r1, r2, r3];      // 3 champions
           const kind = championKinds[shared.championSpawnIndex % championKinds.length];
           const champ = makeRivalChampion(kind, 0, 0);
-          if (hardMode) applyHardMode(champ);
+          { const dc = getDifficultyConfig(labDifficulty); if (dc) applyDifficultyMode(champ, dc); }
           enemies.push(champ);
           onEnemiesChange(enemies.slice());
           shared.enemyCount = enemies.filter((e) => e.state !== "dead").length;
@@ -2617,7 +2622,8 @@ function ZoneTickLoop({
     if (shared.defeated || shared.extracted || shared.victory) return;
     if (useGameStore.getState().phase === "levelup" || sharedRef.current.isPaused) return;
 
-    const hardMode = useGameStore.getState().labyrinthHardMode;
+    const zoneDifficulty = useGameStore.getState().labyrinthDifficulty;
+    const zoneDiffCfg = getDifficultyConfig(zoneDifficulty);
     const realElapsed = (performance.now() - runStartMs.current) / 1000;
     const shrinkMult = LAYER_CONFIG[shared.layer].zoneShrinkMult || 1;
     const elapsedSec = realElapsed * shrinkMult;
@@ -2686,7 +2692,7 @@ function ZoneTickLoop({
       : (LAYER_CONFIG[shared.layer].hasWarden && shouldSpawnWarden(elapsedSec, zone.radius, ZONE_INITIAL_RADIUS, shared.wardenSpawned));
     if (wardenGate) {
       const warden = makeWarden(maze);
-      if (hardMode) applyHardMode(warden);
+      if (zoneDiffCfg) applyDifficultyMode(warden, zoneDiffCfg);
       enemiesRef.current.push(warden);
       onEnemiesChange(enemiesRef.current.slice());
       shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
@@ -2707,7 +2713,7 @@ function ZoneTickLoop({
     // Spawns immediately at center on Layer 3 as the final boss.
     if (shared.layer === 3 && !shared.deathKnightSpawned) {
       const dk = makeDeathKnight(maze);
-      if (hardMode) applyHardMode(dk);
+      if (zoneDiffCfg) applyDifficultyMode(dk, zoneDiffCfg);
       enemiesRef.current.push(dk);
       onEnemiesChange(enemiesRef.current.slice());
       shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
@@ -2730,7 +2736,7 @@ function ZoneTickLoop({
       const hasMiniBossEntity = enemiesRef.current.some((e) => e.kind === "mini_boss" && e.state !== "dead");
       if (!hasMiniBossEntity) {
         const mb = makeMiniBoss(p.x + 8, p.z + 8);
-        if (hardMode) applyHardMode(mb);
+        if (zoneDiffCfg) applyDifficultyMode(mb, zoneDiffCfg);
         enemiesRef.current.push(mb);
         onEnemiesChange(enemiesRef.current.slice());
         shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
@@ -2738,13 +2744,13 @@ function ZoneTickLoop({
       }
     }
 
-    // ── Hard-mode chaos boss (last 60s) ──────────────────────────────
-    if (hardMode && !shared.hardBossSpawned && zone.timeRemaining <= 60 && zone.timeRemaining > 0) {
+    // ── Hard/Nightmare chaos boss (last 60s) ───────────────────────────
+    if (zoneDiffCfg && !shared.hardBossSpawned && zone.timeRemaining <= 60 && zone.timeRemaining > 0) {
       const chaosKind = shared.layer === 1 ? "rival_mage" as const : shared.layer === 2 ? "rival_rogue" as const : null;
       if (chaosKind) {
         shared.hardBossSpawned = true;
         const boss = makeRivalChampion(chaosKind, p.x + 10, p.z + 10);
-        applyHardMode(boss);
+        applyDifficultyMode(boss, zoneDiffCfg);
         enemiesRef.current.push(boss);
         onEnemiesChange(enemiesRef.current.slice());
         shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
@@ -2930,7 +2936,7 @@ function LabyrinthHUD({
   lootRoomCell: { col: number; row: number };
 }) {
   const setPhase = useGameStore((s) => s.setPhase);
-  const hardMode = useGameStore((s) => s.labyrinthHardMode);
+  const labDifficulty = useGameStore((s) => s.labyrinthDifficulty);
   const [isMob, setIsMob] = useState(() => window.innerWidth < 900);
   useEffect(() => { const fn = () => setIsMob(window.innerWidth < 900); window.addEventListener("resize", fn); return () => window.removeEventListener("resize", fn); }, []);
   const [esc, setEsc] = useState(false);
@@ -3088,7 +3094,8 @@ function LabyrinthHUD({
       if (s.layer === 3) {
         useMetaStore.getState().addShards(500);
         s.victory = true;
-        if (hardMode) useAchievementStore.getState().tryUnlock("lab_hard_conqueror");
+        if (labDifficulty === "hard" || labDifficulty === "nightmare") useAchievementStore.getState().tryUnlock("lab_hard_conqueror");
+        if (labDifficulty === "nightmare") useAchievementStore.getState().tryUnlock("lab_nightmare_conqueror");
       }
       s.extracted = true;
     } else {
@@ -3339,17 +3346,19 @@ function LabyrinthHUD({
       </div>
       )}
 
-      {/* Hard mode badge */}
-      {hardMode && (
+      {/* Difficulty badge */}
+      {labDifficulty !== "normal" && (
         <div style={{
           position: "absolute", top: isMob ? 4 : 8, left: "50%", transform: "translateX(-50%)",
           padding: "3px 14px", borderRadius: 4,
-          background: "rgba(180,40,10,0.7)", border: "1px solid rgba(255,100,40,0.6)",
-          color: "#ffaa44", fontSize: 10, fontWeight: 900, letterSpacing: 4,
+          background: labDifficulty === "nightmare" ? "rgba(120,0,0,0.8)" : "rgba(180,40,10,0.7)",
+          border: labDifficulty === "nightmare" ? "1px solid rgba(255,30,30,0.7)" : "1px solid rgba(255,100,40,0.6)",
+          color: labDifficulty === "nightmare" ? "#ff4444" : "#ffaa44",
+          fontSize: 10, fontWeight: 900, letterSpacing: 4,
           fontFamily: "monospace", zIndex: 30, pointerEvents: "none",
-          textShadow: "0 0 8px rgba(255,80,20,0.5)",
+          textShadow: labDifficulty === "nightmare" ? "0 0 10px rgba(255,0,0,0.6)" : "0 0 8px rgba(255,80,20,0.5)",
         }}>
-          HARD MODE
+          {labDifficulty === "nightmare" ? "NIGHTMARE" : "HARD MODE"}
         </div>
       )}
 

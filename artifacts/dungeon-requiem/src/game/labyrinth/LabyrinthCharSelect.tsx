@@ -3,7 +3,7 @@
  *
  * Labyrinth-specific character picker. Three-step: race -> class -> difficulty.
  * On confirm, writes selectedRace + selectedClass + difficultyTier +
- * labyrinthHardMode + trialMode(false) into the game store and advances
+ * labyrinthDifficulty + trialMode(false) into the game store and advances
  * to the `labyrinth` phase.
  */
 
@@ -13,6 +13,7 @@ import { useMetaStore } from "../../store/metaStore";
 import { audioManager } from "../../audio/AudioManager";
 import { CHARACTER_DATA, type CharacterClass } from "../../data/CharacterData";
 import { RACE_DATA, RACES, type RaceType } from "../../data/RaceData";
+import type { LabyrinthDifficulty } from "./LabyrinthConfig";
 
 const clickSfx = () => audioManager.play("menu_click");
 
@@ -39,7 +40,7 @@ export function LabyrinthCharSelect() {
     setSelectedRace,
     setDifficultyTier,
     setTrialMode,
-    setLabyrinthHardMode,
+    setLabyrinthDifficulty,
     selectedClass,
   } = useGameStore();
   const { unlockedRaces } = useMetaStore();
@@ -49,7 +50,7 @@ export function LabyrinthCharSelect() {
   const [cls, setCls] = useState<CharacterClass>(
     LABYRINTH_CLASS_AVAILABLE[selectedClass] ? selectedClass : "warrior",
   );
-  const [hardMode, setHardMode] = useState(false);
+  const [difficulty, setDifficulty] = useState<LabyrinthDifficulty>("normal");
 
   const isRaceUnlocked = (r: RaceType) => unlockedRaces.includes(r);
 
@@ -67,9 +68,9 @@ export function LabyrinthCharSelect() {
     setStep("difficulty");
   };
 
-  const onPickDifficulty = (hard: boolean) => {
+  const onPickDifficulty = (d: LabyrinthDifficulty) => {
     clickSfx();
-    setHardMode(hard);
+    setDifficulty(d);
   };
 
   const onBeginRun = () => {
@@ -79,7 +80,7 @@ export function LabyrinthCharSelect() {
     setSelectedClass(cls);
     setDifficultyTier("nightmare");
     setTrialMode(false);
-    setLabyrinthHardMode(hardMode);
+    setLabyrinthDifficulty(difficulty);
     setPhase("labyrinth");
   };
 
@@ -102,11 +103,13 @@ export function LabyrinthCharSelect() {
         <div style={styles.header}>
           <div style={{
             ...styles.eyebrow,
-            color: hardMode && step === "difficulty"
+            color: difficulty === "nightmare" && step === "difficulty"
+              ? "rgba(255,40,40,0.95)"
+              : difficulty === "hard" && step === "difficulty"
               ? "rgba(255,140,60,0.95)"
               : "rgba(220,120,255,0.85)",
           }}>
-            THE LABYRINTH{hardMode && step === "difficulty" ? " · HARD MODE" : ""}
+            THE LABYRINTH{difficulty === "nightmare" && step === "difficulty" ? " · NIGHTMARE" : difficulty === "hard" && step === "difficulty" ? " · HARD MODE" : ""}
           </div>
           <div style={styles.title}>{stepTitle}</div>
           <div style={styles.steps}>
@@ -194,13 +197,13 @@ export function LabyrinthCharSelect() {
           )}
 
           {step === "difficulty" && (
-            <div style={{ ...styles.grid, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+            <div style={{ ...styles.grid, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
               {/* Standard card */}
               <button
-                onClick={() => onPickDifficulty(false)}
+                onClick={() => onPickDifficulty("normal")}
                 style={{
                   ...styles.card,
-                  ...(!hardMode ? styles.cardActive : {}),
+                  ...(difficulty === "normal" ? styles.cardActive : {}),
                   padding: 24,
                 }}
               >
@@ -224,10 +227,10 @@ export function LabyrinthCharSelect() {
 
               {/* Hard mode card */}
               <button
-                onClick={() => onPickDifficulty(true)}
+                onClick={() => onPickDifficulty("hard")}
                 style={{
                   ...styles.card,
-                  ...(hardMode ? {
+                  ...(difficulty === "hard" ? {
                     background: "rgba(80,20,10,0.7)",
                     borderColor: "rgba(255,140,60,0.8)",
                     boxShadow: "0 0 24px rgba(255,80,20,0.4), inset 0 0 30px rgba(255,60,20,0.08)",
@@ -239,19 +242,18 @@ export function LabyrinthCharSelect() {
                 <div style={{
                   fontSize: 40, marginBottom: 10,
                   textShadow: "0 0 18px rgba(255,80,20,0.7)",
-                  animation: hardMode ? "none" : undefined,
                 }}>
                   🔥
                 </div>
                 <div style={{
                   ...styles.cardName, fontSize: 18, letterSpacing: 4,
-                  color: hardMode ? "#ffaa44" : "#ddd",
+                  color: difficulty === "hard" ? "#ffaa44" : "#ddd",
                 }}>
                   HARD MODE
                 </div>
                 <div style={{
                   ...styles.cardTitle, marginTop: 4,
-                  color: hardMode ? "rgba(255,180,100,0.85)" : "rgba(220,180,255,0.75)",
+                  color: difficulty === "hard" ? "rgba(255,180,100,0.85)" : "rgba(220,180,255,0.75)",
                 }}>
                   The Abyss Hungers
                 </div>
@@ -287,6 +289,72 @@ export function LabyrinthCharSelect() {
                   </div>
                 </div>
               </button>
+
+              {/* Nightmare card */}
+              <button
+                onClick={() => onPickDifficulty("nightmare")}
+                style={{
+                  ...styles.card,
+                  ...(difficulty === "nightmare" ? {
+                    background: "rgba(60,0,0,0.8)",
+                    borderColor: "rgba(255,30,30,0.8)",
+                    boxShadow: "0 0 30px rgba(255,0,0,0.5), inset 0 0 40px rgba(255,0,0,0.06)",
+                    transform: "translateY(-2px)",
+                  } : {}),
+                  padding: 24,
+                }}
+              >
+                <div style={{
+                  fontSize: 40, marginBottom: 10,
+                  textShadow: "0 0 22px rgba(255,0,0,0.8)",
+                  animation: difficulty === "nightmare" ? "pulse 1.5s ease-in-out infinite" : undefined,
+                }}>
+                  💀
+                </div>
+                <div style={{
+                  ...styles.cardName, fontSize: 18, letterSpacing: 4,
+                  color: difficulty === "nightmare" ? "#ff4444" : "#ddd",
+                }}>
+                  NIGHTMARE
+                </div>
+                <div style={{
+                  ...styles.cardTitle, marginTop: 4,
+                  color: difficulty === "nightmare" ? "rgba(255,100,100,0.85)" : "rgba(220,180,255,0.75)",
+                }}>
+                  Beyond Death Itself
+                </div>
+                <div style={{ ...styles.cardDesc, marginTop: 14, lineHeight: 1.5 }}>
+                  Triple HP, devastating damage, relentless speed. Only the worthy survive.
+                </div>
+                <div style={{
+                  marginTop: 14, padding: "8px 12px",
+                  background: "rgba(255,0,0,0.08)",
+                  borderRadius: 6,
+                  border: "1px solid rgba(255,40,40,0.25)",
+                }}>
+                  <div style={{
+                    fontSize: 10, letterSpacing: 1, fontFamily: "monospace",
+                    color: "rgba(255,100,100,0.9)", fontWeight: 900,
+                    lineHeight: 1.8,
+                  }}>
+                    +200% ENEMY HP · +50% DAMAGE · +20% SPEED
+                  </div>
+                </div>
+                <div style={{
+                  marginTop: 10, padding: "8px 12px",
+                  background: "rgba(255,200,60,0.06)",
+                  borderRadius: 6,
+                  border: "1px solid rgba(255,200,60,0.15)",
+                }}>
+                  <div style={{
+                    fontSize: 10, letterSpacing: 1, fontFamily: "monospace",
+                    color: "rgba(255,220,120,0.9)", fontWeight: 900,
+                    lineHeight: 1.8,
+                  }}>
+                    3x CRYSTALS · 2x DROPS · 3-6x XP
+                  </div>
+                </div>
+              </button>
             </div>
           )}
         </div>
@@ -297,10 +365,10 @@ export function LabyrinthCharSelect() {
           </button>
           {step === "difficulty" && (
             <button
-              style={hardMode ? styles.nextBtnHard : styles.nextBtn}
+              style={difficulty === "nightmare" ? styles.nextBtnNightmare : difficulty === "hard" ? styles.nextBtnHard : styles.nextBtn}
               onClick={onBeginRun}
             >
-              {hardMode ? "DESCEND INTO DARKNESS →" : "DESCEND →"}
+              {difficulty === "nightmare" ? "EMBRACE THE NIGHTMARE →" : difficulty === "hard" ? "DESCEND INTO DARKNESS →" : "DESCEND →"}
             </button>
           )}
         </div>
@@ -470,5 +538,15 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontFamily: "inherit",
     boxShadow: "0 0 18px rgba(255,80,20,0.45)",
+  },
+  nextBtnNightmare: {
+    padding: "12px 22px", fontSize: 13, fontWeight: 900, letterSpacing: 4,
+    color: "#fff",
+    background: "rgba(120,0,0,0.85)",
+    border: "1px solid rgba(255,30,30,0.8)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    boxShadow: "0 0 24px rgba(255,0,0,0.5)",
   },
 };

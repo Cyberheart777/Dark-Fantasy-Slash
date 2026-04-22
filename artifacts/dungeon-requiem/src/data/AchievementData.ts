@@ -90,6 +90,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "lab_extractor",       name: "Extractor",             description: "Extract successfully 5 times across all runs",                  icon: "↑",  category: "labyrinth" },
   { id: "lab_wardens_bane",    name: "Warden's Bane",         description: "Defeat the Warden 3 times across all runs",                    icon: "⚰️", category: "labyrinth" },
   { id: "lab_hard_conqueror",  name: "Abyss Conqueror",       description: "Complete all 3 layers of the Labyrinth on Hard Mode",           icon: "🔥", category: "labyrinth" },
+  { id: "lab_nightmare_conqueror", name: "Abyssal Nightmare", description: "Complete all 3 layers of the Labyrinth on Nightmare",           icon: "💀", category: "labyrinth" },
 ];
 
 /** Lookup map for O(1) access by id. */

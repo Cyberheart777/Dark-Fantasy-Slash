@@ -31,6 +31,7 @@ import { spawnLabProjectile, type LabProjectile } from "./LabyrinthProjectile";
 export const DEATH_KNIGHT_HP = 3000;
 const DK_SPEED = 2.5;
 const DK_SPEED_ENRAGE = 4.0;
+const DK_SPEED_NIGHTMARE_ENRAGE = 5.0;
 const DK_ATTACK_RANGE = 3.0;
 const DK_ATTACK_DAMAGE = 45;
 const DK_ATTACK_COOLDOWN = 1.4;
@@ -41,8 +42,10 @@ const SLAM_WARN_SEC = 0.8;
 const SLAM_DAMAGE_MULT = 2.5;           // damage × 2.5
 const SLAM_RADIUS_P1 = 6;
 const SLAM_RADIUS_P3 = 8;
+const SLAM_RADIUS_P4 = 9;
 const SLAM_COOLDOWN_P1 = 5.0;
 const SLAM_COOLDOWN_P3 = 3.0;
+const SLAM_COOLDOWN_P4 = 2.0;
 
 // Soul Lance — aimed cone at the player
 const LANCE_SPEED = 12;
@@ -52,14 +55,18 @@ const LANCE_DAMAGE_MULT = 0.5;          // damage × 0.5
 const LANCE_LIFETIME = 1.5;
 const LANCE_COUNT_P2 = 3;
 const LANCE_COUNT_P3 = 5;
+const LANCE_COUNT_P4 = 7;
 const LANCE_COOLDOWN_P2 = 4.0;
 const LANCE_COOLDOWN_P3 = 3.0;
+const LANCE_COOLDOWN_P4 = 2.0;
 
 // Undead minion spawns
 const MINION_COOLDOWN_P2 = 7.0;
 const MINION_COOLDOWN_P3 = 5.0;
+const MINION_COOLDOWN_P4 = 4.0;
 const MINION_COUNT_P2 = 2;
 const MINION_COUNT_P3 = 3;
+const MINION_COUNT_P4 = 4;
 
 // Dark Aura (Phase 3)
 const AURA_TICK_SEC = 2.0;
@@ -79,7 +86,7 @@ const CHAIN_PULL_DIST = 4.0;
 // ─── State ────────────────────────────────────────────────────────────────────
 
 export interface DeathKnightState {
-  phase: 1 | 2 | 3;
+  phase: 1 | 2 | 3 | 4;
   /** Seconds until next ground slam fires (all phases). */
   slamCooldown: number;
   /** If >0, slam is telegraphing — fire AoE when it hits 0. */
@@ -155,12 +162,15 @@ export function updateDeathKnight(
   onSpawnMinion: (x: number, z: number) => void,
   /** All enemies in the arena — needed for dark aura speed buff. */
   allEnemies?: EnemyRuntime[],
+  /** True when running Nightmare difficulty — enables Phase 4 at 15% HP. */
+  isNightmare?: boolean,
 ): void {
   const state = getDeathKnightState(dk.id);
 
   // Phase transitions by HP fraction.
   const hpFrac = dk.hp / dk.maxHp;
-  state.phase = hpFrac > 0.66 ? 1 : hpFrac > 0.33 ? 2 : 3;
+  if (isNightmare && hpFrac <= 0.15) state.phase = 4;
+  else state.phase = hpFrac > 0.66 ? 1 : hpFrac > 0.33 ? 2 : 3;
 
   const dx = playerX - dk.x;
   const dz = playerZ - dk.z;
@@ -176,7 +186,7 @@ export function updateDeathKnight(
 
   // ── Chase movement ─────────────────────────────────────────────────────────
   if (dist > DK_ATTACK_RANGE * 0.85) {
-    const speed = (state.phase === 3 ? DK_SPEED_ENRAGE : DK_SPEED) * (dk.speedMult ?? 1);
+    const speed = (state.phase === 4 ? DK_SPEED_NIGHTMARE_ENRAGE : state.phase === 3 ? DK_SPEED_ENRAGE : DK_SPEED) * (dk.speedMult ?? 1);
     const nx = dx / dist;
     const nz = dz / dist;
     dk.x += nx * speed * delta;
@@ -188,8 +198,8 @@ export function updateDeathKnight(
 
   // ── Ground Slam (all phases) ───────────────────────────────────────────────
   {
-    const slamCd = state.phase === 3 ? SLAM_COOLDOWN_P3 : SLAM_COOLDOWN_P1;
-    const slamRadius = state.phase === 3 ? SLAM_RADIUS_P3 : SLAM_RADIUS_P1;
+    const slamCd = state.phase >= 4 ? SLAM_COOLDOWN_P4 : state.phase === 3 ? SLAM_COOLDOWN_P3 : SLAM_COOLDOWN_P1;
+    const slamRadius = state.phase >= 4 ? SLAM_RADIUS_P4 : state.phase === 3 ? SLAM_RADIUS_P3 : SLAM_RADIUS_P1;
     if (state.slamWarning > 0) {
       state.slamWarning -= delta;
       if (state.slamWarning <= 0) {
@@ -211,8 +221,8 @@ export function updateDeathKnight(
   if (state.phase >= 2) {
     state.lanceCooldown -= delta;
     if (state.lanceCooldown <= 0) {
-      const lanceCount = state.phase === 3 ? LANCE_COUNT_P3 : LANCE_COUNT_P2;
-      const lanceCd = state.phase === 3 ? LANCE_COOLDOWN_P3 : LANCE_COOLDOWN_P2;
+      const lanceCount = state.phase >= 4 ? LANCE_COUNT_P4 : state.phase === 3 ? LANCE_COUNT_P3 : LANCE_COUNT_P2;
+      const lanceCd = state.phase >= 4 ? LANCE_COOLDOWN_P4 : state.phase === 3 ? LANCE_COOLDOWN_P3 : LANCE_COOLDOWN_P2;
       state.lanceCooldown = lanceCd;
 
       const baseAngle = Math.atan2(dx, dz);
@@ -243,8 +253,8 @@ export function updateDeathKnight(
   if (state.phase >= 2) {
     state.minionCooldown -= delta;
     if (state.minionCooldown <= 0) {
-      const count = state.phase === 3 ? MINION_COUNT_P3 : MINION_COUNT_P2;
-      const cd = state.phase === 3 ? MINION_COOLDOWN_P3 : MINION_COOLDOWN_P2;
+      const count = state.phase >= 4 ? MINION_COUNT_P4 : state.phase === 3 ? MINION_COUNT_P3 : MINION_COUNT_P2;
+      const cd = state.phase >= 4 ? MINION_COOLDOWN_P4 : state.phase === 3 ? MINION_COOLDOWN_P3 : MINION_COOLDOWN_P2;
       for (let i = 0; i < count; i++) {
         const a = Math.random() * Math.PI * 2;
         const r = LABYRINTH_CONFIG.CELL_SIZE * 1.2;
@@ -256,7 +266,7 @@ export function updateDeathKnight(
 
   // ── Dark Aura (phase 3) ────────────────────────────────────────────────────
   // Every 2s, all enemies within 10u of the DK get a 15% speed boost for 3s.
-  if (state.phase === 3 && allEnemies) {
+  if (state.phase >= 3 && allEnemies) {
     state.auraCooldown -= delta;
     if (state.auraCooldown <= 0) {
       state.auraCooldown = AURA_TICK_SEC;
@@ -283,7 +293,7 @@ export function updateDeathKnight(
   // ── Death Chain Pull (all phases) ─────────────────────────────────────────
   state.chainCooldown -= delta;
   if (state.chainCooldown <= 0 && dist > DK_ATTACK_RANGE * 1.5) {
-    const cd = state.phase === 3 ? CHAIN_COOLDOWN_P3 : CHAIN_COOLDOWN;
+    const cd = state.phase >= 3 ? CHAIN_COOLDOWN_P3 : CHAIN_COOLDOWN;
     state.chainCooldown = cd;
     const baseAngle = Math.atan2(dx, dz);
     for (let i = 0; i < CHAIN_COUNT; i++) {

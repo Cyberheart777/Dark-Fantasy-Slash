@@ -160,7 +160,10 @@ export const LAYER_CONFIG: Record<1 | 2 | 3, LayerConfig> = {
   },
 };
 
-// ─── Hard-mode multipliers ──────────────────────────────────────────────────
+// ─── Difficulty types & multipliers ─────────────────────────────────────────
+
+export type LabyrinthDifficulty = "normal" | "hard" | "nightmare";
+
 export const LABYRINTH_HARD_MODE = {
   enemyHpMult: 2.0,
   enemyDamageMult: 1.25,
@@ -170,3 +173,21 @@ export const LABYRINTH_HARD_MODE = {
   xpMultLayer1: 2.0,
   xpMultLayer2: 4.0,
 };
+
+export const LABYRINTH_NIGHTMARE_MODE = {
+  enemyHpMult: 3.0,
+  enemyDamageMult: 1.5,
+  enemySpeedMult: 1.2,
+  gearDropMult: 2.0,
+  crystalMult: 3.0,
+  xpMultLayer1: 3.0,
+  xpMultLayer2: 6.0,
+};
+
+export type DifficultyMults = typeof LABYRINTH_HARD_MODE;
+
+export function getDifficultyConfig(d: LabyrinthDifficulty): DifficultyMults | null {
+  if (d === "nightmare") return LABYRINTH_NIGHTMARE_MODE;
+  if (d === "hard") return LABYRINTH_HARD_MODE;
+  return null;
+}

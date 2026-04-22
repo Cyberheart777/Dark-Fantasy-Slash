@@ -9,6 +9,7 @@ import type { UpgradeDef } from "../data/UpgradeData";
 import type { CharacterClass } from "../data/CharacterData";
 import type { RaceType } from "../data/RaceData";
 import type { DifficultyTier } from "../data/DifficultyData";
+import type { LabyrinthDifficulty } from "../game/labyrinth/LabyrinthConfig";
 
 import type { GearDef } from "../data/GearData";
 
@@ -127,7 +128,7 @@ export interface GameUIState {
   // Difficulty & mode
   difficultyTier: DifficultyTier;
   trialMode: boolean;
-  labyrinthHardMode: boolean;
+  labyrinthDifficulty: LabyrinthDifficulty;
   trialDeathKnight: boolean;
 
   // Soul shards (per-run counter — persistent total lives in metaStore)
@@ -200,7 +201,7 @@ export interface GameUIState {
   setSelectedRace: (race: RaceType) => void;
   setDifficultyTier: (tier: DifficultyTier) => void;
   setTrialMode: (trial: boolean) => void;
-  setLabyrinthHardMode: (hard: boolean) => void;
+  setLabyrinthDifficulty: (d: LabyrinthDifficulty) => void;
   setPlayerHP: (hp: number, maxHp: number) => void;
   setPlayerPos: (x: number, z: number, angle: number) => void;
   setProgression: (level: number, xp: number, xpToNext: number) => void;
@@ -260,7 +261,7 @@ const initialState = {
   selectedRace: "human" as RaceType,
   difficultyTier: "normal" as DifficultyTier,
   trialMode: false,
-  labyrinthHardMode: false,
+  labyrinthDifficulty: "normal" as LabyrinthDifficulty,
   trialDeathKnight: false,
   shardsThisRun: 0,
   guaranteedShards: 0,
@@ -292,7 +293,7 @@ export const useGameStore = create<GameUIState>((set, get) => ({
   setSelectedRace: (selectedRace) => set({ selectedRace }),
   setDifficultyTier: (difficultyTier) => set({ difficultyTier }),
   setTrialMode: (trialMode) => set({ trialMode }),
-  setLabyrinthHardMode: (labyrinthHardMode: boolean) => set({ labyrinthHardMode }),
+  setLabyrinthDifficulty: (labyrinthDifficulty: LabyrinthDifficulty) => set({ labyrinthDifficulty }),
   addRunShards: (n) => set((s) => ({ shardsThisRun: s.shardsThisRun + n })),
   addGuaranteedShards: (n) => set((s) => ({
     shardsThisRun: s.shardsThisRun + n,

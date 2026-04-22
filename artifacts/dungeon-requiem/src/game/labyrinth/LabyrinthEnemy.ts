@@ -23,7 +23,7 @@
  * don't apply here (DoTs, gear drops, poison/bleed state, etc.).
  */
 
-import { LABYRINTH_CONFIG, LABYRINTH_HARD_MODE } from "./LabyrinthConfig";
+import { LABYRINTH_CONFIG, type DifficultyMults } from "./LabyrinthConfig";
 import {
   cellToWorld,
   extractWallSegments,
@@ -162,14 +162,13 @@ function makeRivalState(): RivalAbilityState {
   };
 }
 
-/** Apply hard-mode multipliers to an already-created enemy. Call
- *  immediately after any factory function when hard mode is active. */
-export function applyHardMode(e: EnemyRuntime): EnemyRuntime {
-  const hm = LABYRINTH_HARD_MODE;
-  e.hp = Math.round(e.hp * hm.enemyHpMult);
-  e.maxHp = Math.round(e.maxHp * hm.enemyHpMult);
-  e.speedMult = hm.enemySpeedMult;
-  e.damageMult = hm.enemyDamageMult;
+/** Apply difficulty multipliers to an already-created enemy. Call
+ *  immediately after any factory function when difficulty != normal. */
+export function applyDifficultyMode(e: EnemyRuntime, cfg: DifficultyMults): EnemyRuntime {
+  e.hp = Math.round(e.hp * cfg.enemyHpMult);
+  e.maxHp = Math.round(e.maxHp * cfg.enemyHpMult);
+  e.speedMult = cfg.enemySpeedMult;
+  e.damageMult = cfg.enemyDamageMult;
   return e;
 }
 
