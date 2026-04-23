@@ -27,6 +27,7 @@ const ACTION_LABEL: Record<CharacterClass, string> = {
   rogue: "KNIVES",
   necromancer: "ARMY",
   bard: "DISCORD",
+  death_knight: "CHAINS",
 };
 
 const JOYSTICK_RADIUS = 56;
