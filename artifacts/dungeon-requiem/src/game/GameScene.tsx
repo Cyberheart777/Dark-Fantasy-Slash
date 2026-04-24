@@ -160,6 +160,7 @@ export interface EnemyRuntime {
    *  otherwise ignore the boss's AoE slam + radial burst from distance. */
   voidLanceTimer?: number;
   confuseTimer?: number;          // bard: seconds remaining confused (target swap)
+  stunTimer?: number;             // seconds remaining stunned (cannot move or attack)
   dissonanceStacks?: number;      // bard Vital Song: damage amp stacks
   dissonanceTimer?: number;       // bard Vital Song: 3s falloff timer
 }
@@ -1587,8 +1588,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         if (g.charClass === "warrior") {
           p.actionActiveTimer = 3.0;
           p.warCryArmorTimer = 8.0;
-          p.actionArmorBuff = 8;
+          p.actionArmorBuff = 25;
           p.actionDmgMult = 1.25;
+          for (const e of g.enemies) {
+            if (e.dead) continue;
+            const sx = p.x - e.x, sz = p.z - e.z;
+            if (sx * sx + sz * sz <= 100) e.stunTimer = 2.0;
+          }
           triggerShake(g, 0.5, 0.35);
           audioManager.play("dash");
         } else if (g.charClass === "mage") {
@@ -2347,6 +2353,13 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (e.convergenceTimer > 0) {
         e.convergenceTimer -= delta;
         if (e.convergenceTimer <= 0) { e.convergenceHits = 0; e.convergenceTimer = 0; }
+      }
+
+      // Stun — skip all AI (movement + attack) while stunned
+      if (e.stunTimer && e.stunTimer > 0) {
+        e.stunTimer -= delta;
+        e.hitFlashTimer = 0.1;
+        continue;
       }
 
       // Wraith phasing + ranged shot
