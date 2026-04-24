@@ -3477,71 +3477,75 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         }
 
       } else if (e.type === "necromancer_champion") {
-        // ── Necromancer Champion: melee stalker + Death Surge AoE ────
-        // Pursues the player like warrior champion but with a radial
-        // burst AoE (Death Surge) instead of arc slash projectiles.
+        // ── Necromancer Champion: ranged kiter + skeleton minions ────
+        // Mirrors the playable necromancer: keeps distance, fires skull
+        // projectiles, and has orbiting undead minions.
+        const keepDist = 12;
         const cx = p.x - e.x, cz = p.z - e.z;
         const clen = Math.sqrt(cx * cx + cz * cz) || 1;
-        e.x += (cx / clen) * e.moveSpeed * 0.7 * delta;
-        e.z += (cz / clen) * e.moveSpeed * 0.7 * delta;
+        // Kite: backpedal if close, close if far
+        if (cDist < keepDist - 3) {
+          e.x -= (cx / clen) * e.moveSpeed * 0.6 * delta;
+          e.z -= (cz / clen) * e.moveSpeed * 0.6 * delta;
+        } else if (cDist > keepDist + 4) {
+          e.x += (cx / clen) * e.moveSpeed * 0.5 * delta;
+          e.z += (cz / clen) * e.moveSpeed * 0.5 * delta;
+        }
         e.x = Math.max(-ARENA, Math.min(ARENA, e.x));
         e.z = Math.max(-ARENA, Math.min(ARENA, e.z));
 
-        // Death Surge AoE — reuse radialTimer
+        // Skull projectile — aimed at player
         e.radialTimer -= delta;
-        if (e.radialTimer <= 0 && cDist <= 10) {
-          e.radialTimer = 6.0 - e.enragePhase * 1.0;
-          const surgeDmg = e.damage * 2.0;
-          const SURGE_R = 7;
-          if (cDist <= SURGE_R && p.invTimer <= 0 && !p.dead) {
-            const eff = applyArmor(surgeDmg, stats.armor, stats.incomingDamageMult);
-            p.hp -= eff; spawnPlayerDmgPopup(p, eff);
-            p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
-            handlePlayerDamageTakenProcs(p, stats, g);
-            if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
-          }
-          triggerShake(g, 0.4, 0.3);
-          audioManager.play("boss_special");
+        if (e.radialTimer <= 0) {
+          const fireCd = e.enragePhase >= 3 ? 1.2 : e.enragePhase >= 2 ? 1.6 : 2.0;
+          e.radialTimer = fireCd;
+          const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
+          g.enemyProjectiles.push({
+            id: eprojId(), x: e.x, z: e.z,
+            vx: Math.sin(baseAngle) * 14, vz: Math.cos(baseAngle) * 14,
+            damage: e.damage * 0.6, lifetime: 2.5, dead: false, style: "orb" as const,
+          });
         }
 
-        // Ground slam special
+        // Bone burst — 6 projectiles in a star (every 6s, faster with enrage)
         e.specialTimer -= delta;
         if (e.specialTimer <= 0) {
-          e.specialTimer = 8.0;
-          e.specialWarning = true;
-          e.specialWarnTimer = 1.3;
-          store.setBossSpecialWarn(true);
+          e.specialTimer = e.enragePhase >= 3 ? 4.0 : e.enragePhase >= 2 ? 5.0 : 6.0;
+          const burstCount = e.enragePhase >= 3 ? 10 : 6;
+          for (let i = 0; i < burstCount; i++) {
+            const a = (i / burstCount) * Math.PI * 2;
+            g.enemyProjectiles.push({
+              id: eprojId(), x: e.x, z: e.z,
+              vx: Math.sin(a) * 10, vz: Math.cos(a) * 10,
+              damage: e.damage * 0.4, lifetime: 2.0, dead: false, style: "orb" as const,
+            });
+          }
+          triggerShake(g, 0.3, 0.2);
           audioManager.play("boss_special");
         }
-        if (e.specialWarning) {
-          e.specialWarnTimer -= delta;
-          if (e.specialWarnTimer <= 0) {
-            e.specialWarning = false;
-            store.setBossSpecialWarn(false);
-            triggerShake(g, 0.5, 0.3);
-            triggerFreeze(g, 40);
-            if (cDist <= GAME_CONFIG.DIFFICULTY.BOSS_SPECIAL_RADIUS && p.invTimer <= 0 && !p.dead) {
-              const rawDmg = e.damage * 1.5;
-              const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
-              p.hp -= effective; spawnPlayerDmgPopup(p, effective);
-              p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
-              handlePlayerDamageTakenProcs(p, stats, g);
-              if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
-            }
-          }
-        }
 
-        // Undead summon — spawns wraith minions near the necro
+        // Skeleton summon — spawns undead wraith minions near the necro
         e.minionTimer -= delta;
         if (e.minionTimer <= 0) {
-          e.minionTimer = 7.0 - e.enragePhase * 1.2;
-          const count = e.enragePhase >= 3 ? 3 : e.enragePhase >= 2 ? 2 : 1;
+          e.minionTimer = e.enragePhase >= 3 ? 5.0 : e.enragePhase >= 2 ? 6.0 : 8.0;
+          const count = e.enragePhase >= 3 ? 3 : 2;
           for (let i = 0; i < count; i++) {
             const minion = spawnDKMinion(e.x, e.z, g.difficultyHpMult, g.difficultyDmgMult);
             minion.color = "#3a1a5a";
             minion.emissive = "#220044";
             g.enemies.push(minion);
           }
+        }
+
+        // Blink away when player gets too close
+        if (cDist < 4 && e.attackTimer <= 0) {
+          e.attackTimer = 5.0;
+          const blinkAngle = Math.random() * Math.PI * 2;
+          const blinkDist = 10 + Math.random() * 5;
+          e.x = Math.max(-ARENA, Math.min(ARENA, p.x + Math.sin(blinkAngle) * blinkDist));
+          e.z = Math.max(-ARENA, Math.min(ARENA, p.z + Math.cos(blinkAngle) * blinkDist));
+          e.hitFlashTimer = 0.2;
+          audioManager.play("dash");
         }
 
       } else if (e.type === "bard_champion") {
