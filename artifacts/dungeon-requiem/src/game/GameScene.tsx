@@ -1592,7 +1592,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           p.actionDmgMult = 1.25;
           for (const e of g.enemies) {
             if (e.dead) continue;
-            if (e.type === "boss" || e.type.endsWith("_champion")) continue;
+            if (e.type === "boss" || (e.type.endsWith("_champion") && e.scale >= 1.5)) continue;
             const sx = p.x - e.x, sz = p.z - e.z;
             if (sx * sx + sz * sz <= 100) e.stunTimer = 2.0;
           }
@@ -1671,7 +1671,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (g.charClass === "warrior" && p.actionActiveTimer > 0) {
         for (const e of g.enemies) {
           if (e.dead) continue;
-          if (e.type === "boss" || e.type.endsWith("_champion")) continue;
+          if (e.type === "boss" || (e.type.endsWith("_champion") && e.scale >= 1.5)) continue;
           const sx = p.x - e.x, sz = p.z - e.z;
           const sd = Math.sqrt(sx * sx + sz * sz);
           if (sd <= 10 && sd > 0.5) {
