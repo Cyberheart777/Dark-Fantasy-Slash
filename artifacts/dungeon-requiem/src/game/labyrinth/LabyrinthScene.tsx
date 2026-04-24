@@ -12,6 +12,7 @@
 
 import { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { useGameStore } from "../../store/gameStore";
 import { DamagePopups3D } from "../../ui/DamagePopups3D";
@@ -748,6 +749,10 @@ export function LabyrinthScene() {
           critChance={labStats.critChance}
           runStartMs={runStartMs}
         />
+        <EffectComposer>
+          <Bloom intensity={0.6} luminanceThreshold={0.4} luminanceSmoothing={0.85} mipmapBlur />
+          <Vignette offset={0.25} darkness={0.85} />
+        </EffectComposer>
       </Canvas>
       <LabyrinthHUD
         maze={maze}
@@ -786,8 +791,8 @@ export function LabyrinthScene() {
 
 // ─── Layer-aware lighting ────────────────────────────────────────────────────
 
-const LAYER_LIGHT_MULT: Record<number, number> = { 1: 0.8, 2: 0.5, 3: 0.3 };
-const LAYER_FOG_NEAR:   Record<number, number> = { 1: 40,  2: 25,  3: 15  };
+const LAYER_LIGHT_MULT: Record<number, number> = { 1: 0.55, 2: 0.35, 3: 0.18 };
+const LAYER_FOG_NEAR:   Record<number, number> = { 1: 20,  2: 12,  3: 6  };
 
 function LayerLighting({ sharedRef }: { sharedRef: React.MutableRefObject<LabSharedState> }) {
   const ambRef = useRef<THREE.AmbientLight>(null);
@@ -797,18 +802,18 @@ function LayerLighting({ sharedRef }: { sharedRef: React.MutableRefObject<LabSha
 
   useFrame(() => {
     const m = LAYER_LIGHT_MULT[sharedRef.current.layer] ?? 1;
-    if (ambRef.current)  ambRef.current.intensity  = 1.4 * m;
-    if (hemiRef.current) hemiRef.current.intensity  = 0.7 * m;
-    if (dirRef.current)  dirRef.current.intensity   = 1.8 * m;
-    if (fogRef.current)  fogRef.current.near        = LAYER_FOG_NEAR[sharedRef.current.layer] ?? 50;
+    if (ambRef.current)  ambRef.current.intensity  = 0.6 * m;
+    if (hemiRef.current) hemiRef.current.intensity  = 0.4 * m;
+    if (dirRef.current)  dirRef.current.intensity   = 0.8 * m;
+    if (fogRef.current)  fogRef.current.near        = LAYER_FOG_NEAR[sharedRef.current.layer] ?? 20;
   });
 
   return (
     <>
-      <ambientLight ref={ambRef} intensity={1.4} color="#a090c8" />
-      <hemisphereLight ref={hemiRef} args={["#b0a0e0", "#20103a", 0.7]} />
-      <directionalLight ref={dirRef} position={[30, 50, 20]} intensity={1.8} color="#d0b0e8" />
-      <fog ref={fogRef} attach="fog" args={["#100820", 50, 140]} />
+      <ambientLight ref={ambRef} intensity={0.6} color="#604080" />
+      <hemisphereLight ref={hemiRef} args={["#604080", "#0a0414", 0.4]} />
+      <directionalLight ref={dirRef} position={[30, 50, 20]} intensity={0.8} color="#8060a0" />
+      <fog ref={fogRef} attach="fog" args={["#080410", 20, 90]} />
     </>
   );
 }
@@ -1109,18 +1114,21 @@ function LabyrinthWorld({
 // yourself clearly against the dark floor.
 function PlayerTorch({ playerRef }: { playerRef: React.MutableRefObject<LabPlayer> }) {
   const lightRef = useRef<THREE.PointLight>(null);
-  useFrame(() => {
+  const t = useRef(0);
+  useFrame((_, delta) => {
     if (!lightRef.current) return;
+    t.current += delta;
     const p = playerRef.current;
     lightRef.current.position.set(p.x, 8, p.z);
+    lightRef.current.intensity = 7.0 + Math.sin(t.current * 4.5) * 0.8 + Math.sin(t.current * 11) * 0.3;
   });
   return (
     <pointLight
       ref={lightRef}
-      intensity={5.5}
-      color="#ffe0ff"
-      distance={28}
-      decay={1.4}
+      intensity={7.0}
+      color="#ffcc88"
+      distance={35}
+      decay={1.2}
     />
   );
 }
