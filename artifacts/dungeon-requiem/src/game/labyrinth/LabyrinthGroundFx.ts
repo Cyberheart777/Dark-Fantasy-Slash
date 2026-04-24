@@ -20,6 +20,8 @@ export interface LabGroundFx {
   radius: number;
   lifetime: number; // seconds remaining; 0 → evict
   color: string;
+  dps?: number;
+  appliesPoison?: boolean;
 }
 
 const SHROUD_MIST_INTERVAL_SEC = 0.35;

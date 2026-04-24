@@ -120,7 +120,7 @@ export function tickLabProjectiles(
     /** Called when a player projectile kills an enemy. */
     onEnemyKilled?: (e: EnemyRuntime) => void;
     /** Called when a player projectile damages an enemy (kill or not). */
-    onEnemyHit?: (e: EnemyRuntime, damage: number) => void;
+    onEnemyHit?: (e: EnemyRuntime, damage: number, isCrit?: boolean) => void;
     /** Accumulates damage taken by the player this tick. */
     playerDamageAccum: { value: number };
     /** Called when a pull projectile hits the player. */
@@ -128,6 +128,8 @@ export function tickLabProjectiles(
     /** Upgrade-gated mechanics source. When absent, projectiles use
      *  the baseline behavior (no chain lightning, no fracture, etc.). */
     labStats?: PlayerStats;
+    critChance?: number;
+    critDamageMultiplier?: number;
   },
 ): void {
   const stats = ctx.labStats;
@@ -279,9 +281,11 @@ export function tickLabProjectiles(
             dmg = Math.round(dmg * (1 + stats.overchargedOrbBonus * t));
           }
 
+          const isCrit = (ctx.critChance ?? 0) > 0 && Math.random() < ctx.critChance!;
+          if (isCrit) dmg = Math.round(dmg * (ctx.critDamageMultiplier ?? 1.85));
           const before = e.hp;
           e.hp = Math.max(0, e.hp - dmg);
-          if (ctx.onEnemyHit) ctx.onEnemyHit(e, Math.min(before, dmg));
+          if (ctx.onEnemyHit) ctx.onEnemyHit(e, Math.min(before, dmg), isCrit);
 
           // ── Rogue: Venom Stack — apply poison on hit ──
           if (

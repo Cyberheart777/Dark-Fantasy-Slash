@@ -1049,6 +1049,8 @@ function LabyrinthWorld({
         gearStateRef={gearStateRef}
         lootRoomCell={lootRoomCell}
         moveSpeedBonus={moveSpeedBonus}
+        labStats={labStats}
+        groundFxRef={groundFxRef}
       />
       <CombatEnemyLoop
         maze={maze}
@@ -1424,6 +1426,8 @@ function MovementLoop({
   gearStateRef,
   lootRoomCell,
   moveSpeedBonus,
+  labStats,
+  groundFxRef,
 }: {
   playerRef: React.MutableRefObject<LabPlayer>;
   maze: Maze;
@@ -1433,10 +1437,9 @@ function MovementLoop({
   dashCooldownSec: number;
   gearStateRef: React.MutableRefObject<LabGearState>;
   lootRoomCell: { col: number; row: number };
-  /** Soul Forge + race movement-speed delta over the class baseline.
-   *  Added to the labyrinth's 5.0 BASE_WALK_SPEED so meta upgrades
-   *  flow through without overwriting the labyrinth slow-down. */
   moveSpeedBonus: number;
+  labStats: PlayerStats;
+  groundFxRef: React.MutableRefObject<LabGroundFx[]>;
 }) {
   // World-space centre of the loot-room cell; used by the loot-door
   // collision check below. Recomputed only when lootRoomCell changes.
@@ -1487,6 +1490,16 @@ function MovementLoop({
       }
       if (tryStartLabDash(dashState, dirX, dirZ, dashCooldownSec)) {
         audioManager.play("dash");
+        if (labStats.toxicDashPuddle) {
+          groundFxRef.current.push({
+            id: `toxic_${performance.now()}`,
+            x: p.x, z: p.z,
+            radius: 2.5,
+            lifetime: 3.0,
+            color: "#40ff80",
+            appliesPoison: true,
+          });
+        }
       }
     }
 
@@ -2094,6 +2107,8 @@ function CombatEnemyLoop({
       wallThickness: LABYRINTH_CONFIG.WALL_THICKNESS,
       playerDamageAccum: dmgAccum,
       labStats,
+      critChance: effectiveCrit,
+      critDamageMultiplier: labStats.critDamageMultiplier,
       onPlayerPull: (toX, toZ, pullDist) => {
         const pdx = toX - p.x, pdz = toZ - p.z;
         const pd = Math.sqrt(pdx * pdx + pdz * pdz);
@@ -2103,10 +2118,10 @@ function CombatEnemyLoop({
           p.z += (pdz / pd) * move;
         }
       },
-      onEnemyHit: (e, dmg) => {
+      onEnemyHit: (e, dmg, isCrit) => {
         useGameStore.getState().addDamagePopup({
           id: `dmg_${e.id}_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
-          x: e.x, z: e.z, value: dmg, isCrit: false, isPlayer: false, spawnTime: performance.now(),
+          x: e.x, z: e.z, value: dmg, isCrit: !!isCrit, isPlayer: false, spawnTime: performance.now(),
         });
         if (labStats.lifesteal > 0) {
           p.hp = Math.min(p.maxHp, p.hp + Math.round(dmg * labStats.lifesteal));
@@ -2685,6 +2700,17 @@ function ZoneTickLoop({
     tickShroudMist(shroudMistRef.current, groundFxRef.current, !inside, p.x, p.z, delta);
     const prevFxLen = lastEmittedGroundFxLen.current;
     const survivors = tickGroundFx(groundFxRef.current, delta);
+    for (const ge of survivors) {
+      if (!ge.appliesPoison) continue;
+      for (const e of enemiesRef.current) {
+        if (e.state === "dead") continue;
+        const gx = ge.x - e.x, gz = ge.z - e.z;
+        if (gx * gx + gz * gz <= (ge.radius + 1) * (ge.radius + 1)) {
+          e.poisonStacks = Math.min(5, (e.poisonStacks ?? 0) + delta);
+          e.poisonDps = 4;
+        }
+      }
+    }
     groundFxRef.current = survivors;
     if (survivors.length !== prevFxLen) {
       lastEmittedGroundFxLen.current = survivors.length;
