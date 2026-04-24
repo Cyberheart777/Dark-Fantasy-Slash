@@ -46,8 +46,9 @@ export const useAchievementStore = create<AchievementState>()(
         });
 
         if (def.shardReward && def.shardReward > 0) {
-          const { useMetaStore } = require("./metaStore");
-          useMetaStore.getState().addShards(def.shardReward);
+          import("./metaStore").then(({ useMetaStore }) => {
+            useMetaStore.getState().addShards(def.shardReward!);
+          });
         }
 
         return true;

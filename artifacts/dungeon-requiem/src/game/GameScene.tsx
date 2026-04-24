@@ -272,6 +272,7 @@ export interface GameState {
   difficultyGearMult: number;
   // Extraction
   highestBossWaveCleared: number;
+  bossKillExtractTimer: number;
   // Gear drops
   gearDrops: GearDropRuntime[];
   equippedGear: Record<string, GearDef | null>; // keyed by slot: weapon, armor, trinket
@@ -520,6 +521,7 @@ function handleBossKillCleanup(e: EnemyRuntime, g: GameState): void {
     g.bossAlive = false;
     g.bossId = null;
     g.highestBossWaveCleared = Math.max(g.highestBossWaveCleared, g.wave);
+    g.bossKillExtractTimer = 10.0;
     store.setBossSpecialWarn(false);
     audioManager.play("boss_death");
     const meta = useMetaStore.getState();
@@ -4750,7 +4752,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
       difficultySpeedMult: diff.enemySpeedMult,
       difficultyShardMult: diff.shardBonusMult,
       difficultyGearMult: diff.gearDropMult,
-      highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
+      highestBossWaveCleared: 0, bossKillExtractTimer: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
       inventory: [],
       shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [], groundEffects: [],
     };
@@ -4840,7 +4842,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
           difficultySpeedMult: resetDiff.enemySpeedMult,
           difficultyShardMult: resetDiff.shardBonusMult,
           difficultyGearMult: resetDiff.gearDropMult,
-          highestBossWaveCleared: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
+          highestBossWaveCleared: 0, bossKillExtractTimer: 0, gearDrops: [], equippedGear: { weapon: null, armor: null, trinket: null },
           inventory: [],
           shakeTimer: 0, shakeAmp: 0, shakeDur: 0.18, freezeUntil: 0, deathFx: [], groundEffects: [],
         };
