@@ -331,20 +331,16 @@ const RIVAL_ROGUE_POISON_STACKS_PER_HIT = 2;
 // Slow, tanky ranged attacker. Fires skull projectiles and periodically
 // spawns a "bone burst" — 6 projectiles in a star pattern around itself.
 export const RIVAL_NECROMANCER_HP = 350;
-const RIVAL_NECROMANCER_SPEED = 4.5;
+const RIVAL_NECROMANCER_SPEED = 3.8;
 const RIVAL_NECROMANCER_COLLISION_RADIUS = 0.9;
-/** Ideal keep-distance — necro wants to stay at range and lob skulls. */
-const RIVAL_NECROMANCER_PREFERRED_DIST = LABYRINTH_CONFIG.CELL_SIZE * 1.4;
-const RIVAL_NECROMANCER_FIRE_RANGE = LABYRINTH_CONFIG.CELL_SIZE * 2.0;
-const RIVAL_NECROMANCER_FIRE_COOLDOWN = 2.0;
-const RIVAL_NECROMANCER_PROJECTILE_DAMAGE = 12;
-const RIVAL_NECROMANCER_PROJECTILE_SPEED = 14;
-/** Bone burst cooldown (seconds). Fires 6 projectiles in a star. */
-const RIVAL_NECROMANCER_BURST_CD = 6.0;
-const RIVAL_NECROMANCER_BURST_COUNT = 6;
-const RIVAL_NECROMANCER_BURST_DAMAGE = 10;
-const RIVAL_NECROMANCER_BURST_SPEED = 12;
-/** Backup melee if player closes to point-blank. */
+const RIVAL_NECROMANCER_SCYTHE_RANGE = 3.5;
+const RIVAL_NECROMANCER_SCYTHE_DAMAGE = 22;
+const RIVAL_NECROMANCER_SCYTHE_COOLDOWN = 1.8;
+const RIVAL_NECROMANCER_SCYTHE_ARC = Math.PI * 0.6;
+const RIVAL_NECROMANCER_MINION_CD = 10.0;
+const RIVAL_NECROMANCER_MINION_HP = 60;
+const RIVAL_NECROMANCER_MINION_FIRE_CD = 2.0;
+const RIVAL_NECROMANCER_MINION_DAMAGE = 8;
 const RIVAL_NECROMANCER_ATTACK_RANGE = 2.0;
 const RIVAL_NECROMANCER_ATTACK_DAMAGE = 10;
 const RIVAL_NECROMANCER_ATTACK_COOLDOWN = 1.3;
@@ -1087,9 +1083,9 @@ export function updateEnemy(
     return;
   }
 
-  // ─── Rival Necromancer: ranged + bone burst ────────────────────────
+  // ─── Rival Necromancer: melee scythe + skeleton minions ────────────
   if (enemy.kind === "rival_necromancer") {
-    runRivalNecromancerAI(enemy, playerX, playerZ, segments, delta, projectiles);
+    runRivalNecromancerAI(enemy, playerX, playerZ, segments, delta, projectiles, allEnemies);
     return;
   }
 
@@ -1482,6 +1478,7 @@ function runRivalNecromancerAI(
   segments: ReturnType<typeof extractWallSegments>,
   delta: number,
   projectiles: LabProjectile[],
+  allEnemies?: readonly EnemyRuntime[],
 ): void {
   if (enemy.attackCooldown > 0) enemy.attackCooldown -= delta;
   const r = enemy.rival;
@@ -1495,98 +1492,115 @@ function runRivalNecromancerAI(
 
   if (dist > 0.001) enemy.angle = Math.atan2(dirX, -dirZ);
 
-  // Movement: close if too far, backpedal if too close, hold at range.
-  let moveX = 0, moveZ = 0;
-  if (dist > RIVAL_NECROMANCER_FIRE_RANGE) {
-    moveX = dirX;
-    moveZ = dirZ;
-  } else if (dist > RIVAL_NECROMANCER_PREFERRED_DIST) {
-    moveX = dirX * 0.3;
-    moveZ = dirZ * 0.3;
-  } else if (dist < RIVAL_NECROMANCER_PREFERRED_DIST * 0.8) {
-    moveX = -dirX * 0.5;
-    moveZ = -dirZ * 0.5;
-  }
-
-  if (moveX !== 0 || moveZ !== 0) {
-    const stepX = moveX * RIVAL_NECROMANCER_SPEED * (enemy.speedMult ?? 1) * delta;
-    const stepZ = moveZ * RIVAL_NECROMANCER_SPEED * (enemy.speedMult ?? 1) * delta;
+  // Chase the player — slow, menacing approach
+  if (dist > RIVAL_NECROMANCER_SCYTHE_RANGE * 0.6) {
+    const spd = RIVAL_NECROMANCER_SPEED * (enemy.speedMult ?? 1);
+    const stepX = dirX * spd * delta;
+    const stepZ = dirZ * spd * delta;
     const coll = RIVAL_NECROMANCER_COLLISION_RADIUS;
     const nextX = enemy.x + stepX;
     const nextZ = enemy.z + stepZ;
     if (!collidesWithAnyWallLocal(nextX, enemy.z, coll, segments)) enemy.x = nextX;
     if (!collidesWithAnyWallLocal(enemy.x, nextZ, coll, segments)) enemy.z = nextZ;
-    enemy.lastMoveX = moveX;
-    enemy.lastMoveZ = moveZ;
+    enemy.lastMoveX = dirX;
+    enemy.lastMoveZ = dirZ;
   }
 
-  // Ranged fire: skull projectile at the player.
-  if (r.abilityCooldown <= 0 && dist <= RIVAL_NECROMANCER_FIRE_RANGE && dist >= RIVAL_NECROMANCER_ATTACK_RANGE) {
-    r.abilityCooldown = RIVAL_NECROMANCER_FIRE_COOLDOWN;
-    projectiles.push({
-      id: `rivalnecproj${rivalIdCounter++}`,
-      owner: "enemy",
-      x: enemy.x,
-      z: enemy.z,
-      vx: dirX * RIVAL_NECROMANCER_PROJECTILE_SPEED,
-      vz: dirZ * RIVAL_NECROMANCER_PROJECTILE_SPEED,
-      damage: RIVAL_NECROMANCER_PROJECTILE_DAMAGE * (enemy.damageMult ?? 1),
-      radius: 0.4,
-      lifetime: 1.0, // halved from 2.0
-      piercing: false,
-      hitIds: new Set(),
-      color: "#88ff44",
-      glowColor: "#44aa20",
-      style: "orb",
-      dead: false,
-    });
-  }
-
-  // Bone burst: 6 projectiles in a star pattern (every 6s).
-  if (r.secondaryCooldown <= 0) {
-    r.secondaryCooldown = RIVAL_NECROMANCER_BURST_CD;
-    for (let i = 0; i < RIVAL_NECROMANCER_BURST_COUNT; i++) {
-      const angle = (Math.PI * 2 * i) / RIVAL_NECROMANCER_BURST_COUNT;
+  // Scythe sweep — wide arc melee attack (fires a short-lived fan of projectiles)
+  if (dist <= RIVAL_NECROMANCER_SCYTHE_RANGE && enemy.attackCooldown <= 0) {
+    enemy.attackCooldown = RIVAL_NECROMANCER_SCYTHE_COOLDOWN;
+    const sweepCount = 5;
+    const baseAngle = Math.atan2(dirX, dirZ);
+    for (let i = 0; i < sweepCount; i++) {
+      const a = baseAngle + (i - (sweepCount - 1) / 2) * (RIVAL_NECROMANCER_SCYTHE_ARC / sweepCount);
       projectiles.push({
-        id: `rivalnecburst${rivalIdCounter++}`,
+        id: `rivalnecscythe${rivalIdCounter++}`,
         owner: "enemy",
-        x: enemy.x,
-        z: enemy.z,
-        vx: Math.sin(angle) * RIVAL_NECROMANCER_BURST_SPEED,
-        vz: Math.cos(angle) * RIVAL_NECROMANCER_BURST_SPEED,
-        damage: RIVAL_NECROMANCER_BURST_DAMAGE * (enemy.damageMult ?? 1),
-        radius: 0.35,
-        lifetime: 1.0, // halved from 2.0
-        piercing: false,
+        x: enemy.x + Math.sin(a) * 1.0,
+        z: enemy.z + Math.cos(a) * 1.0,
+        vx: Math.sin(a) * 6,
+        vz: Math.cos(a) * 6,
+        damage: RIVAL_NECROMANCER_SCYTHE_DAMAGE * (enemy.damageMult ?? 1),
+        radius: 0.5,
+        lifetime: 0.35,
+        piercing: true,
         hitIds: new Set(),
-        color: "#ccff66",
-        glowColor: "#88cc22",
+        color: "#88ff44",
+        glowColor: "#44aa20",
         style: "orb",
         dead: false,
       });
     }
   }
 
-  // Melee fallback.
-  if (dist <= RIVAL_NECROMANCER_ATTACK_RANGE && enemy.attackCooldown <= 0) {
-    enemy.attackCooldown = RIVAL_NECROMANCER_ATTACK_COOLDOWN;
-    projectiles.push({
-      id: `rivalnecmelee${rivalIdCounter++}`,
-      owner: "enemy",
-      x: enemy.x,
-      z: enemy.z,
-      vx: dirX * 10,
-      vz: dirZ * 10,
-      damage: RIVAL_NECROMANCER_ATTACK_DAMAGE * (enemy.damageMult ?? 1),
-      radius: 0.35,
-      lifetime: 0.25,
-      piercing: false,
-      hitIds: new Set(),
-      color: "#88ff44",
-      glowColor: "#44aa20",
-      style: "orb",
-      dead: false,
-    });
+  // Skeleton minion summon — 2 skeleton mages that orbit and fire bone projectiles
+  r.secondaryCooldown -= delta;
+  if (r.secondaryCooldown <= 0) {
+    r.secondaryCooldown = RIVAL_NECROMANCER_MINION_CD;
+    // Spawn 2 skeleton mages near the necromancer
+    if (allEnemies) {
+      const minionCount = (allEnemies as EnemyRuntime[]).filter(
+        (e) => e.state !== "dead" && e.kind === "corridor_guardian" && e.hp <= RIVAL_NECROMANCER_MINION_HP,
+      ).length;
+      if (minionCount < 4) {
+        for (let i = 0; i < 2; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const rr = 3 + Math.random() * 2;
+          const mx = enemy.x + Math.cos(a) * rr;
+          const mz = enemy.z + Math.sin(a) * rr;
+          const minion: EnemyRuntime = {
+            id: `necminion-${rivalIdCounter++}`,
+            kind: "corridor_guardian",
+            x: mx, z: mz,
+            angle: 0,
+            hp: RIVAL_NECROMANCER_MINION_HP,
+            maxHp: RIVAL_NECROMANCER_MINION_HP,
+            state: "chase" as EnemyAiState,
+            aiTimer: 0,
+            attackCooldown: 0,
+            deathFadeSec: 0,
+            hitFlashTimer: 0,
+            patrolTargetX: null,
+            patrolTargetZ: null,
+            lastMoveX: 0,
+            lastMoveZ: 0,
+            fireTimer: RIVAL_NECROMANCER_MINION_FIRE_CD,
+          };
+          (allEnemies as EnemyRuntime[]).push(minion);
+        }
+      }
+    }
+  }
+
+  // Skeleton minions fire bone projectiles at the player
+  if (allEnemies) {
+    for (const m of allEnemies as EnemyRuntime[]) {
+      if (m.state === "dead") continue;
+      if (m.kind !== "corridor_guardian" || m.hp > RIVAL_NECROMANCER_MINION_HP) continue;
+      m.fireTimer = (m.fireTimer ?? RIVAL_NECROMANCER_MINION_FIRE_CD) - delta;
+      if (m.fireTimer <= 0) {
+        m.fireTimer = RIVAL_NECROMANCER_MINION_FIRE_CD;
+        const mdx = playerX - m.x, mdz = playerZ - m.z;
+        const md = Math.sqrt(mdx * mdx + mdz * mdz) || 1;
+        if (md <= LABYRINTH_CONFIG.CELL_SIZE * 3) {
+          projectiles.push({
+            id: `necminionproj${rivalIdCounter++}`,
+            owner: "enemy",
+            x: m.x, z: m.z,
+            vx: (mdx / md) * 12, vz: (mdz / md) * 12,
+            damage: RIVAL_NECROMANCER_MINION_DAMAGE * (enemy.damageMult ?? 1),
+            radius: 0.3,
+            lifetime: 1.2,
+            piercing: false,
+            hitIds: new Set(),
+            color: "#ccff66",
+            glowColor: "#88cc22",
+            style: "orb",
+            dead: false,
+          });
+        }
+      }
+    }
   }
 }
 
