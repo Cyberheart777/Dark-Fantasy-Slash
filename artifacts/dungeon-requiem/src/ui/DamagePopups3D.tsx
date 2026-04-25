@@ -60,7 +60,7 @@ export function DamagePopups3D() {
                 transform: `scale(${scale})`,
               }}
             >
-              {popup.text ?? `${popup.isCrit ? "!" : ""}${popup.value}`}
+              {popup.text ?? `${popup.value}${popup.isCrit ? "!" : ""}`}
             </div>
           </Html>
         );

@@ -2718,12 +2718,12 @@ function ZoneTickLoop({
     }
 
     // ── Warden spawn ────────────────────────────────────────────────────
-    // Layer 1-2: no Warden (replaced by champion hunt).
+    // Layer 1: no Warden (champion hunt only).
+    // Layer 2: mini-boss serves as the layer boss — no Warden.
     // Layer 3: spawns immediately at center (boss arena).
-    // Legacy: time + zone gates for non-descent mode.
     const wardenGate = shared.layer === 3
       ? !shared.wardenSpawned
-      : (LAYER_CONFIG[shared.layer].hasWarden && shouldSpawnWarden(elapsedSec, zone.radius, ZONE_INITIAL_RADIUS, shared.wardenSpawned));
+      : false;
     if (wardenGate) {
       const warden = makeWarden(maze);
       if (zoneDiffCfg) applyDifficultyMode(warden, zoneDiffCfg);
