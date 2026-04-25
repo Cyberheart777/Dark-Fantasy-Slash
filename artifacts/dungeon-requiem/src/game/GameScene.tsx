@@ -4647,17 +4647,17 @@ function BossAoeRing({ gs }: { gs: React.RefObject<GameState | null> }) {
 function Lighting() {
   return (
     <>
-      {/* Very dim blue-black ambient — dungeon should feel dark */}
-      <ambientLight color="#1a1a2e" intensity={0.25} />
-      {/* Cool moonlit overhead — faint directional for shadow casting */}
-      <directionalLight color="#6688bb" intensity={0.6} position={[5, 30, 15]} castShadow
+      {/* Very dim ambient — dungeon should feel dark, runes glow through */}
+      <ambientLight color="#0a0a18" intensity={0.12} />
+      {/* Faint overhead — just enough for shadows, not enough to reveal tile detail */}
+      <directionalLight color="#334466" intensity={0.25} position={[5, 30, 15]} castShadow
         shadow-mapSize={[1024, 1024]}
         shadow-camera-near={0.5} shadow-camera-far={120}
         shadow-camera-left={-40} shadow-camera-right={40}
         shadow-camera-top={40} shadow-camera-bottom={-40}
       />
       {/* Barely perceptible warm fill from opposite side */}
-      <directionalLight color="#403020" intensity={0.2} position={[-10, 15, -10]} />
+      <directionalLight color="#201810" intensity={0.08} position={[-10, 15, -10]} />
     </>
   );
 }

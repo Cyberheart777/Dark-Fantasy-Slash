@@ -173,8 +173,27 @@ export function tryFireRogueFan(
 
   const baseCount = 3;
   const totalDaggers = baseCount + Math.max(0, labStats.rogueExtraDaggers);
-  // Keep the total fan width at a constant ROGUE_SPREAD_RAD per side
-  // (so more daggers = tighter fill-in rather than wider cone).
+
+  // Convergence Blade: merge all daggers into a single mega-projectile
+  if (labStats.convergenceBladeEnabled) {
+    const megaDmg = baseDmg * totalDaggers;
+    const megaRadius = radius * 5;
+    const megaSpeed = speed * 0.4;
+    const dx = Math.sin(angle);
+    const dz = -Math.cos(angle);
+    spawnLabProjectile(projectiles, {
+      owner: "player",
+      x, z,
+      vx: dx * megaSpeed, vz: dz * megaSpeed,
+      damage: megaDmg, baseDamage: megaDmg,
+      radius: megaRadius, lifetime: life * 1.5, initialLifetime: life * 1.5,
+      piercing: true,
+      color: "#66ffcc", glowColor: "#22cc88", style: "dagger",
+    });
+    state.cooldownSec = ROGUE_COOLDOWN / Math.max(0.1, atkSpeedMult);
+    return true;
+  }
+
   const halfSpread = ROGUE_SPREAD_RAD;
 
   for (let i = 0; i < totalDaggers; i++) {
