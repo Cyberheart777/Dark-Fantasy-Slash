@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 import { useAchievementStore } from "../store/achievementStore";
+import { useMetaStore } from "../store/metaStore";
 import {
   ACHIEVEMENTS,
   ACHIEVEMENT_CATEGORIES,
@@ -21,6 +22,9 @@ interface AchievementsPanelProps {
 
 export function AchievementsPanel({ onClose }: AchievementsPanelProps) {
   const unlocked = useAchievementStore((s) => s.unlocked);
+  const claimed = useAchievementStore((s) => s.claimed);
+  const claimReward = useAchievementStore((s) => s.claimReward);
+  const addShards = useMetaStore((s) => s.addShards);
   const [activeTab, setActiveTab] = useState<AchievementCategory | "all">("all");
   const [panelView, setPanelView] = useState<"achievements" | "guide">("achievements");
 
@@ -116,10 +120,24 @@ export function AchievementsPanel({ onClose }: AchievementsPanelProps) {
                     <div style={styles.cardDesc}>
                       {isHidden ? "This achievement is hidden" : ach.description}
                     </div>
-                    {ach.shardReward && !isHidden && (
-                      <div style={styles.cardReward}>
-                        ◈ {ach.shardReward} shards
-                      </div>
+                    {ach.shardReward && !isHidden && isUnlocked && !claimed[ach.id] && (
+                      <button
+                        style={styles.claimBtn}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          audioManager.play("menu_click");
+                          const amount = claimReward(ach.id);
+                          if (amount > 0) addShards(amount);
+                        }}
+                      >
+                        CLAIM ◈{ach.shardReward}
+                      </button>
+                    )}
+                    {ach.shardReward && !isHidden && claimed[ach.id] && (
+                      <div style={styles.claimedLabel}>◈ {ach.shardReward} claimed</div>
+                    )}
+                    {ach.shardReward && !isHidden && !isUnlocked && (
+                      <div style={styles.cardReward}>◈ {ach.shardReward} shards</div>
                     )}
                     {isUnlocked && unlocked[ach.id] && (
                       <div style={styles.cardDate}>
@@ -359,6 +377,28 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "monospace",
     letterSpacing: 1,
     marginTop: 1,
+  },
+  claimBtn: {
+    marginTop: 4,
+    padding: "5px 12px",
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: 2,
+    fontFamily: "monospace",
+    color: "#ffd040",
+    background: "rgba(180,140,20,0.15)",
+    border: "1px solid rgba(255,200,0,0.5)",
+    borderRadius: 5,
+    cursor: "pointer",
+    transition: "all 0.15s",
+  },
+  claimedLabel: {
+    fontSize: 9,
+    color: "#606040",
+    fontFamily: "monospace",
+    letterSpacing: 1,
+    marginTop: 1,
+    fontStyle: "italic",
   },
   cardDate: {
     fontSize: 9,
