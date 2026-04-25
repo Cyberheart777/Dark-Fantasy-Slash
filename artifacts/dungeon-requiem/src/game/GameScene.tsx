@@ -1799,8 +1799,9 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             p.momentumTimer = 3.0; // reset 3s decay
           }
           p.meleeHitCounter += meleeHitsThisSwing;
+          if (stats.earthbreakerEnabled && meleeHitsThisSwing === 0) p.meleeHitCounter++;
 
-          // ── Earthbreaker: every 5th hit, AoE slam ──
+          // ── Earthbreaker: every 5th swing, AoE slam ──
           if (stats.earthbreakerEnabled && p.meleeHitCounter >= 5) {
             p.meleeHitCounter = 0;
             const slamDmg = Math.round(stats.damage * 1.2 * warCryMult);
