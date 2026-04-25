@@ -1506,31 +1506,26 @@ function runRivalNecromancerAI(
     enemy.lastMoveZ = dirZ;
   }
 
-  // Scythe sweep — wide arc melee attack (fires a short-lived fan of projectiles)
+  // Scythe melee — direct hit via instant short-range projectile
   if (dist <= RIVAL_NECROMANCER_SCYTHE_RANGE && enemy.attackCooldown <= 0) {
     enemy.attackCooldown = RIVAL_NECROMANCER_SCYTHE_COOLDOWN;
-    const sweepCount = 5;
-    const baseAngle = Math.atan2(dirX, dirZ);
-    for (let i = 0; i < sweepCount; i++) {
-      const a = baseAngle + (i - (sweepCount - 1) / 2) * (RIVAL_NECROMANCER_SCYTHE_ARC / sweepCount);
-      projectiles.push({
-        id: `rivalnecscythe${rivalIdCounter++}`,
-        owner: "enemy",
-        x: enemy.x + Math.sin(a) * 1.0,
-        z: enemy.z + Math.cos(a) * 1.0,
-        vx: Math.sin(a) * 6,
-        vz: Math.cos(a) * 6,
-        damage: RIVAL_NECROMANCER_SCYTHE_DAMAGE * (enemy.damageMult ?? 1),
-        radius: 0.5,
-        lifetime: 0.35,
-        piercing: true,
-        hitIds: new Set(),
-        color: "#88ff44",
-        glowColor: "#44aa20",
-        style: "orb",
-        dead: false,
-      });
-    }
+    enemy.hitFlashTimer = 0.2;
+    projectiles.push({
+      id: `rivalnecswing${rivalIdCounter++}`,
+      owner: "enemy",
+      x: enemy.x + dirX * 1.5,
+      z: enemy.z + dirZ * 1.5,
+      vx: dirX * 2, vz: dirZ * 2,
+      damage: RIVAL_NECROMANCER_SCYTHE_DAMAGE * (enemy.damageMult ?? 1),
+      radius: 2.0,
+      lifetime: 0.15,
+      piercing: false,
+      hitIds: new Set(),
+      color: "#00000000",
+      glowColor: "#00000000",
+      style: "orb",
+      dead: false,
+    });
   }
 
   // Skeleton minion summon — 2 skeleton mages that orbit and fire bone projectiles
