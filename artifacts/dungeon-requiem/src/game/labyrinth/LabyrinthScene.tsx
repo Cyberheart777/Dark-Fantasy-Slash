@@ -336,6 +336,8 @@ interface LabSharedState {
   summonSign: SummonSign | null;
   companionEverSummoned: boolean;
   companionDiedDuringRun: boolean;
+  lastChancePortalsSpawned: boolean;
+  timerExpiredSwarmSpawned: boolean;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -461,6 +463,8 @@ export function LabyrinthScene() {
     summonSign: null,
     companionEverSummoned: false,
     companionDiedDuringRun: false,
+    lastChancePortalsSpawned: false,
+    timerExpiredSwarmSpawned: false,
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
@@ -681,6 +685,8 @@ export function LabyrinthScene() {
       s.miniBossSpawned = false;
       s.miniBossAlive = false;
       s.hardBossSpawned = false;
+      s.lastChancePortalsSpawned = false;
+      s.timerExpiredSwarmSpawned = false;
       s.soulCrystalMult = nlc.crystalMult;
       s.descentPortalsSpawned = false;
       s.portals = [];
@@ -2126,9 +2132,8 @@ function CombatEnemyLoop({
     //    The Warden uses its own dedicated tick (3-phase state machine)
     //    since it needs starburst + minion-spawn scheduling.
     const dmgAccum = { value: 0 };
-    // Rival-rogue poison-stack accumulator — bumped per hit inside
-    // updateEnemy, applied to labPoisonRef after the enemy loop.
     const rivalPoisonAccum = { value: 0 };
+    const aliveBeforeTick = new Set(enemies.filter((e) => e.state !== "dead").map((e) => e.id));
     for (const e of enemies) {
       if (e.state === "dead") { updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum, projectilesRef.current, rivalPoisonAccum); continue; }
       if (e.kind === "warden") {
@@ -2153,10 +2158,40 @@ function CombatEnemyLoop({
         updateEnemy(e, p.x, p.z, segments, delta, enemies, dmgAccum, projectilesRef.current, rivalPoisonAccum);
       }
     }
-    // Apply rival-rogue-applied poison stacks to the labyrinth's
-    // poison state. Same pipeline as the shroud-applied stacks.
     if (rivalPoisonAccum.value > 0) {
       addLabPoisonStacks(labPoisonRef.current, rivalPoisonAccum.value, undefined);
+    }
+
+    // Poison-kill sweep: enemies killed by DoT during updateEnemy()
+    // bypass the normal kill handler. Detect freshly dead enemies and
+    // credit kills, death FX, XP, champion tracking, etc.
+    for (const e of enemies) {
+      if (e.state === "dead" && aliveBeforeTick.has(e.id) && e.hp <= 0) {
+        aliveBeforeTick.delete(e.id);
+        shared.killCount++;
+        spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
+        spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
+        const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
+        if (loot.rolled) audioManager.play("gear_drop");
+        const gearRoll = rollLabGearDrop(e.kind, getDifficultyConfig(labDifficulty)?.gearDropMult ?? 1);
+        if (gearRoll) spawnLabGearDrop(gearDropsRef.current, gearRoll, e.x, e.z);
+        if (e.kind === "warden") {
+          clearWardenState(e.id);
+          audioManager.play("wave_clear");
+          shared.layerComplete = true;
+          shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
+        }
+        if (e.kind === "death_knight") {
+          shared.layerComplete = true;
+          clearDeathKnightState(e.id);
+          audioManager.play("wave_clear");
+          shared.layerBanner = { text: "DEATH KNIGHT DESTROYED", sub: "THE ABYSS IS CONQUERED", color: "#44ffaa", at: shared.zone.elapsedSec };
+        }
+        if (e.kind === "rival_warrior" || e.kind === "rival_mage" || e.kind === "rival_rogue" || e.kind === "rival_necromancer" || e.kind === "rival_bard") {
+          onRivalChampionKill(e, shared, gearDropsRef.current);
+          audioManager.play("wave_clear");
+        }
+      }
     }
 
     // Sync the HUD boss-bar snapshot from the live warden each frame.
@@ -2956,9 +2991,48 @@ function ZoneTickLoop({
       }
     }
 
-    // ── Portal milestones ──────────────────────────────────────────────
-    // Spawn a burst when elapsedSec crosses each milestone threshold.
+    // ── Last chance portals (10 seconds remaining) ─────────────────────
     let portalsChanged = false;
+    if (!shared.lastChancePortalsSpawned && !shared.layerComplete && zone.timeRemaining <= 10 && zone.timeRemaining > 0) {
+      shared.lastChancePortalsSpawned = true;
+      const portalSec = shared.zone.elapsedSec;
+      if (shared.layer < 3) {
+        shared.portals.push({
+          id: `descent_lc_${portalSec}`, x: p.x + 4, z: p.z, col: 0, row: 0,
+          spawnedAtSec: portalSec, consumed: false, fadeElapsedSec: 0,
+        });
+      }
+      shared.portals.push({
+        id: `extract_lc_${portalSec}`, x: p.x - 4, z: p.z, col: 0, row: 0,
+        spawnedAtSec: portalSec, consumed: false, fadeElapsedSec: 0,
+      });
+      portalsChanged = true;
+      shared.layerBanner = { text: "TIME IS RUNNING OUT", sub: "PORTALS OPENED — ESCAPE NOW OR FACE THE HORDE", color: "#ff4444", at: shared.zone.elapsedSec };
+      audioManager.play("boss_spawn");
+    }
+
+    // ── Timer expired swarm (0 seconds) ───────────────────────────────
+    if (!shared.timerExpiredSwarmSpawned && zone.timeRemaining <= 0 && !shared.defeated && !shared.extracted && !shared.victory) {
+      shared.timerExpiredSwarmSpawned = true;
+      shared.layerBanner = { text: "THE HORDE DESCENDS", sub: "YOU STAYED TOO LONG", color: "#ff0000", at: shared.zone.elapsedSec };
+      audioManager.play("boss_spawn");
+      const SWARM_COUNT = 12;
+      for (let i = 0; i < SWARM_COUNT; i++) {
+        const angle = (i / SWARM_COUNT) * Math.PI * 2;
+        const dist = 8 + Math.random() * 4;
+        const sx = p.x + Math.cos(angle) * dist;
+        const sz = p.z + Math.sin(angle) * dist;
+        const enemy = i % 3 === 0
+          ? makeShadowStalker(sx, sz)
+          : makeCorridorGuardianAt(sx, sz);
+        if (zoneDiffCfg) applyDifficultyMode(enemy, zoneDiffCfg);
+        enemiesRef.current.push(enemy);
+      }
+      onEnemiesChange(enemiesRef.current.slice());
+      shared.enemyCount = enemiesRef.current.filter((e) => e.state !== "dead").length;
+    }
+
+    // ── Portal milestones ──────────────────────────────────────────────
     for (let i = 0; i < PORTAL_MILESTONES.length; i++) {
       const m = PORTAL_MILESTONES[i];
       if (elapsedSec < m.atSec) continue;
