@@ -113,6 +113,8 @@ export function createPlayerShim(charClass: CharacterClass, race: RaceType = "hu
     postDashSpeedActive: 0,
     orbitalOrbAngle: 0,
     orbitalHitIcd: new Map<string, number>(),
+    poisonDotTimer: 0,
+    poisonDotDps: 0,
   };
   // Fully-populated GameState-shaped shim. Player3D today only reads
   // `gs.current.charClass` and `gs.current.player`, but populating every

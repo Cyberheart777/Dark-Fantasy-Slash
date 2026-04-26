@@ -4,7 +4,7 @@
  * Renders each LabProjectile. Player projectiles forward to the main
  * game's Projectile3D. Enemy projectiles render as simple glowing
  * spheres (no pointLights) for performance. Crescents use a local
- * renderer without pointLight.
+ * renderer without pointLight. Enemy daggers use a dagger shape.
  */
 
 import { useRef } from "react";
@@ -20,9 +20,11 @@ export function LabyrinthProjectiles3D({ projectiles }: { projectiles: LabProjec
       {projectiles.map((p) =>
         p.style === "crescent"
           ? <CrescentProjectile3D key={p.id} proj={p} />
-          : p.owner === "enemy"
-            ? <EnemyBall3D key={p.id} proj={p} />
-            : <Projectile3D key={p.id} proj={p as unknown as Projectile} />
+          : p.owner === "enemy" && p.style === "dagger"
+            ? <EnemyDagger3D key={p.id} proj={p} />
+            : p.owner === "enemy"
+              ? <EnemyBall3D key={p.id} proj={p} />
+              : <Projectile3D key={p.id} proj={p as unknown as Projectile} />
       )}
     </>
   );
@@ -43,6 +45,38 @@ function EnemyBall3D({ proj }: { proj: LabProjectile }) {
         emissiveIntensity={3}
       />
     </mesh>
+  );
+}
+
+function EnemyDagger3D({ proj }: { proj: LabProjectile }) {
+  const ref = useRef<THREE.Group>(null);
+  const t = useRef(Math.random() * 100);
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (!ref.current) return;
+    ref.current.position.set(proj.x, 0.9, proj.z);
+    ref.current.rotation.y = Math.atan2(proj.vx, proj.vz) + Math.PI;
+    ref.current.rotation.z = t.current * 12;
+  });
+  const bladeColor = proj.color || "#30cc60";
+  const hiltColor = proj.glowColor || "#1a8830";
+  return (
+    <group ref={ref}>
+      <mesh position={[0, 0, -0.18]}>
+        <boxGeometry args={[0.06, 0.06, 0.4]} />
+        <meshStandardMaterial
+          color={bladeColor}
+          emissive={hiltColor}
+          emissiveIntensity={3}
+          metalness={0.9}
+          roughness={0.1}
+        />
+      </mesh>
+      <mesh position={[0, 0, 0.04]}>
+        <boxGeometry args={[0.16, 0.05, 0.05]} />
+        <meshStandardMaterial color={hiltColor} metalness={0.7} roughness={0.2} />
+      </mesh>
+    </group>
   );
 }
 

@@ -112,6 +112,8 @@ export interface PlayerRuntime {
   postDashSpeedActive: number;   // Boots of Speed: remaining buff duration (seconds)
   orbitalOrbAngle: number;       // Orbital Staff: current orbit angle
   orbitalHitIcd: Map<string, number>; // Orbital Staff: per-enemy hit ICD (seconds)
+  poisonDotTimer: number;            // poison DOT from enemy rogue daggers (seconds remaining)
+  poisonDotDps: number;              // damage per second of active poison DOT
 }
 
 export interface EnemyRuntime {
@@ -628,6 +630,8 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
     postDashSpeedActive: 0,
     orbitalOrbAngle: 0,
     orbitalHitIcd: new Map<string, number>(),
+    poisonDotTimer: 0,
+    poisonDotDps: 0,
   };
 }
 
@@ -2125,6 +2129,12 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         }
       }
 
+      if (p.poisonDotTimer > 0 && !p.dead) {
+        p.hp -= p.poisonDotDps * delta;
+        p.poisonDotTimer -= delta;
+        if (p.hp <= 0) handlePlayerFatalDmg(p, g);
+      }
+
       // ── Per-frame passive systems ────────────────────────────────────────
 
       // Warrior: Blood Momentum decay
@@ -3049,6 +3059,10 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               handlePlayerDamageTakenProcs(p, stats, g);
               if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
               else { audioManager.play("player_hurt"); }
+            }
+            if (ep.style === "poison_dagger") {
+              p.poisonDotTimer = 3;
+              p.poisonDotDps = 4;
             }
             p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.6;
             if (ep.pullToX != null && ep.pullToZ != null) {
@@ -4607,19 +4621,19 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
     );
   }
 
-  // ── Rogue champion poison dagger — same shape, sickly purple/green ──
+  // ── Rogue champion poison dagger — same dagger shape, venomous green tint ──
   if (ep.style === "poison_dagger") {
     return (
       <group ref={ref}>
         <mesh position={[0, 0, -0.18]}>
           <boxGeometry args={[0.06, 0.06, 0.4]} />
-          <meshStandardMaterial color="#aa30dd" emissive="#8800cc" emissiveIntensity={3} metalness={0.9} roughness={0.1} />
+          <meshStandardMaterial color="#30cc60" emissive="#22aa44" emissiveIntensity={3} metalness={0.9} roughness={0.1} />
         </mesh>
         <mesh position={[0, 0, 0.04]}>
           <boxGeometry args={[0.16, 0.05, 0.05]} />
-          <meshStandardMaterial color="#6620aa" metalness={0.7} roughness={0.2} />
+          <meshStandardMaterial color="#1a8830" metalness={0.7} roughness={0.2} />
         </mesh>
-        <pointLight color="#8800cc" intensity={1.5} distance={3} decay={2} />
+        <pointLight color="#22aa44" intensity={1.5} distance={3} decay={2} />
       </group>
     );
   }
