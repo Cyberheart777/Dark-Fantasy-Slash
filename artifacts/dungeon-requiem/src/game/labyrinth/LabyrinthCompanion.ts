@@ -79,7 +79,7 @@ export function placeSummonSign(
   spawnCol: number,
   spawnRow: number,
   cellToWorld: (col: number, row: number) => { x: number; z: number },
-): SummonSign | null {
+): SummonSign {
   let best: { col: number; row: number } | null = null;
   let bestDist = 0;
   for (const de of deadEnds) {
@@ -91,9 +91,11 @@ export function placeSummonSign(
       best = de;
     }
   }
+  if (!best && deadEnds.length > 0) {
+    best = deadEnds[Math.floor(Math.random() * deadEnds.length)];
+  }
   if (!best) {
-    if (deadEnds.length > 0) best = deadEnds[Math.floor(Math.random() * deadEnds.length)];
-    else return null;
+    best = { col: Math.max(0, spawnCol + 3), row: spawnRow };
   }
   const pos = cellToWorld(best.col, best.row);
   return { x: pos.x, z: pos.z, consumed: false };

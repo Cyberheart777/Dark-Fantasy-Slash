@@ -4193,26 +4193,29 @@ function LabyrinthMinimap({ maze, playerRef, enemiesRef, sharedRef, lootRoomCell
         }
       }
 
-      // Summon sign — golden rune icon
+      // Summon sign — pulsing golden rune icon (always visible like treasure room)
       {
         const sign = sharedRef.current.summonSign;
         if (sign && !sign.consumed) {
           const sc = worldToCell(sign.x, sign.z);
           const sx = sc.col * cellPx + cellPx / 2;
           const sy = sc.row * cellPx + cellPx / 2;
-          ctx.fillStyle = "rgba(255,200,48,0.3)";
+          const now = performance.now() / 1000;
+          const pulse = 0.5 + 0.5 * Math.sin(now * 3);
+          const r = 5 + pulse * 3;
+          ctx.fillStyle = `rgba(255,200,48,${0.15 + pulse * 0.15})`;
           ctx.beginPath();
-          ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+          ctx.arc(sx, sy, r + 2, 0, Math.PI * 2);
           ctx.fill();
           ctx.fillStyle = "#ffc830";
           ctx.beginPath();
-          ctx.arc(sx, sy, 3.5, 0, Math.PI * 2);
+          ctx.arc(sx, sy, 4, 0, Math.PI * 2);
           ctx.fill();
           ctx.fillStyle = "#1a0f00";
-          ctx.font = "bold 6px monospace";
+          ctx.font = "bold 8px monospace";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.fillText("♪", sx, sy + 0.5);
+          ctx.fillText("B", sx, sy + 0.5);
         }
       }
 
