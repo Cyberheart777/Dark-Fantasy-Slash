@@ -30,6 +30,10 @@ export type UpgradeId =
   | "soul_feast"
   | "killing_blow"
   | "momentum_shift"
+  | "pickup_radius"
+  | "damage_reduction"
+  | "thorns"
+  | "shard_find"
   // ── Warrior-only ──
   | "cleave_start"
   | "blood_momentum"
@@ -114,7 +118,8 @@ export type UpgradeId =
   | "relic_abyss_crown"
   | "relic_blood_covenant"
   | "relic_iron_oath"
-  | "relic_convergence_blade";
+  | "relic_convergence_blade"
+  | "relic_berserkers_fury";
 
 // ─── Rarity ────────────────────────────────────────────────────────────────────
 
@@ -170,6 +175,12 @@ export interface PlayerStats {
   phantomEchoEvery: number;
   deathBargainActive: number;
   incomingDamageMult: number;
+  // ── New universal stats ────────────────────────────────────────────────────
+  pickupRadiusMult: number;      // 1.0 = base, 1.3 = +30%
+  damageReductionPct: number;    // 0.0 to 0.20 — flat % damage reduction after armor
+  thornsPct: number;             // 0.0 to 0.25 — reflect % of damage taken to attacker
+  shardFindMult: number;         // 1.0 = base, 1.3 = +30% more shards
+  healCap: number;               // 1.0 = full HP, 0.5 = can't heal above 50%
   // ── Warrior-specific ───────────────────────────────────────────────────────
   bloodMomentumPerHit: number;   // stacking damage % per hit (0 = off)
   earthbreakerEnabled: boolean;  // every 5th hit AoE slam
@@ -308,6 +319,12 @@ export function createDefaultStats(): PlayerStats {
     phantomEchoEvery: 0,
     deathBargainActive: 0,
     incomingDamageMult: 1.0,
+    // New universal
+    pickupRadiusMult: 1.0,
+    damageReductionPct: 0,
+    thornsPct: 0,
+    shardFindMult: 1.0,
+    healCap: 1.0,
     // Warrior
     bloodMomentumPerHit: 0,
     earthbreakerEnabled: false,
@@ -427,15 +444,15 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   // ════════════════════════════════════════════════════════════════════════════
   damage_boost: {
     id: "damage_boost", name: "Whetstone",
-    description: "+15% weapon damage",
+    description: "+12% weapon damage",
     icon: "⚔️", maxStacks: 8, rarity: "common", classes: "all",
-    apply: (s) => { s.damage = Math.round(s.damage * 1.15); },
+    apply: (s) => { s.damage = Math.round(s.damage * 1.12); },
   },
   attack_speed_boost: {
     id: "attack_speed_boost", name: "Bladestorm",
-    description: "+10% attack speed",
+    description: "+8% attack speed",
     icon: "🌪️", maxStacks: 6, rarity: "common", classes: "all",
-    apply: (s) => { s.attackSpeed = parseFloat((s.attackSpeed * 1.10).toFixed(3)); },
+    apply: (s) => { s.attackSpeed = parseFloat((s.attackSpeed * 1.08).toFixed(3)); },
   },
   max_health_boost: {
     id: "max_health_boost", name: "Iron Constitution",
@@ -469,9 +486,13 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   lifesteal_boost: {
     id: "lifesteal_boost", name: "Bloodlord",
-    description: "+2% lifesteal",
-    icon: "🩸", maxStacks: 5, rarity: "common", classes: "all",
-    apply: (s) => { s.lifesteal += 0.02; }, // was 0.04 — max stack gave +20% alone
+    description: "+1.5% lifesteal (diminishing)",
+    icon: "🩸", maxStacks: 3, rarity: "common", classes: "all",
+    apply: (s) => {
+      const stacks = Math.round(s.lifesteal / 0.015);
+      const next = stacks === 0 ? 0.02 : stacks === 1 ? 0.015 : 0.01;
+      s.lifesteal += next;
+    },
   },
   double_strike: {
     id: "double_strike", name: "Twin Fang",
@@ -536,6 +557,30 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     description: "Crits grant +4% move speed for 2s, stacks up to 5 times.",
     icon: "💨", maxStacks: 1, rarity: "rare", classes: "all",
     apply: (s) => { s.momentumShiftEnabled = true; },
+  },
+  pickup_radius: {
+    id: "pickup_radius", name: "Magnet Soul",
+    description: "+10% pickup radius.",
+    icon: "🧲", maxStacks: 3, rarity: "common", classes: "all",
+    apply: (s) => { s.pickupRadiusMult += 0.10; },
+  },
+  damage_reduction: {
+    id: "damage_reduction", name: "Warding Sigil",
+    description: "+5% damage reduction.",
+    icon: "🛡️", maxStacks: 4, rarity: "rare", classes: "all",
+    apply: (s) => { s.damageReductionPct = Math.min(0.20, s.damageReductionPct + 0.05); },
+  },
+  thorns: {
+    id: "thorns", name: "Barbed Soul",
+    description: "+5% thorns — reflect damage to melee attackers.",
+    icon: "🌹", maxStacks: 5, rarity: "rare", classes: "all",
+    apply: (s) => { s.thornsPct = Math.min(0.25, s.thornsPct + 0.05); },
+  },
+  shard_find: {
+    id: "shard_find", name: "Fortune's Favor",
+    description: "+15% shard find.",
+    icon: "💎", maxStacks: 2, rarity: "rare", classes: "all",
+    apply: (s) => { s.shardFindMult += 0.15; },
   },
   // ════════════════════════════════════════════════════════════════════════════
   // WARRIOR-ONLY — melee is hard mode, so these are slightly stronger
@@ -1016,9 +1061,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   relic_vampiric: {
     id: "relic_vampiric", name: "Vampiric Shroud",
-    description: "+2% lifesteal. Heals overflow to 120% max HP. Lose 6 HP/sec — kill or die.",
+    description: "+1% lifesteal. Heals overflow to 120% max HP. Lose 6 HP/sec — kill or die.",
     icon: "🧛", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
-    apply: (s) => { s.lifesteal += 0.02; s.overhealShieldPct = 0.20; s.hpDrainPerSec = 6; },
+    apply: (s) => { s.lifesteal += 0.01; s.overhealShieldPct = 0.20; s.hpDrainPerSec = 6; },
   },
   relic_phantom_echo: {
     id: "relic_phantom_echo", name: "Phantom Echo",
@@ -1073,6 +1118,15 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
       s.attackSpeed = parseFloat((s.attackSpeed * 0.70).toFixed(3));
     },
   },
+  relic_berserkers_fury: {
+    id: "relic_berserkers_fury", name: "Berserker's Fury",
+    description: "+40% damage. Cannot heal above 50% max HP.",
+    icon: "🔥", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
+    apply: (s) => {
+      s.damage = Math.round(s.damage * 1.40);
+      s.healCap = 0.5;
+    },
+  },
 };
 
 // ─── Relic ID list ─────────────────────────────────────────────────────────────
@@ -1081,6 +1135,7 @@ const RELIC_IDS: UpgradeId[] = [
   "relic_soulfire", "relic_vampiric", "relic_phantom_echo",
   // REMOVED "relic_deaths_bargain",
   "relic_abyss_crown", "relic_blood_covenant", "relic_iron_oath", "relic_convergence_blade",
+  "relic_berserkers_fury",
 ];
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -1124,11 +1179,13 @@ export function pickUpgradeChoices(
   count = 3,
   level = 1,
   charClass: CharacterClass = "warrior",
+  excludeIds?: Set<string>,
 ): UpgradeDef[] {
   const allUpgrades = Object.values(UPGRADES) as UpgradeDef[];
 
   const normalPool = allUpgrades.filter((u) => {
     if (u.isRelic) return false;
+    if (excludeIds && excludeIds.has(u.id)) return false;
     if (!isClassCompatible(u, charClass)) return false;
     return (acquired.get(u.id) ?? 0) < u.maxStacks;
   });
@@ -1136,6 +1193,7 @@ export function pickUpgradeChoices(
   const relicPool = RELIC_IDS
     .map((id) => UPGRADES[id])
     .filter((u) => {
+      if (excludeIds && excludeIds.has(u.id)) return false;
       if (!isClassCompatible(u, charClass)) return false;
       return (acquired.get(u.id) ?? 0) < u.maxStacks;
     });

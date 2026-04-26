@@ -137,6 +137,7 @@ import {
   tickLabXpOrbs,
   rollEnemyLoot,
   pickUpgradeChoices,
+  LAB_EXCLUDED_UPGRADES,
   type LabProgressionState,
 } from "./LabyrinthProgression";
 import { XPOrb3D } from "../../entities/XPOrb3D";
@@ -792,10 +793,11 @@ export function LabyrinthScene() {
 // ─── Layer-aware lighting ────────────────────────────────────────────────────
 
 let _healPopId = 0;
-function labHealPlayer(p: LabPlayer, amount: number): void {
+function labHealPlayer(p: LabPlayer, amount: number, healCap = 1.0): void {
   if (amount <= 0) return;
   const before = p.hp;
-  p.hp = Math.min(p.maxHp, p.hp + amount);
+  const ceiling = p.maxHp * healCap;
+  p.hp = Math.min(ceiling, p.hp + amount);
   const healed = Math.round(p.hp - before);
   if (healed >= 1) {
     useGameStore.getState().addDamagePopup({
@@ -1777,7 +1779,7 @@ function CombatEnemyLoop({
       ranSalvageRef.current = true;
       const total = salvageLabGear(gearStateRef.current, gearDropsRef.current);
       const dCfg = getDifficultyConfig(labDifficulty);
-      const crystalTotal = Math.round(total * shared.soulCrystalMult * (dCfg?.crystalMult ?? 1));
+      const crystalTotal = Math.round(total * shared.soulCrystalMult * (dCfg?.crystalMult ?? 1) * (labStats.shardFindMult ?? 1));
       shared.crystalsEarned = crystalTotal + (shared.layer === 3 && shared.victory ? 500 : 0);
       if (crystalTotal > 0) {
         useMetaStore.getState().addShards(crystalTotal);
@@ -1957,11 +1959,11 @@ function CombatEnemyLoop({
                 x: e.x, z: e.z, value: dmg, isCrit, isPlayer: false, spawnTime: performance.now(),
               });
               if (labStats.lifesteal > 0) {
-                labHealPlayer(p, Math.round(dmg * labStats.lifesteal));
+                labHealPlayer(p, Math.round(dmg * labStats.lifesteal), labStats.healCap);
               }
               registerHit(warriorStateRef.current);
               if (killed) {
-                if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal);
+                if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap);
                 shared.killCount++;
                 audioManager.play("enemy_death");
                 spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
@@ -1970,7 +1972,7 @@ function CombatEnemyLoop({
                 const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
                 if (loot.rolled) {
                   audioManager.play("gear_drop");
-                  if (loot.healOnPickup > 0) labHealPlayer(p, loot.healOnPickup);
+                  if (loot.healOnPickup > 0) labHealPlayer(p, loot.healOnPickup, labStats.healCap);
                 }
                 // Gear drop roll — uses main-game tryRollGear() via the
                 // labyrinth wrapper. Separate from the XP-orb loot above.
@@ -1981,7 +1983,7 @@ function CombatEnemyLoop({
                 const gained = registerKill(warriorStateRef.current);
                 if (gained > 0) {
                   p.maxHp += gained;
-                  labHealPlayer(p, gained);
+                  labHealPlayer(p, gained, labStats.healCap);
                 }
                 if (e.kind === "warden") {
                   clearWardenState(e.id);
@@ -2138,11 +2140,11 @@ function CombatEnemyLoop({
           x: e.x, z: e.z, value: dmg, isCrit: !!isCrit, isPlayer: false, spawnTime: performance.now(),
         });
         if (labStats.lifesteal > 0) {
-          labHealPlayer(p, Math.round(dmg * labStats.lifesteal));
+          labHealPlayer(p, Math.round(dmg * labStats.lifesteal), labStats.healCap);
         }
       },
       onEnemyKilled: (e) => {
-        if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal);
+        if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap);
         shared.killCount++;
         audioManager.play("enemy_death");
         spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
@@ -2150,7 +2152,7 @@ function CombatEnemyLoop({
         const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
         if (loot.rolled) {
           audioManager.play("gear_drop");
-          if (loot.healOnPickup > 0) labHealPlayer(p, loot.healOnPickup);
+          if (loot.healOnPickup > 0) labHealPlayer(p, loot.healOnPickup, labStats.healCap);
         }
         // Gear drop roll — also fires on ranged kills.
         const gearRoll = rollLabGearDrop(e.kind, getDifficultyConfig(labDifficulty)?.gearDropMult ?? 1);
@@ -2161,7 +2163,7 @@ function CombatEnemyLoop({
           const gained = registerKill(warriorStateRef.current);
           if (gained > 0) {
             p.maxHp += gained;
-            labHealPlayer(p, gained);
+            labHealPlayer(p, gained, labStats.healCap);
           }
         }
         if (e.kind === "warden") {
@@ -2194,13 +2196,25 @@ function CombatEnemyLoop({
     //    damage, auto-pop War Cry if HP dropped into the trigger band.
     if (dmgAccum.value > 0) {
       const wasAlive = p.hp > 0;
-      // Action armor buff (warrior War Cry) reduces incoming damage flat.
-      const incoming = Math.max(0, dmgAccum.value - p.actionArmorBuff);
+      const incoming = Math.max(0, dmgAccum.value - p.actionArmorBuff) * (1 - (labStats.damageReductionPct ?? 0));
       useGameStore.getState().addDamagePopup({
         id: `player_hit_${performance.now()}`,
         x: p.x, z: p.z, value: Math.round(incoming), isCrit: false, isPlayer: true, spawnTime: performance.now(),
       });
       p.hp = Math.max(0, p.hp - incoming);
+      if (labStats.thornsPct > 0) {
+        const thornsDmg = Math.round(incoming * labStats.thornsPct);
+        if (thornsDmg > 0) {
+          for (const e of enemies) {
+            if (e.state === "dead") continue;
+            const tx = e.x - p.x, tz = e.z - p.z;
+            if (tx * tx + tz * tz <= 16) {
+              e.hp = Math.max(0, e.hp - thornsDmg);
+              e.hitFlashTimer = 0.15;
+            }
+          }
+        }
+      }
       if (p.hp <= 0) {
         shared.defeated = true;
         if (wasAlive) audioManager.play("player_death");
@@ -2325,7 +2339,7 @@ function CombatEnemyLoop({
     //    award any XP to progression. On level-up: bump maxHp by +5,
     //    heal the player to full, and play the level-up SFX.
     const orbPrevLen = xpOrbsRef.current.length;
-    const orbTick = tickLabXpOrbs(xpOrbsRef.current, p.x, p.z, delta);
+    const orbTick = tickLabXpOrbs(xpOrbsRef.current, p.x, p.z, delta, labStats.pickupRadiusMult ?? 1);
     if (orbTick.awardedXp > 0) {
       audioManager.play("xp_pickup");
       // Per-layer XP multiplier — LAYER_CONFIG[layer].xpMultiplier
@@ -2341,10 +2355,10 @@ function CombatEnemyLoop({
       if (progressionRef.current.pendingLevelUps > 0) {
         progressionRef.current.pendingLevelUps -= 1;
         p.maxHp += 3;
-        labHealPlayer(p, 20);
+        labHealPlayer(p, 20, labStats.healCap);
         audioManager.play("level_up");
         const prog = progressionRef.current;
-        const choices = pickUpgradeChoices(prog.acquiredUpgrades, 3, prog.level, prog.charClass);
+        const choices = pickUpgradeChoices(prog.acquiredUpgrades, 3, prog.level, prog.charClass, LAB_EXCLUDED_UPGRADES);
         useGameStore.getState().setProgression(prog.level, prog.xp, prog.xpToNext);
         useGameStore.getState().setLevelUpChoices(choices);
       }
@@ -2363,7 +2377,11 @@ function CombatEnemyLoop({
     // GameScene healing pipeline.
     if (p.hp > 0 && p.hp < p.maxHp) {
       const regenPerSec = 0.1 * progressionRef.current.level;
-      p.hp = Math.min(p.maxHp, p.hp + regenPerSec * delta);
+      p.hp = Math.min(p.maxHp * (labStats.healCap ?? 1), p.hp + regenPerSec * delta);
+    }
+    if (labStats.hpDrainPerSec > 0 && p.hp > 0) {
+      p.hp = Math.max(0, p.hp - labStats.hpDrainPerSec * delta);
+      if (p.hp <= 0) shared.defeated = true;
     }
 
     // 7a) Shadow-stalker spawn. Every SHADOW_STALKER_INTERVAL_SEC, if no
@@ -2440,7 +2458,7 @@ function CombatEnemyLoop({
         groundFx: groundFxRef.current,
         enemies: enemiesRef.current,
         playerHeal: (amount) => {
-          labHealPlayer(p, amount);
+          labHealPlayer(p, amount, labStats.healCap);
         },
         playerPoison: (stacks) => {
           addLabPoisonStacks(labPoisonRef.current, stacks, undefined);

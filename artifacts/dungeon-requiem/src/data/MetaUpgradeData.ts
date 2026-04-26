@@ -197,6 +197,52 @@ export const META_UPGRADES: MetaUpgradeDef[] = [
     modifiers: (rank) => flatModifiers({ xpMultiplier: 0.06 * rank }, `meta:scholars_tome:${rank}`),
     statLine: (r) => `+${6 * r}% XP Gain`,
   },
+
+  // ── New universal ──
+  {
+    id: "vacuum_reach",
+    name: "Vacuum Reach",
+    title: "Draw Them In",
+    icon: "🧲",
+    description: "+6% pickup radius per rank.",
+    maxRanks: 5,
+    costs: [100, 200, 350, 550, 800],
+    modifiers: (rank) => flatModifiers({ pickupRadiusMult: 0.06 * rank }, `meta:vacuum_reach:${rank}`),
+    statLine: (r) => `+${6 * r}% Pickup Radius`,
+  },
+  {
+    id: "iron_ward",
+    name: "Iron Ward",
+    title: "Unyielding Guard",
+    icon: "🛡",
+    description: "+2% damage reduction per rank.",
+    maxRanks: 5,
+    costs: [150, 300, 500, 750, 1050],
+    modifiers: (rank) => flatModifiers({ damageReductionPct: 0.02 * rank }, `meta:iron_ward:${rank}`),
+    statLine: (r) => `+${2 * r}% Damage Reduction`,
+  },
+  {
+    id: "soul_thorns",
+    name: "Soul Thorns",
+    title: "Pain Returned",
+    icon: "🌹",
+    description: "+2% thorns per rank.",
+    maxRanks: 5,
+    costs: [130, 260, 420, 620, 860],
+    modifiers: (rank) => flatModifiers({ thornsPct: 0.02 * rank }, `meta:soul_thorns:${rank}`),
+    statLine: (r) => `+${2 * r}% Thorns`,
+  },
+  {
+    id: "shard_magnet",
+    name: "Shard Magnet",
+    title: "Fortune Follows",
+    icon: "💎",
+    description: "+5% shard find per rank.",
+    maxRanks: 5,
+    costs: [100, 200, 350, 550, 800],
+    modifiers: (rank) => flatModifiers({ shardFindMult: 0.05 * rank }, `meta:shard_magnet:${rank}`),
+    statLine: (r) => `+${5 * r}% Shard Find`,
+  },
 ];
 
 /** Map for O(1) lookup by id. */

@@ -463,7 +463,7 @@ function spawnDeathFx(g: GameState, x: number, z: number, color: string): void {
  */
 function healPlayer(p: PlayerRuntime, stats: PlayerStats, amount: number): void {
   if (amount <= 0) return;
-  const ceiling = p.maxHp * (1 + stats.overhealShieldPct);
+  const ceiling = p.maxHp * Math.min(1 + stats.overhealShieldPct, stats.healCap);
   const amplified = amount * stats.healingReceivedMult;
   const before = p.hp;
   p.hp = Math.min(ceiling, p.hp + amplified);
@@ -1774,7 +1774,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               g.kills++;
               g.score += e.scoreValue;
               if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
-              useGameStore.getState().addRunShards(5);
+              useGameStore.getState().addRunShards(Math.round(5 * stats.shardFindMult));
               if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
               applyBloodforge(p, stats);
               if (stats.soulfireChance > 0) triggerSoulfire(e, g);
@@ -2402,10 +2402,22 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               // Mana Shield absorption
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
               const afterShield = rawDmg - shielded;
-              const effective = applyArmor(afterShield, stats.armor + p.actionArmorBuff, stats.incomingDamageMult);
+              const effective = applyArmor(afterShield, stats.armor + p.actionArmorBuff, stats.incomingDamageMult) * (1 - stats.damageReductionPct);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.8;
               handlePlayerDamageTakenProcs(p, stats, g);
+              // Thorns
+              if (stats.thornsPct > 0) {
+                const thornsDmg = Math.round(effective * stats.thornsPct);
+                if (thornsDmg > 0) {
+                  e.hp -= thornsDmg; e.hitFlashTimer = 0.15;
+                  if (e.hp <= 0 && !e.dead) {
+                    e.dead = true; g.kills++; g.score += e.scoreValue;
+                    applyBloodforge(p, stats);
+                    handleBossKillCleanup(e, g);
+                  }
+                }
+              }
               // Iron Reprisal
               if (stats.ironReprisalEnabled) {
                 const repDmg = Math.round(p.maxHp * 0.15);
@@ -2450,10 +2462,22 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               // Mana Shield absorption
               const shielded = stats.manaShieldPct > 0 ? rawDmg * stats.manaShieldPct : 0;
               const afterShield = rawDmg - shielded;
-              const effective = applyArmor(afterShield, stats.armor + p.actionArmorBuff, stats.incomingDamageMult);
+              const effective = applyArmor(afterShield, stats.armor + p.actionArmorBuff, stats.incomingDamageMult) * (1 - stats.damageReductionPct);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
               handlePlayerDamageTakenProcs(p, stats, g);
+              // Thorns
+              if (stats.thornsPct > 0) {
+                const thornsDmg = Math.round(effective * stats.thornsPct);
+                if (thornsDmg > 0) {
+                  e.hp -= thornsDmg; e.hitFlashTimer = 0.15;
+                  if (e.hp <= 0 && !e.dead) {
+                    e.dead = true; g.kills++; g.score += e.scoreValue;
+                    applyBloodforge(p, stats);
+                    handleBossKillCleanup(e, g);
+                  }
+                }
+              }
               // Vampiric affix: heal 20% of damage dealt + pulse
               // the icon so the player learns the heal-on-hit
               // mechanic from visual feedback (item 2 spec).
@@ -2957,7 +2981,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           g.kills++;
           g.score += e.scoreValue;
           if (g.trialMode && e.type.endsWith("_champion")) g.trialChampionDefeated = true;
-          useGameStore.getState().addRunShards(5);
+          useGameStore.getState().addRunShards(Math.round(5 * stats.shardFindMult));
           if (stats.onKillHeal > 0) healPlayer(p, stats, stats.onKillHeal);
               applyBloodforge(p, stats);
           if (stats.soulfireChance > 0) triggerSoulfire(e, g);
@@ -3020,7 +3044,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             if (stats.evasionMatrixEnabled) { p.invisTimer = 1.0; p.guaranteedCrit = true; }
           } else {
             if (ep.damage > 0) {
-              const effective = applyArmor(rawDmg, stats.armor + p.actionArmorBuff, stats.incomingDamageMult);
+              const effective = applyArmor(rawDmg, stats.armor + p.actionArmorBuff, stats.incomingDamageMult) * (1 - stats.damageReductionPct);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
               handlePlayerDamageTakenProcs(p, stats, g);
               if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
@@ -3042,7 +3066,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
     g.enemyProjectiles = g.enemyProjectiles.filter((ep) => !ep.dead);
 
     // ── XP Orbs ───────────────────────────────────────────────────────────
-    const pickupR = GAME_CONFIG.PLAYER.PICKUP_RADIUS;
+    const pickupR = GAME_CONFIG.PLAYER.PICKUP_RADIUS * stats.pickupRadiusMult;
     for (const orb of g.xpOrbs) {
       if (orb.collected) {
         // Animating collection — magnetize toward player
@@ -3086,7 +3110,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       gd.lifetime -= delta;
       if (gd.lifetime <= 0) continue; // will be filtered out
       const gdx = p.x - gd.x, gdz = p.z - gd.z;
-      if (Math.sqrt(gdx * gdx + gdz * gdz) <= GAME_CONFIG.PLAYER.PICKUP_RADIUS) {
+      if (Math.sqrt(gdx * gdx + gdz * gdz) <= GAME_CONFIG.PLAYER.PICKUP_RADIUS * stats.pickupRadiusMult) {
         gd.lifetime = -1; // mark for removal
         audioManager.play("level_up"); // satisfying pickup sound
         const slot = gd.gear.slot;
@@ -3821,7 +3845,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           if (g.wave >= 25) ach.tryUnlock("wave_25");
           if (g.wave >= 30) ach.tryUnlock("wave_30");
         }
-        useGameStore.getState().addGuaranteedShards(25); // 25 soul shards per wave completed — persists on death
+        useGameStore.getState().addGuaranteedShards(Math.round(25 * stats.shardFindMult)); // 25 soul shards per wave completed — persists on death
         g.spawnInterval = Math.max(
           GAME_CONFIG.DIFFICULTY.MIN_SPAWN_INTERVAL,
           g.spawnInterval - GAME_CONFIG.DIFFICULTY.SPAWN_REDUCTION

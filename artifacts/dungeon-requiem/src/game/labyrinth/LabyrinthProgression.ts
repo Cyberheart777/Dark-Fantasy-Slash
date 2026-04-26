@@ -58,6 +58,32 @@ export function makeLabProgression(charClass: CharacterClass): LabProgressionSta
 
 export { pickUpgradeChoices };
 
+export const LAB_EXCLUDED_UPGRADES = new Set<string>([
+  // Warrior — no melee proc system in lab
+  "earthbreaker", "iron_reprisal", "weakening_blows",
+  "concussive_charge", "executioners_wrath", "berserkers_mark",
+  "titans_grip",
+  // Mage — no blink/zone/shield systems
+  "mana_shield", "singularity", "frost_armor", "residual_field",
+  "arcane_surge", "convergence", "leyline_anchor", "unstable_core",
+  // Rogue — no dodge/timing systems
+  "shadow_step", "evasion_matrix", "marked_for_death",
+  "deaths_momentum", "cloak_and_dagger", "crit_cascade",
+  "predators_instinct",
+  // Necromancer — no Death Surge / HP cost
+  "soul_harvest", "relentless_dead", "necrotic_edge",
+  "dark_communion", "lichs_bargain", "death_coil",
+  // Bard — no confuse system
+  "bard_sharp_ears", "bard_vital_song", "bard_distant_melody",
+  "bard_amplifier", "bard_lingering_confuse", "bard_staccato",
+  "bard_maestro", "bard_symphony", "bard_grand_finale",
+  "bard_rhapsody", "bard_resonance",
+  // Relics with no lab implementation
+  "relic_soulfire", "relic_phantom_echo",
+  // Per-kill upgrades — labyrinth mob density too low
+  "soul_feast", "momentum_shift",
+]);
+
 /** Add XP and handle overflow level-ups. Caller checks `pendingLevelUps`
  *  after to apply per-level effects (HP boost, SFX) and then zeroes it. */
 export function addLabXp(state: LabProgressionState, amount: number): void {
@@ -219,15 +245,17 @@ export function tickLabXpOrbs(
   px: number,
   pz: number,
   delta: number,
+  pickupMult = 1.0,
 ): { awardedXp: number; changed: boolean; evicted: number } {
   let awardedXp = 0;
   let changed = false;
-  // Sweep and collect
+  const r = LAB_PICKUP_RADIUS * pickupMult;
+  const r2 = r * r;
   for (const orb of list) {
     if (!orb.collected) {
       const dx = orb.x - px;
       const dz = orb.z - pz;
-      if (dx * dx + dz * dz <= LAB_PICKUP_RADIUS * LAB_PICKUP_RADIUS) {
+      if (dx * dx + dz * dz <= r2) {
         orb.collected = true;
         awardedXp += orb.value;
         changed = true;
