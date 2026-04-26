@@ -1988,13 +1988,8 @@ function CombatEnemyLoop({
                 if (e.kind === "warden") {
                   clearWardenState(e.id);
                   audioManager.play("wave_clear");
-                  if (shared.layer === 2) {
-                    shared.layerBanner = { text: "WARDEN SLAIN", sub: "THE LABYRINTH TREMBLES", color: "#ff60ff", at: shared.zone.elapsedSec };
-                    if (shared.championsKilled >= shared.championsToKill) shared.layerComplete = true;
-                  } else {
-                    shared.layerComplete = true;
-                    shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
-                  }
+                  shared.layerComplete = true;
+                  shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
                 }
                 if (e.kind === "death_knight") {
                   shared.layerComplete = true;
@@ -2169,13 +2164,8 @@ function CombatEnemyLoop({
         if (e.kind === "warden") {
           clearWardenState(e.id);
           audioManager.play("wave_clear");
-          if (shared.layer === 2) {
-            shared.layerBanner = { text: "WARDEN SLAIN", sub: "THE LABYRINTH TREMBLES", color: "#ff60ff", at: shared.zone.elapsedSec };
-            if (shared.championsKilled >= shared.championsToKill) shared.layerComplete = true;
-          } else {
-            shared.layerComplete = true;
-            shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
-          }
+          shared.layerComplete = true;
+          shared.layerBanner = { text: "WARDEN SLAIN — PORTALS OPENED", sub: "CLAIM YOUR VICTORY", color: "#ff60ff", at: shared.zone.elapsedSec };
         }
         if (e.kind === "death_knight") {
           shared.layerComplete = true;
@@ -2749,11 +2739,13 @@ function ZoneTickLoop({
 
     // ── Warden spawn ────────────────────────────────────────────────────
     // Layer 1: no Warden (champion hunt only).
-    // Layer 2: mini-boss serves as the layer boss — no Warden.
+    // Layer 2: Warden spawns after all champions are killed.
     // Layer 3: spawns immediately at center (boss arena).
-    const wardenGate = shared.layer === 3
-      ? !shared.wardenSpawned
-      : false;
+    const lc = LAYER_CONFIG[shared.layer];
+    const wardenGate = !shared.wardenSpawned && lc.hasWarden && (
+      shared.layer === 3 ||
+      shared.championsKilled >= lc.championCount
+    );
     if (wardenGate) {
       const warden = makeWarden(maze);
       if (zoneDiffCfg) applyDifficultyMode(warden, zoneDiffCfg);

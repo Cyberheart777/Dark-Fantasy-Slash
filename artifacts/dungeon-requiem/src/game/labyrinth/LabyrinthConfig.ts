@@ -138,7 +138,7 @@ export const LAYER_CONFIG: Record<1 | 2 | 3, LayerConfig> = {
     championCount: 3,
     championScheduleSec: [60, 120, 180],
     hasWarden: true,
-    hasMiniBoss: true,
+    hasMiniBoss: false,
     hasZoneShrink: true,
     hasEnemySpawns: true,
     hpBonusOnEntry: 20,
