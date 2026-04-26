@@ -3802,7 +3802,7 @@ function LabyrinthHUD({
         return (
           <div style={{ position: "absolute", bottom: 130, left: "50%", transform: "translateX(-50%)", textAlign: "center", pointerEvents: "none", zIndex: 30 }}>
             <div style={{ color: canAfford ? "#ffc830" : "#886630", fontSize: 14, fontWeight: 900, fontFamily: "monospace", textShadow: canAfford ? "0 0 10px #cc9900" : "none" }}>
-              {canAfford ? "SUMMON WANDERING BARD — 200 CRYSTALS" : "REQUIRES 200 SOUL FORGE CRYSTALS"}
+              {canAfford ? `SUMMON WANDERING BARD — ${COMPANION_SUMMON_COST} CRYSTALS` : `REQUIRES ${COMPANION_SUMMON_COST} SOUL FORGE CRYSTALS`}
             </div>
             <div style={{ color: "#999", fontSize: 10, marginTop: 2 }}>WALK ONTO RUNE TO ACTIVATE</div>
           </div>
