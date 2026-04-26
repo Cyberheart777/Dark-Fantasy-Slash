@@ -1358,7 +1358,7 @@ function GeoCharacter({
           <boxGeometry args={[0.22, 0.18, 0.22]} />
           <meshBasicMaterial color={ARMOR_DARK} depthWrite={false} />
         </mesh>
-        <group ref={weaponRef} position={[0.1, -0.45, 0]}>
+        <group ref={weaponRef} position={[0.1, -0.45, 0.18]}>
           {/* Blade */}
           <mesh position={[0, -0.5, 0]}>
             <boxGeometry args={[0.08, 1.0, 0.04]} />
