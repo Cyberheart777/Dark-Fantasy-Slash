@@ -676,7 +676,7 @@ export function LabyrinthScene() {
       s.spawnedMilestones = new Set<number>();
       // Layer intro banner
       if (next === 2) {
-        s.layerBanner = { text: "LAYER 2 — THE DEEP LABYRINTH", sub: "DEFEAT THE WARDEN AND 3 CHAMPIONS", color: "#cc88ff", at: 0 };
+        s.layerBanner = { text: "LAYER 2 — THE DEEP LABYRINTH", sub: "DEFEAT 3 CHAMPIONS TO OPEN PORTALS", color: "#cc88ff", at: 0 };
       } else {
         s.layerBanner = { text: "LAYER 3 — THE ABYSS", sub: "SLAY THE DEATH KNIGHT", color: "#ff4488", at: 0 };
       }
@@ -2738,14 +2738,10 @@ function ZoneTickLoop({
     }
 
     // ── Warden spawn ────────────────────────────────────────────────────
-    // Layer 1: no Warden (champion hunt only).
-    // Layer 2: Warden spawns after all champions are killed.
-    // Layer 3: spawns immediately at center (boss arena).
+    // Only layers with hasWarden=true spawn the Warden. Currently only
+    // layer 3 (boss arena) uses it; layer 1+2 complete via champions.
     const lc = LAYER_CONFIG[shared.layer];
-    const wardenGate = !shared.wardenSpawned && lc.hasWarden && (
-      shared.layer === 3 ||
-      shared.championsKilled >= lc.championCount
-    );
+    const wardenGate = !shared.wardenSpawned && lc.hasWarden;
     if (wardenGate) {
       const warden = makeWarden(maze);
       if (zoneDiffCfg) applyDifficultyMode(warden, zoneDiffCfg);
