@@ -159,6 +159,14 @@ import {
 } from "./LabyrinthProjectile";
 import { LabyrinthProjectiles3D } from "./LabyrinthProjectile3D";
 import {
+  type CompanionState, type SummonSign,
+  createCompanionState, placeSummonSign, isNearSign, isInAura,
+  tickCompanion, COMPANION_SUMMON_COST, COMPANION_BASE_HP,
+  COMPANION_AURA_RADIUS, COMPANION_AURA_HP_BONUS,
+  COMPANION_AURA_DAMAGE_BONUS, COMPANION_AURA_MOVE_SPEED_BONUS,
+  COMPANION_LAYER_TRANSITION_HP,
+} from "./LabyrinthCompanion";
+import {
   makeRangedAttackState,
   tickRangedAttack,
   tryFireMageOrb,
@@ -321,11 +329,13 @@ interface LabSharedState {
   soulCrystalMult: number;
   descentPortalsSpawned: boolean;
   pendingLayerChange: 2 | 3 | null;
-  /** Portal-confirmation gate. Set on portal collision; cleared by
-   *  the HUD dialog when the player accepts or cancels. */
   pendingPortalDecision: { type: "extract" | "descent"; portalId: string } | null;
   layerBanner: { text: string; sub: string; color: string; at: number } | null;
   isPaused: boolean;
+  companion: CompanionState;
+  summonSign: SummonSign | null;
+  companionEverSummoned: boolean;
+  companionDiedDuringRun: boolean;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -447,6 +457,10 @@ export function LabyrinthScene() {
     pendingPortalDecision: null,
     isPaused: false,
     layerBanner: { text: "DEFEAT 4 CHAMPIONS TO DESCEND", sub: "THE HUNT BEGINS", color: "#cc88ff", at: 0 },
+    companion: createCompanionState(),
+    summonSign: null,
+    companionEverSummoned: false,
+    companionDiedDuringRun: false,
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
@@ -558,6 +572,11 @@ export function LabyrinthScene() {
   const trapsRef = useRef<LabTrap[]>([]);
   if (trapsRef.current.length === 0) {
     trapsRef.current = spawnLabTraps(maze, LABYRINTH_CONFIG.WALL_TRAP_COUNT);
+  }
+  if (!sharedRef.current.summonSign && sharedRef.current.layer === 1) {
+    sharedRef.current.summonSign = placeSummonSign(
+      maze.deadEnds, maze.spawn.col, maze.spawn.row, cellToWorld,
+    );
   }
   // Loot chests — treasure (60%), trapped (25%), mimic (15%). Each
   // consumed chest is marked state="consumed" and evicted lazily.
@@ -692,6 +711,12 @@ export function LabyrinthScene() {
       p.x = spawn.x;
       p.z = spawn.z;
       if (nlc.hpBonusOnEntry > 0) p.hp = Math.min(p.maxHp, p.hp + nlc.hpBonusOnEntry);
+      const comp = sharedRef.current.companion;
+      if (comp.alive) {
+        comp.x = spawn.x + 2;
+        comp.z = spawn.z + 2;
+        comp.hp = Math.min(comp.maxHp, comp.hp + COMPANION_LAYER_TRANSITION_HP);
+      }
     }, 100);
     return () => clearInterval(iv);
   }, []);
@@ -1031,6 +1056,8 @@ function LabyrinthWorld({
           warden starburst, mage orbs, rogue daggers. Uses the main
           game's Projectile3D via a shim-cast in LabyrinthProjectiles3D. */}
       <LabyrinthProjectiles3D projectiles={projectileList} />
+      <CompanionBard3D sharedRef={sharedRef} />
+      <SummonSign3D sharedRef={sharedRef} />
       <PlayerAttackArc playerRef={playerRef} attackStateRef={attackStateRef} />
       {/* Player rendering: the main-game Player3D (warrior GLB / mage /
           rogue procedural meshes) is the primary visual. If anything
@@ -1127,6 +1154,70 @@ function LabyrinthWorld({
         onPortalsChange={setPortalList}
       />
     </>
+  );
+}
+
+function CompanionBard3D({ sharedRef }: { sharedRef: React.MutableRefObject<LabSharedState> }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const t = useRef(0);
+  useFrame((_, delta) => {
+    t.current += delta;
+    const comp = sharedRef.current.companion;
+    if (!comp.alive || !groupRef.current) {
+      if (groupRef.current) groupRef.current.visible = false;
+      return;
+    }
+    groupRef.current.visible = true;
+    groupRef.current.position.set(comp.x, 0, comp.z);
+    groupRef.current.rotation.y = comp.angle;
+    groupRef.current.position.y = Math.sin(t.current * 2) * 0.05;
+  });
+  return (
+    <group ref={groupRef}>
+      <mesh position={[0, 1.0, 0]}>
+        <boxGeometry args={[0.55, 0.60, 0.35]} />
+        <meshBasicMaterial color="#c8a040" />
+      </mesh>
+      <mesh position={[0, 0.5, 0]}>
+        <boxGeometry args={[0.2, 0.5, 0.2]} />
+        <meshBasicMaterial color="#8a6a20" />
+      </mesh>
+      <mesh position={[0, 1.55, 0]}>
+        <boxGeometry args={[0.35, 0.35, 0.32]} />
+        <meshBasicMaterial color="#d0a070" />
+      </mesh>
+      <mesh position={[0, 1.75, 0]}>
+        <boxGeometry args={[0.38, 0.22, 0.36]} />
+        <meshBasicMaterial color="#ffc830" />
+      </mesh>
+      <mesh position={[0.35, 1.0, 0.1]}>
+        <boxGeometry args={[0.08, 0.9, 0.06]} />
+        <meshBasicMaterial color="#aa8830" />
+      </mesh>
+      <pointLight color="#ffc830" intensity={1.5} distance={COMPANION_AURA_RADIUS} decay={2} position={[0, 1.5, 0]} />
+    </group>
+  );
+}
+
+function SummonSign3D({ sharedRef }: { sharedRef: React.MutableRefObject<LabSharedState> }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const t = useRef(0);
+  useFrame((_, delta) => {
+    t.current += delta;
+    const sign = sharedRef.current.summonSign;
+    if (!sign || sign.consumed || !meshRef.current) {
+      if (meshRef.current) meshRef.current.visible = false;
+      return;
+    }
+    meshRef.current.visible = true;
+    meshRef.current.position.set(sign.x, 0.02 + Math.sin(t.current * 2) * 0.01, sign.z);
+    meshRef.current.rotation.y = t.current * 0.5;
+  });
+  return (
+    <mesh ref={meshRef} rotation={[-Math.PI / 2, 0, 0]}>
+      <ringGeometry args={[0.8, 1.2, 6]} />
+      <meshBasicMaterial color="#ffc830" transparent opacity={0.7} side={THREE.DoubleSide} />
+    </mesh>
   );
 }
 
@@ -1538,7 +1629,8 @@ function MovementLoop({
     // slow-down. Gear moveSpeed bonus capped at +6 on top of that.
     const BASE_WALK_SPEED = 5.0;
     const gearMoveBonus = Math.min(6, gearStateRef.current.bonuses.moveSpeed ?? 0);
-    const WALK_SPEED = BASE_WALK_SPEED + moveSpeedBonus + gearMoveBonus;
+    const auraSpdMult = sharedRef.current.companion.alive && isInAura(p.x, p.z, sharedRef.current.companion) ? (1 + COMPANION_AURA_MOVE_SPEED_BONUS) : 1;
+    const WALK_SPEED = (BASE_WALK_SPEED + moveSpeedBonus + gearMoveBonus) * auraSpdMult;
     let moveVX: number;
     let moveVZ: number;
     if (dashState.timer > 0) {
@@ -1761,9 +1853,8 @@ function CombatEnemyLoop({
   const lastEmittedOrbLen = useRef(0);
   // And for projectiles.
   const lastEmittedProjLen = useRef(0);
-  // Shadow-stalker spawn countdown. Starts at the interval so the first
-  // stalker appears after the first interval rather than at spawn.
   const stalkerSpawnTimer = useRef(LABYRINTH_CONFIG.SHADOW_STALKER_INTERVAL_SEC);
+  const wasInAuraRef = useRef(false);
   // Gear drop render-sync tracking (spawns grow the list mid-frame;
   // need explicit length compare to emit correctly).
   const lastEmittedGearLen = useRef(0);
@@ -1815,8 +1906,10 @@ function CombatEnemyLoop({
     const gearBonuses = gearStateRef.current.bonuses;
     const baseAtkSpeed = 1 / Math.max(0.01, combatStats.atkCooldown);
     const effectiveAtkSpeed = Math.max(0.1, (baseAtkSpeed + (gearBonuses.attackSpeed ?? 0)) * playerRef.current.actionAtkSpeedMult);
+    const companionAura = shared.companion.alive && isInAura(p.x, p.z, shared.companion);
+    const auraDmgMult = companionAura ? (1 + COMPANION_AURA_DAMAGE_BONUS) : 1;
     const effectiveStats: LabCombatStats = {
-      damage: Math.round((combatStats.damage + (gearBonuses.damage ?? 0)) * playerRef.current.actionDmgMult),
+      damage: Math.round((combatStats.damage + (gearBonuses.damage ?? 0)) * playerRef.current.actionDmgMult * auraDmgMult),
       atkRange: combatStats.atkRange,
       atkCooldown: 1 / effectiveAtkSpeed,
     };
@@ -2321,6 +2414,53 @@ function CombatEnemyLoop({
 
         if (m.hp <= 0) {
           minions.splice(mi, 1);
+        }
+      }
+    }
+
+    // 6c) Bard companion — follow, attack, take damage, aura
+    if (shared.companion.alive) {
+      tickCompanion(
+        shared.companion, p.x, p.z, delta,
+        enemies, projectilesRef.current, segments,
+      );
+      if (!shared.companion.alive) {
+        shared.companionDiedDuringRun = true;
+      }
+    }
+
+    // Companion aura — +10% max HP while in radius
+    {
+      const inAura = companionAura;
+      const wasIn = wasInAuraRef.current;
+      if (inAura && !wasIn) {
+        const bonus = Math.round(p.maxHp * COMPANION_AURA_HP_BONUS);
+        p.maxHp += bonus;
+        p.hp += bonus;
+      } else if (!inAura && wasIn) {
+        const bonus = Math.round(p.maxHp / (1 + COMPANION_AURA_HP_BONUS) * COMPANION_AURA_HP_BONUS);
+        p.maxHp = Math.max(1, p.maxHp - bonus);
+        p.hp = Math.min(p.hp, p.maxHp);
+      }
+      wasInAuraRef.current = inAura;
+    }
+
+    // Summon sign — proximity check + activation
+    if (shared.summonSign && !shared.summonSign.consumed && isNearSign(p.x, p.z, shared.summonSign)) {
+      if (!shared.companion.summoned) {
+        const crystals = useMetaStore.getState().shards;
+        if (crystals >= COMPANION_SUMMON_COST) {
+          useMetaStore.getState().spendShards(COMPANION_SUMMON_COST);
+          shared.companion.summoned = true;
+          shared.companion.alive = true;
+          shared.companion.hp = COMPANION_BASE_HP;
+          shared.companion.maxHp = COMPANION_BASE_HP;
+          shared.companion.x = shared.summonSign.x;
+          shared.companion.z = shared.summonSign.z;
+          shared.summonSign.consumed = true;
+          shared.companionEverSummoned = true;
+          shared.layerBanner = { text: "WANDERING BARD SUMMONED", sub: "A COMPANION JOINS YOUR QUEST", color: "#ffc830", at: shared.zone.elapsedSec };
+          audioManager.play("wave_clear");
         }
       }
     }
@@ -3560,6 +3700,24 @@ function LabyrinthHUD({
         />
       )}
 
+      {/* Summon sign prompt */}
+      {(() => {
+        const sign = sharedRef.current.summonSign;
+        if (!sign || sign.consumed || display.defeated || display.extracted) return null;
+        const p = playerRef.current;
+        const dx = p.x - sign.x, dz = p.z - sign.z;
+        if (dx * dx + dz * dz > 16) return null;
+        const canAfford = useMetaStore.getState().shards >= COMPANION_SUMMON_COST;
+        return (
+          <div style={{ position: "absolute", bottom: 130, left: "50%", transform: "translateX(-50%)", textAlign: "center", pointerEvents: "none", zIndex: 30 }}>
+            <div style={{ color: canAfford ? "#ffc830" : "#886630", fontSize: 14, fontWeight: 900, fontFamily: "monospace", textShadow: canAfford ? "0 0 10px #cc9900" : "none" }}>
+              {canAfford ? "SUMMON WANDERING BARD — 200 CRYSTALS" : "REQUIRES 200 SOUL FORGE CRYSTALS"}
+            </div>
+            <div style={{ color: "#999", fontSize: 10, marginTop: 2 }}>WALK ONTO RUNE TO ACTIVATE</div>
+          </div>
+        );
+      })()}
+
       {/* Portal-opened popup (fades in for ~3s after a milestone spawn) */}
       <PortalPopup
         elapsedSec={display.elapsedSec}
@@ -3643,6 +3801,13 @@ function LabyrinthHUD({
                 useMetaStore.getState().addGearToStash(kept as any);
               }
             }} />
+            {sharedRef.current.companionEverSummoned && (
+              <div style={{ fontStyle: "italic", color: "#ffc830", fontSize: 13, marginTop: 8, textShadow: "0 0 8px #cc9900" }}>
+                {sharedRef.current.companionDiedDuringRun
+                  ? "Their song was cut short — but not forgotten."
+                  : "Let the world remember this verse."}
+              </div>
+            )}
             <button style={{ ...styles.escBtn, marginTop: 12 }} onClick={exit}>
               ⌂ RETURN TO MAIN MENU
             </button>
@@ -3951,6 +4116,43 @@ function LabyrinthMinimap({ maze, playerRef, enemiesRef, sharedRef, lootRoomCell
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(icon, px2, py2 + 0.5);
+        }
+      }
+
+      // Summon sign — golden rune icon
+      {
+        const sign = sharedRef.current.summonSign;
+        if (sign && !sign.consumed) {
+          const sc = worldToCell(sign.x, sign.z);
+          const sx = sc.col * cellPx + cellPx / 2;
+          const sy = sc.row * cellPx + cellPx / 2;
+          ctx.fillStyle = "rgba(255,200,48,0.3)";
+          ctx.beginPath();
+          ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#ffc830";
+          ctx.beginPath();
+          ctx.arc(sx, sy, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#1a0f00";
+          ctx.font = "bold 6px monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("♪", sx, sy + 0.5);
+        }
+      }
+
+      // Companion — amber dot
+      {
+        const comp = sharedRef.current.companion;
+        if (comp.alive) {
+          const cc = worldToCell(comp.x, comp.z);
+          const cx = cc.col * cellPx + cellPx / 2;
+          const cy = cc.row * cellPx + cellPx / 2;
+          ctx.fillStyle = "#ffc830";
+          ctx.beginPath();
+          ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
 
