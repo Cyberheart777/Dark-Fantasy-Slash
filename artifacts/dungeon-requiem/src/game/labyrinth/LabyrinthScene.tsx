@@ -3696,6 +3696,23 @@ function LabyrinthHUD({
         </div>
       )}
 
+      {/* Shard count — persistent crystal balance */}
+      {!isMob && (
+        <div style={{
+          position: "absolute", top: display.championsToKill > 0 ? 260 : 205, right: 20,
+          minWidth: 180, padding: "6px 14px",
+          background: "rgba(40,30,10,0.75)", border: "1px solid rgba(255,200,40,0.3)",
+          borderRadius: 4, fontFamily: "monospace", zIndex: 20, pointerEvents: "none",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 9, letterSpacing: 2, color: "#cc9944", fontWeight: 900 }}>CRYSTALS</span>
+            <span style={{ fontSize: 14, fontWeight: 900, color: "#ffcc44", textShadow: "0 0 6px #cc9900" }}>
+              ◈ {useMetaStore.getState().shards.toLocaleString()}
+            </span>
+          </div>
+        </div>
+      )}
+
       {!isMob && <GearSlotStrip equipped={display.equipped} />}
 
       {/* Desktop action ability indicator — bottom-right */}
@@ -4789,6 +4806,35 @@ function LabyrinthCharacterView({
           <EquippedGearRow key={label} label={label} gear={g} />
         ))}
       </div>
+
+      {/* ─── Acquired upgrades ─── */}
+      {(() => {
+        const ups = Array.from(progressionRef.current.acquiredUpgrades.entries()).filter(([, v]) => v > 0);
+        if (ups.length === 0) return null;
+        return (
+          <>
+            <div style={styles.charSectionTitle}>ACQUIRED UPGRADES ({ups.length})</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 8 }}>
+              {ups.map(([id, count]) => {
+                const u = UPGRADES[id as keyof typeof UPGRADES];
+                const name = u?.name ?? String(id).replace(/_/g, " ");
+                const icon = u?.icon ?? "";
+                const col = u?.rarity === "epic" ? "#aa44ff" : u?.rarity === "rare" ? "#4488ff" : "#aaa";
+                return (
+                  <div key={id} style={{
+                    padding: "2px 6px", borderRadius: 3,
+                    background: "rgba(20,10,40,0.7)", border: `1px solid ${col}44`,
+                    borderLeft: `2px solid ${col}`,
+                    fontSize: 10, fontFamily: "monospace", color: "#ddd",
+                  }}>
+                    {icon} {name}{count > 1 ? ` ×${count}` : ""}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
 
       {/* ─── Live stats block ─── */}
       <div style={styles.charSectionTitle}>LIVE STATS</div>

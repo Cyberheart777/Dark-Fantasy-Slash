@@ -7,6 +7,7 @@
 import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
 import { DIFFICULTY_DATA } from "../data/DifficultyData";
+import { UPGRADES } from "../data/UpgradeData";
 import { useEffect, useRef, useState } from "react";
 import { AchievementToast } from "./AchievementToast";
 
@@ -38,6 +39,7 @@ export function HUD({ onExtract }: HUDProps) {
     damagePopups, playerX, playerZ,
     difficultyTier, activeBuffs,
   } = useGameStore();
+  const shards = useMetaStore((s) => s.shards);
   const diffDef = DIFFICULTY_DATA[difficultyTier];
 
   // First-run tutorial — show the large prompt panel until the player either
@@ -173,6 +175,7 @@ export function HUD({ onExtract }: HUDProps) {
           <span>⚔ {kills}</span>
           <span>★ {score.toLocaleString()}</span>
           <span>⏱ {timeStr}</span>
+          <span style={{ color: "#ffcc44" }}>◈ {shards.toLocaleString()}</span>
         </div>
       </div>
 
@@ -220,16 +223,22 @@ export function HUD({ onExtract }: HUDProps) {
       {/* Bottom-left: upgrades (hidden on mobile to keep joystick area clear) */}
       {upgradeEntries.length > 0 && !isMobile && (
         <div style={styles.upgradePanel}>
-          <div style={styles.upgradeTitle}>UPGRADES</div>
+          <div style={styles.upgradeTitle}>UPGRADES ({upgradeEntries.length})</div>
           <div style={styles.upgradeGrid}>
-            {upgradeEntries.map(([id, count]) => (
-              <div key={id} style={styles.upgradeChip}>
-                <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: "#ddd" }}>
-                  {id.replace(/_/g, " ")}
-                </span>
-                {count > 1 && <span style={{ color: "#ffcc00", marginLeft: 4, fontWeight: "bold" }}>×{count}</span>}
-              </div>
-            ))}
+            {upgradeEntries.map(([id, count]) => {
+              const def = UPGRADES[id as keyof typeof UPGRADES];
+              const name = def?.name ?? id.replace(/_/g, " ");
+              const icon = def?.icon ?? "";
+              const rarityColor = def?.rarity === "epic" ? "#aa44ff" : def?.rarity === "rare" ? "#4488ff" : "#aaa";
+              return (
+                <div key={id} style={{ ...styles.upgradeChip, borderLeft: `2px solid ${rarityColor}` }}>
+                  <span style={{ fontSize: 10, letterSpacing: 1, color: "#ddd" }}>
+                    {icon} {name}
+                  </span>
+                  {count > 1 && <span style={{ color: "#ffcc00", marginLeft: 4, fontWeight: "bold" }}>×{count}</span>}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
