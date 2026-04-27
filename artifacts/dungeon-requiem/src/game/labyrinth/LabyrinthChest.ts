@@ -27,6 +27,7 @@ import { cellToWorld, type Maze } from "./LabyrinthMaze";
 import { spawnLabXpOrb } from "./LabyrinthProgression";
 import { type LabGroundFx } from "./LabyrinthGroundFx";
 import type { XPOrb } from "../GameScene";
+import { useMetaStore } from "../../store/metaStore";
 import { MIMIC_HP, makeMimicEnemy, type EnemyRuntime } from "./LabyrinthEnemy";
 
 export type ChestKind = "treasure" | "trapped" | "mimic";
@@ -140,11 +141,11 @@ function resolveChest(
     case "treasure": {
       const orbCount = TREASURE_ORB_MIN + Math.floor(Math.random() * (TREASURE_ORB_MAX - TREASURE_ORB_MIN + 1));
       for (let i = 0; i < orbCount; i++) {
-        // Spread the orbs in a small ring so they don't stack.
         const angle = (i / orbCount) * Math.PI * 2 + Math.random() * 0.4;
         const dist = 0.7 + Math.random() * 0.5;
         spawnLabXpOrb(ctx.xpOrbs, chest.x + Math.cos(angle) * dist, chest.z + Math.sin(angle) * dist);
       }
+      useMetaStore.getState().addShards(10);
       ctx.playerHeal(TREASURE_HEAL);
       ctx.playAudio("gear_drop");
       return;

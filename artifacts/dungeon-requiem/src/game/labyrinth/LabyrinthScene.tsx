@@ -2066,10 +2066,10 @@ function CombatEnemyLoop({
               if (killed) {
                 if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap);
                 shared.killCount++;
+                useMetaStore.getState().addShards(labKillCrystals(e.kind, labStats.shardFindMult ?? 1));
                 audioManager.play("enemy_death");
                 spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
                 spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
-                // Bonus loot roll — mirrors the treasure-chest payout.
                 const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
                 if (loot.rolled) {
                   audioManager.play("gear_drop");
@@ -2171,6 +2171,7 @@ function CombatEnemyLoop({
       if (e.state === "dead" && aliveBeforeTick.has(e.id) && e.hp <= 0) {
         aliveBeforeTick.delete(e.id);
         shared.killCount++;
+        useMetaStore.getState().addShards(labKillCrystals(e.kind, labStats.shardFindMult ?? 1));
         spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
         spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
         const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
@@ -2271,6 +2272,7 @@ function CombatEnemyLoop({
       onEnemyKilled: (e) => {
         if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap);
         shared.killCount++;
+        useMetaStore.getState().addShards(labKillCrystals(e.kind, labStats.shardFindMult ?? 1));
         audioManager.play("enemy_death");
         spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
         spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
@@ -4609,6 +4611,15 @@ function rivalOrderForClass(cls: CharacterClass): [RivalKind, RivalKind, RivalKi
  *    rivalKillCount == 1 → second kill → guaranteed rare gear drop
  *  `shared` is mutated in place. `gearDrops` is the current ground-
  *  drop list (CombatEnemyLoop's gearDropsRef.current). */
+function labKillCrystals(kind: string, shardFindMult: number): number {
+  let base = 2;
+  if (kind === "warden" || kind === "death_knight") base = 50;
+  else if (kind === "mini_boss") base = 30;
+  else if (kind.startsWith("rival_")) base = 25;
+  else if (kind === "shadow_stalker" || kind === "heavy") base = 5;
+  return Math.round(base * shardFindMult);
+}
+
 function onRivalChampionKill(
   e: EnemyRuntime,
   shared: LabSharedState,
