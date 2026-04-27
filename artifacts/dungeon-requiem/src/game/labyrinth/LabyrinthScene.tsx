@@ -247,6 +247,16 @@ interface LabPlayer {
   actionOrbSizeMult: number;
   /** Timer marking enemies as 20% more vulnerable (bard Discord). */
   actionVulnerabilityTimer: number;
+  // ── Momentum Shift buff ────────────────────────────────────────
+  momentumShiftStacks: number;
+  momentumShiftTimer: number;
+  // ── Post-dash speed buff ───────────────────────────────────────
+  postDashSpeedTimer: number;
+  // ── Gear proc timers ──────────────────────────────────────────
+  arcSlashTimer: number;
+  orbitalOrbAngle: number;
+  orbitalHitIcd: Map<string, number>;
+  phantomWrapCdTimer: number;
 }
 
 /** Shared state read by HUD (polling) and mutated by Canvas useFrame. */
@@ -403,6 +413,13 @@ export function LabyrinthScene() {
     actionAtkSpeedMult: 1,
     actionOrbSizeMult: 1,
     actionVulnerabilityTimer: 0,
+    momentumShiftStacks: 0,
+    momentumShiftTimer: 0,
+    postDashSpeedTimer: 0,
+    arcSlashTimer: 0,
+    orbitalOrbAngle: 0,
+    orbitalHitIcd: new Map(),
+    phantomWrapCdTimer: 0,
   });
   const labDashRef = useRef<LabDashState>(makeLabDashState());
   const sharedRef = useRef<LabSharedState>({
@@ -1686,9 +1703,19 @@ function MovementLoop({
     const BASE_WALK_SPEED = 5.0;
     const gearMoveBonus = Math.min(6, gearStateRef.current.bonuses.moveSpeed ?? 0);
     const auraSpdMult = sharedRef.current.companion.alive && isInAura(p.x, p.z, sharedRef.current.companion) ? (1 + COMPANION_AURA_MOVE_SPEED_BONUS) : 1;
-    const WALK_SPEED = (BASE_WALK_SPEED + moveSpeedBonus + gearMoveBonus) * auraSpdMult;
+    // Momentum Shift: crits grant +4% move speed for 2s, stacks 5x
+    if (p.momentumShiftTimer > 0) {
+      p.momentumShiftTimer = Math.max(0, p.momentumShiftTimer - delta);
+      if (p.momentumShiftTimer <= 0) p.momentumShiftStacks = 0;
+    }
+    const momentumShiftMult = p.momentumShiftStacks > 0 ? 1 + p.momentumShiftStacks * 0.04 : 1;
+    // Post-dash speed buff (gear: postDashSpeedBonus)
+    if (p.postDashSpeedTimer > 0) p.postDashSpeedTimer = Math.max(0, p.postDashSpeedTimer - delta);
+    const postDashMult = p.postDashSpeedTimer > 0 ? 1 + (gearStateRef.current.bonuses.postDashSpeedBonus ?? 0) : 1;
+    const WALK_SPEED = (BASE_WALK_SPEED + moveSpeedBonus + gearMoveBonus) * auraSpdMult * momentumShiftMult * postDashMult;
     let moveVX: number;
     let moveVZ: number;
+    const wasDashing = p.isDashing;
     if (dashState.timer > 0) {
       moveVX = dashState.vx;
       moveVZ = dashState.vz;
@@ -1696,6 +1723,7 @@ function MovementLoop({
     } else {
       moveVX = dx * WALK_SPEED;
       moveVZ = dz * WALK_SPEED;
+      if (wasDashing && (gearStateRef.current.bonuses.postDashSpeedBonus ?? 0) > 0) p.postDashSpeedTimer = 3;
       p.isDashing = false;
     }
 
@@ -1975,6 +2003,8 @@ function CombatEnemyLoop({
     const lowHpBonus = (gearBonuses.lowHpDamageBonus ?? 0) > 0 && p.hp < p.maxHp * 0.5 ? (1 + gearBonuses.lowHpDamageBonus) : 1;
     if (lowHpBonus > 1) effectiveStats.damage = Math.round(effectiveStats.damage * lowHpBonus);
     if ((gearBonuses.blinkCdrPct ?? 0) > 0) labStats.dashCooldown = labStats.dashCooldown * (1 - gearBonuses.blinkCdrPct);
+    if ((gearBonuses.poisonDamageBonus ?? 0) > 0) labStats.poisonDamageBonus = (labStats.poisonDamageBonus ?? 0) + gearBonuses.poisonDamageBonus;
+    if ((gearBonuses.bloodMomentumGainMult ?? 0) > 0) labStats.bloodMomentumPerHit = (labStats.bloodMomentumPerHit || 0.03) * (1 + gearBonuses.bloodMomentumGainMult);
     const isRogue = charClass === "rogue";
     const isNecromancer = charClass === "necromancer";
     const isMelee = isWarrior || isNecromancer;
@@ -2107,6 +2137,10 @@ function CombatEnemyLoop({
               dmg = Math.round(dmg * p.actionDmgMult);
               if (p.actionVulnerabilityTimer > 0) dmg = Math.round(dmg * 1.2);
               const isCrit = warriorStateRef.current.lastHitWasCrit;
+              if (isCrit && labStats.momentumShiftEnabled) {
+                p.momentumShiftStacks = Math.min(5, p.momentumShiftStacks + 1);
+                p.momentumShiftTimer = 2;
+              }
               const killed = damageEnemy(e, dmg);
               useGameStore.getState().addDamagePopup({
                 id: `dmg_${e.id}_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
@@ -2118,6 +2152,13 @@ function CombatEnemyLoop({
               registerHit(warriorStateRef.current);
               if (killed) {
                 if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap);
+                if (labStats.plagueDaggerEnabled || (gearStateRef.current.bonuses.plagueDaggerEnabled ?? 0) > 0) {
+                  groundFxRef.current.push({
+                    id: `plague_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
+                    x: e.x, z: e.z, radius: 2.0, lifetime: 5.0, color: "#88ff66", appliesPoison: true,
+                  });
+                  if (groundFxRef.current.length > 60) groundFxRef.current.splice(0, groundFxRef.current.length - 60);
+                }
                 shared.killCount++;
                 useMetaStore.getState().addShards(labKillCrystals(e.kind, labStats.shardFindMult ?? 1));
                 audioManager.play("enemy_death");
@@ -2163,6 +2204,21 @@ function CombatEnemyLoop({
                   audioManager.play("wave_clear");
                 }
               }
+            }
+          }
+        }
+        // Double Strike: chance to swing again immediately
+        if (labStats.doubleStrikeChance > 0 && Math.random() < labStats.doubleStrikeChance) {
+          for (const e of enemies) {
+            if (e.state === "dead") continue;
+            if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange) && hasLineOfSight(p.x, p.z, e.x, e.z, segments)) {
+              let dmg2 = modifyOutgoingDamage(warriorStateRef.current, effectiveStats.damage, effectiveCrit, labStats.bloodMomentumPerHit || 0.03, labStats.critDamageMultiplier || 2);
+              dmg2 = Math.round(dmg2 * p.actionDmgMult);
+              damageEnemy(e, dmg2);
+              useGameStore.getState().addDamagePopup({
+                id: `ds_${e.id}_${performance.now()}`,
+                x: e.x, z: e.z, value: dmg2, isCrit: false, isPlayer: false, spawnTime: performance.now(),
+              });
             }
           }
         }
@@ -2236,6 +2292,12 @@ function CombatEnemyLoop({
       if (e.state === "dead" && aliveBeforeTick.has(e.id) && e.hp <= 0) {
         aliveBeforeTick.delete(e.id);
         shared.killCount++;
+        if (labStats.plagueDaggerEnabled || (gearStateRef.current.bonuses.plagueDaggerEnabled ?? 0) > 0) {
+          groundFxRef.current.push({
+            id: `plague_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
+            x: e.x, z: e.z, radius: 2.0, lifetime: 5.0, color: "#88ff66", appliesPoison: true,
+          });
+        }
         useMetaStore.getState().addShards(labKillCrystals(e.kind, labStats.shardFindMult ?? 1));
         spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
         spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
@@ -2330,12 +2392,23 @@ function CombatEnemyLoop({
           id: `dmg_${e.id}_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
           x: e.x, z: e.z, value: dmg, isCrit: !!isCrit, isPlayer: false, spawnTime: performance.now(),
         });
+        if (isCrit && labStats.momentumShiftEnabled) {
+          p.momentumShiftStacks = Math.min(5, p.momentumShiftStacks + 1);
+          p.momentumShiftTimer = 2;
+        }
         if (labStats.lifesteal > 0) {
           labHealPlayer(p, Math.round(dmg * labStats.lifesteal), labStats.healCap);
         }
       },
       onEnemyKilled: (e) => {
         if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap);
+        if (labStats.plagueDaggerEnabled || (gearStateRef.current.bonuses.plagueDaggerEnabled ?? 0) > 0) {
+          groundFxRef.current.push({
+            id: `plague_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
+            x: e.x, z: e.z, radius: 2.0, lifetime: 5.0, color: "#88ff66", appliesPoison: true,
+          });
+          if (groundFxRef.current.length > 60) groundFxRef.current.splice(0, groundFxRef.current.length - 60);
+        }
         shared.killCount++;
         useMetaStore.getState().addShards(labKillCrystals(e.kind, labStats.shardFindMult ?? 1));
         audioManager.play("enemy_death");
@@ -2391,6 +2464,12 @@ function CombatEnemyLoop({
           id: `dodge_${performance.now()}`, x: p.x, z: p.z, value: 0, isCrit: false, isPlayer: false,
           spawnTime: performance.now(), text: "DODGE", color: "#44ddff",
         });
+      } else if ((labStats.phantomWrapEnabled || (gearStateRef.current.bonuses.phantomWrapEnabled ?? 0) > 0) && p.phantomWrapCdTimer <= 0) {
+        p.phantomWrapCdTimer = 8;
+        useGameStore.getState().addDamagePopup({
+          id: `wrap_${performance.now()}`, x: p.x, z: p.z, value: 0, isCrit: false, isPlayer: false,
+          spawnTime: performance.now(), text: "PHASED", color: "#cc88ff",
+        });
       } else {
       const incoming = afterArmor * (1 - (labStats.damageReductionPct ?? 0));
       useGameStore.getState().addDamagePopup({
@@ -2411,6 +2490,15 @@ function CombatEnemyLoop({
           }
         }
       }
+      // Glacial Robe: on-damage, slow nearby enemies for 2s
+      if (labStats.glacialRobeEnabled || (gearStateRef.current.bonuses.glacialRobeEnabled ?? 0) > 0) {
+        for (const e of enemies) {
+          if (e.state === "dead") continue;
+          const gx = e.x - p.x, gz = e.z - p.z;
+          if (gx * gx + gz * gz <= 25) e.slowTimer = 2;
+        }
+      }
+      // Phantom Wrap: brief invulnerability after taking damage (3s ICD managed via postDashSpeedTimer reuse — separate timer)
       if (p.hp <= 0) {
         shared.defeated = true;
         if (wasAlive) audioManager.play("player_death");
@@ -2422,6 +2510,70 @@ function CombatEnemyLoop({
       }
       } // end dodge else
     }
+
+    // ── Gear proc: Arc Slash (fires a crescent projectile every 3s) ──
+    const arcPct = labStats.arcSlashDamagePct || (gearStateRef.current.bonuses.arcSlashDamagePct ?? 0);
+    if (arcPct > 0 && p.hp > 0) {
+      p.arcSlashTimer += delta;
+      if (p.arcSlashTimer >= 3) {
+        p.arcSlashTimer = 0;
+        const slashDmg = Math.max(1, Math.round(effectiveStats.damage * arcPct));
+        spawnLabProjectile(projectilesRef.current, {
+          owner: "player",
+          x: p.x, z: p.z,
+          vx: Math.sin(p.angle) * 8,
+          vz: -Math.cos(p.angle) * 8,
+          damage: slashDmg,
+          radius: 1.2,
+          lifetime: 1.0,
+          piercing: true,
+          color: "#ff8833",
+          glowColor: "#ff4400",
+          style: "crescent",
+        });
+      }
+    }
+
+    // ── Gear proc: Orbital Staff (two orbiting damage orbs) ────
+    if ((labStats.orbitalStaffEnabled || (gearStateRef.current.bonuses.orbitalStaffEnabled ?? 0) > 0) && p.hp > 0) {
+      const orbitRadius = 2.5;
+      const orbitSpeed = 2.5;
+      p.orbitalOrbAngle = (p.orbitalOrbAngle + orbitSpeed * delta) % (Math.PI * 2);
+      const orbDmg = Math.max(1, Math.round(effectiveStats.damage * 0.5));
+      for (const [id, t] of p.orbitalHitIcd) {
+        const nt = t - delta;
+        if (nt <= 0) p.orbitalHitIcd.delete(id);
+        else p.orbitalHitIcd.set(id, nt);
+      }
+      const orbPositions: Array<[number, number]> = [
+        [p.x + Math.sin(p.orbitalOrbAngle) * orbitRadius, p.z + Math.cos(p.orbitalOrbAngle) * orbitRadius],
+        [p.x + Math.sin(p.orbitalOrbAngle + Math.PI) * orbitRadius, p.z + Math.cos(p.orbitalOrbAngle + Math.PI) * orbitRadius],
+      ];
+      for (const [ox, oz] of orbPositions) {
+        for (const e of enemies) {
+          if (e.state === "dead") continue;
+          if (p.orbitalHitIcd.has(e.id)) continue;
+          const odx = e.x - ox, odz = e.z - oz;
+          if (odx * odx + odz * odz <= 2.5) {
+            const killed = damageEnemy(e, orbDmg);
+            e.hitFlashTimer = 0.12;
+            p.orbitalHitIcd.set(e.id, 0.6);
+            useGameStore.getState().addDamagePopup({
+              id: `orb_${e.id}_${performance.now()}`,
+              x: e.x, z: e.z, value: orbDmg, isCrit: false, isPlayer: false, spawnTime: performance.now(),
+            });
+            if (killed) {
+              shared.killCount++;
+              spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
+              if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap);
+            }
+          }
+        }
+      }
+    }
+
+    // ── Gear proc: Phantom Wrap cooldown tick ──────────────────
+    if (p.phantomWrapCdTimer > 0) p.phantomWrapCdTimer = Math.max(0, p.phantomWrapCdTimer - delta);
 
     // Snapshot warrior state for HUD consumption.
     shared.warrior = isWarrior ? snapshotLabWarrior(warriorStateRef.current) : null;

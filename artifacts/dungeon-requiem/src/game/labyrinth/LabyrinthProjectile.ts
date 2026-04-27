@@ -57,6 +57,8 @@ export interface LabProjectile {
   sourceX?: number;
   sourceZ?: number;
   pullDist?: number;
+  /** Ricochet Orb: wall-bounce count so far. */
+  wallBounces?: number;
 }
 
 let projId = 0;
@@ -248,8 +250,20 @@ export function tickLabProjectiles(
 
     // ── Wall collision ───────────────────────────────────────────────
     if (projectileHitsWall(p.x, p.z, ctx.segments, ctx.wallThickness)) {
-      p.dead = true;
-      continue;
+      if (p.owner === "player" && p.style === "orb" && stats?.ricochetOrbEnabled && !p.isFracture && (p.wallBounces ?? 0) < 3) {
+        const prevX = p.x - p.vx * delta;
+        const prevZ = p.z - p.vz * delta;
+        const hitsH = projectileHitsWall(p.x, prevZ, ctx.segments, ctx.wallThickness);
+        const hitsV = projectileHitsWall(prevX, p.z, ctx.segments, ctx.wallThickness);
+        if (hitsH && !hitsV) p.vx = -p.vx;
+        else if (!hitsH && hitsV) p.vz = -p.vz;
+        else { p.vx = -p.vx; p.vz = -p.vz; }
+        p.x = prevX; p.z = prevZ;
+        p.wallBounces = (p.wallBounces ?? 0) + 1;
+      } else {
+        p.dead = true;
+        continue;
+      }
     }
 
     if (p.owner === "player") {
@@ -295,7 +309,7 @@ export function tickLabProjectiles(
           ) {
             const deepMult = stats.deepWoundsMultiplier > 0 ? stats.deepWoundsMultiplier : 1;
             e.poisonStacks = Math.min(5, (e.poisonStacks ?? 0) + 1);
-            e.poisonDps = stats.venomStackDps * deepMult;
+            e.poisonDps = stats.venomStackDps * deepMult + (stats.poisonDamageBonus ?? 0);
           }
 
           let killedThisHit = false;

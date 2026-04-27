@@ -81,7 +81,7 @@ export const LAB_EXCLUDED_UPGRADES = new Set<string>([
   // Relics with no lab implementation
   "relic_soulfire", "relic_phantom_echo",
   // Per-kill upgrades — labyrinth mob density too low
-  "soul_feast", "momentum_shift",
+  "soul_feast",
 ]);
 
 /** Add XP and handle overflow level-ups. Caller checks `pendingLevelUps`

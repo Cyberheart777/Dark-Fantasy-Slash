@@ -129,6 +129,8 @@ export interface EnemyRuntime {
   /** Hard-mode multipliers. Default to 1 when omitted. */
   speedMult?: number;
   damageMult?: number;
+  /** Glacial slow: while > 0 speedMult is halved. Decays by delta. */
+  slowTimer?: number;
   /** If this enemy is a necro minion, the id of its master champion. */
   masterEnemyId?: string;
 }
@@ -1012,6 +1014,11 @@ export function updateEnemy(
     enemy.confuseTimer = Math.max(0, enemy.confuseTimer! - delta);
   }
 
+  // ─── Glacial slow tick ─────────────────────────────────────────────
+  if ((enemy.slowTimer ?? 0) > 0) {
+    enemy.slowTimer = Math.max(0, enemy.slowTimer! - delta);
+  }
+
   // ─── Rival ability timers + transitions ────────────────────────────
   // Tick every frame regardless of state (we want cooldowns to roll
   // even while out-of-combat so a long-alive rival still gets its
@@ -1285,7 +1292,7 @@ export function updateEnemy(
   if (moveLen > 0.0001) {
     const nx = desiredDx / moveLen;
     const nz = desiredDz / moveLen;
-    const sm = enemy.speedMult ?? 1;
+    const sm = (enemy.speedMult ?? 1) * ((enemy.slowTimer ?? 0) > 0 ? 0.5 : 1);
     const stepX = nx * tuning.speed * sm * delta;
     const stepZ = nz * tuning.speed * sm * delta;
     const nextX = enemy.x + stepX;
