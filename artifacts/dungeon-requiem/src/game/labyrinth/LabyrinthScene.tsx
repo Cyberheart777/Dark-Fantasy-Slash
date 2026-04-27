@@ -1970,6 +1970,11 @@ function CombatEnemyLoop({
       atkCooldown: 1 / effectiveAtkSpeed,
     };
     const effectiveCrit = critChance + (gearBonuses.critChance ?? 0);
+    const gearCritDmgBonus = gearBonuses.critDamageBonus ?? 0;
+    if (gearCritDmgBonus > 0) labStats.critDamageMultiplier = (labStats.critDamageMultiplier ?? 1.85) + gearCritDmgBonus;
+    const lowHpBonus = (gearBonuses.lowHpDamageBonus ?? 0) > 0 && p.hp < p.maxHp * 0.5 ? (1 + gearBonuses.lowHpDamageBonus) : 1;
+    if (lowHpBonus > 1) effectiveStats.damage = Math.round(effectiveStats.damage * lowHpBonus);
+    if ((gearBonuses.blinkCdrPct ?? 0) > 0) labStats.dashCooldown = labStats.dashCooldown * (1 - gearBonuses.blinkCdrPct);
     const isRogue = charClass === "rogue";
     const isNecromancer = charClass === "necromancer";
     const isMelee = isWarrior || isNecromancer;
@@ -2098,7 +2103,7 @@ function CombatEnemyLoop({
           for (const e of enemies) {
             if (e.state === "dead") continue;
             if (isInSwingArc(p.x, p.z, atk.swingAngle, e.x, e.z, atk.swingRange) && hasLineOfSight(p.x, p.z, e.x, e.z, segments)) {
-              let dmg = modifyOutgoingDamage(warriorStateRef.current, effectiveStats.damage, effectiveCrit);
+              let dmg = modifyOutgoingDamage(warriorStateRef.current, effectiveStats.damage, effectiveCrit, labStats.bloodMomentumPerHit || 0.03, labStats.critDamageMultiplier || 2);
               dmg = Math.round(dmg * p.actionDmgMult);
               if (p.actionVulnerabilityTimer > 0) dmg = Math.round(dmg * 1.2);
               const isCrit = warriorStateRef.current.lastHitWasCrit;
@@ -2129,7 +2134,7 @@ function CombatEnemyLoop({
                 if (gearRoll) {
                   spawnLabGearDrop(gearDropsRef.current, gearRoll, e.x, e.z);
                 }
-                const gained = registerKill(warriorStateRef.current);
+                const gained = registerKill(warriorStateRef.current, labStats.bloodforgeMaxHpPerKill || 1, 20);
                 if (gained > 0) {
                   p.maxHp += gained;
                   labHealPlayer(p, gained, labStats.healCap);
@@ -2164,14 +2169,26 @@ function CombatEnemyLoop({
       } else if (isMage) {
         if (tryFireMageOrb(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats, p.actionAtkSpeedMult, p.actionOrbSizeMult)) {
           audioManager.play("attack_orb");
+          if (labStats.doubleStrikeChance > 0 && Math.random() < labStats.doubleStrikeChance) {
+            rangedAttackStateRef.current.cooldownSec = 0;
+            tryFireMageOrb(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats, p.actionAtkSpeedMult, p.actionOrbSizeMult);
+          }
         }
       } else if (isRogue) {
         if (tryFireRogueFan(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats, p.actionAtkSpeedMult)) {
           audioManager.play("attack_dagger");
+          if (labStats.doubleStrikeChance > 0 && Math.random() < labStats.doubleStrikeChance) {
+            rangedAttackStateRef.current.cooldownSec = 0;
+            tryFireRogueFan(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats, p.actionAtkSpeedMult);
+          }
         }
       } else if (charClass === "bard") {
         if (tryFireBardNote(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats, p.actionAtkSpeedMult)) {
           audioManager.play("attack_dagger");
+          if (labStats.doubleStrikeChance > 0 && Math.random() < labStats.doubleStrikeChance) {
+            rangedAttackStateRef.current.cooldownSec = 0;
+            tryFireBardNote(rangedAttackStateRef.current, projectilesRef.current, p.x, p.z, aimAngle, labStats, p.actionAtkSpeedMult);
+          }
         }
       }
     }
@@ -2335,7 +2352,7 @@ function CombatEnemyLoop({
           spawnLabGearDrop(gearDropsRef.current, gearRoll, e.x, e.z);
         }
         if (isWarrior) {
-          const gained = registerKill(warriorStateRef.current);
+          const gained = registerKill(warriorStateRef.current, labStats.bloodforgeMaxHpPerKill || 1, 20);
           if (gained > 0) {
             p.maxHp += gained;
             labHealPlayer(p, gained, labStats.healCap);
@@ -2366,7 +2383,16 @@ function CombatEnemyLoop({
     //    damage, auto-pop War Cry if HP dropped into the trigger band.
     if (dmgAccum.value > 0) {
       const wasAlive = p.hp > 0;
-      const incoming = Math.max(0, dmgAccum.value - p.actionArmorBuff) * (1 - (labStats.damageReductionPct ?? 0));
+      const armorReduction = labStats.armor > 0 ? labStats.armor / (labStats.armor + 50) : 0;
+      const afterArmor = Math.max(0, dmgAccum.value - p.actionArmorBuff) * (1 - armorReduction);
+      const isDodged = labStats.dodgeChance > 0 && Math.random() < labStats.dodgeChance;
+      if (isDodged) {
+        useGameStore.getState().addDamagePopup({
+          id: `dodge_${performance.now()}`, x: p.x, z: p.z, value: 0, isCrit: false, isPlayer: false,
+          spawnTime: performance.now(), text: "DODGE", color: "#44ddff",
+        });
+      } else {
+      const incoming = afterArmor * (1 - (labStats.damageReductionPct ?? 0));
       useGameStore.getState().addDamagePopup({
         id: `player_hit_${performance.now()}`,
         x: p.x, z: p.z, value: Math.round(incoming), isCrit: false, isPlayer: true, spawnTime: performance.now(),
@@ -2394,6 +2420,7 @@ function CombatEnemyLoop({
           audioManager.play("boss_special");
         }
       }
+      } // end dodge else
     }
 
     // Snapshot warrior state for HUD consumption.
@@ -2554,7 +2581,7 @@ function CombatEnemyLoop({
       const diffXpMult = dXp
         ? (shared.layer === 1 ? dXp.xpMultLayer1 : shared.layer === 2 ? dXp.xpMultLayer2 : 1)
         : 1;
-      addLabXp(progressionRef.current, orbTick.awardedXp * layerXpMult * diffXpMult);
+      addLabXp(progressionRef.current, orbTick.awardedXp * layerXpMult * diffXpMult * (labStats.xpMultiplier ?? 1));
       if (progressionRef.current.pendingLevelUps > 0) {
         progressionRef.current.pendingLevelUps -= 1;
         p.maxHp += 3;
@@ -2579,7 +2606,7 @@ function CombatEnemyLoop({
     // the math). Does NOT touch PlayerRuntime or the main-game
     // GameScene healing pipeline.
     if (p.hp > 0 && p.hp < p.maxHp) {
-      const regenPerSec = 0.1 * progressionRef.current.level;
+      const regenPerSec = 0.1 * progressionRef.current.level + (labStats.healthRegen ?? 0);
       p.hp = Math.min(p.maxHp * (labStats.healCap ?? 1), p.hp + regenPerSec * delta);
     }
     if (labStats.hpDrainPerSec > 0 && p.hp > 0) {

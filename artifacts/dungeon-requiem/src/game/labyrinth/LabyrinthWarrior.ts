@@ -105,12 +105,14 @@ export function modifyOutgoingDamage(
   state: LabWarriorState,
   baseDamage: number,
   critChance: number,
+  momentumPerStack = BLOOD_MOMENTUM_PER_STACK,
+  critDmgMult = CRIT_MULTIPLIER,
 ): number {
   const isCrit = Math.random() < critChance;
   state.lastHitWasCrit = isCrit;
-  const momentumMult = 1 + state.momentumStacks * BLOOD_MOMENTUM_PER_STACK;
+  const momentumMult = 1 + state.momentumStacks * momentumPerStack;
   const warCryMult = state.warCryTimer > 0 ? 1 + WAR_CRY_DAMAGE_BUFF : 1;
-  const critMult = isCrit ? CRIT_MULTIPLIER : 1;
+  const critMult = isCrit ? critDmgMult : 1;
   return baseDamage * momentumMult * warCryMult * critMult;
 }
 
@@ -126,9 +128,9 @@ export function registerHit(state: LabWarriorState): void {
 /** Call once per enemy killed. Awards Bloodforge max-HP gain (capped
  *  per run). Returns the amount actually granted this call so caller
  *  can bump both maxHp and current hp. */
-export function registerKill(state: LabWarriorState): number {
-  if (state.bloodforgeGain >= BLOODFORGE_MAX_HP_GAIN) return 0;
-  const awarded = Math.min(BLOODFORGE_HP_PER_KILL, BLOODFORGE_MAX_HP_GAIN - state.bloodforgeGain);
+export function registerKill(state: LabWarriorState, hpPerKill = BLOODFORGE_HP_PER_KILL, maxGain = BLOODFORGE_MAX_HP_GAIN): number {
+  if (state.bloodforgeGain >= maxGain) return 0;
+  const awarded = Math.min(hpPerKill, maxGain - state.bloodforgeGain);
   state.bloodforgeGain += awarded;
   return awarded;
 }
