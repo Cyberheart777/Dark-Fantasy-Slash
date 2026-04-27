@@ -9,7 +9,7 @@
  *   orange= 50× (boss)
  */
 
-export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss" | "xp_goblin" | "warrior_champion" | "mage_champion" | "rogue_champion";
+export type EnemyType = "scuttler" | "brute" | "wraith" | "elite" | "boss" | "xp_goblin" | "warrior_champion" | "mage_champion" | "rogue_champion" | "necromancer_champion" | "bard_champion" | "death_knight_champion";
 export type CrystalTier = "green" | "blue" | "purple" | "orange";
 
 export interface EnemyDef {
@@ -100,7 +100,7 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     type: "boss",
     displayName: "The Warden Reborn",
     health: 2250,
-    damage: 69,
+    damage: 35,
     moveSpeed: 3.0,
     xpReward: GREEN_XP * 50,     // 50× — orange crystal
     crystalTier: "orange",
@@ -134,7 +134,7 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     type: "warrior_champion",
     displayName: "The Iron Vanguard",
     health: 2200,
-    damage: 60,
+    damage: 48,
     moveSpeed: 4.5,
     xpReward: 0,
     crystalTier: "orange",
@@ -151,7 +151,7 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     type: "mage_champion",
     displayName: "The Void Arcanist",
     health: 1600,
-    damage: 40,
+    damage: 32,
     moveSpeed: 3.5,
     xpReward: 0,
     crystalTier: "orange",
@@ -168,8 +168,8 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     type: "rogue_champion",
     displayName: "The Shadow Blade",
     health: 1800,
-    damage: 28,
-    moveSpeed: 7.5,
+    damage: 22,
+    moveSpeed: 6.75,
     xpReward: 0,
     crystalTier: "orange",
     attackRange: 18.0,
@@ -179,6 +179,56 @@ export const ENEMY_DATA: Record<EnemyType, EnemyDef> = {
     color: "#18b870",
     emissive: "#0a4020",
     scale: 1.8,
+  },
+
+  necromancer_champion: {
+    type: "necromancer_champion",
+    displayName: "The Dread Shepherd",
+    health: 2000,
+    damage: 28,
+    moveSpeed: 4.0,
+    xpReward: 0,
+    crystalTier: "orange",
+    attackRange: 6.0,
+    attackInterval: 1.6,
+    collisionRadius: 1.7,
+    scoreValue: 0,
+    color: "#6a1e8a",
+    emissive: "#2a0840",
+    scale: 1.8,
+  },
+
+  bard_champion: {
+    type: "bard_champion",
+    displayName: "The Discordant Minstrel",
+    health: 1700,
+    damage: 30,
+    moveSpeed: 5.0,
+    xpReward: 0,
+    crystalTier: "orange",
+    attackRange: 40.0,
+    attackInterval: 0.5,
+    collisionRadius: 1.5,
+    scoreValue: 0,
+    color: "#c8a020",
+    emissive: "#4a3008",
+    scale: 1.8,
+  },
+  death_knight_champion: {
+    type: "death_knight_champion",
+    displayName: "The Death Knight",
+    health: 3000,
+    damage: 45,
+    moveSpeed: 2.5,
+    xpReward: 0,
+    crystalTier: "orange",
+    attackRange: 3.0,
+    attackInterval: 1.4,
+    collisionRadius: 2.0,
+    scoreValue: 0,
+    color: "#1a1a2a",
+    emissive: "#0a0a18",
+    scale: 2.0,
   },
 };
 

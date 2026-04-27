@@ -43,6 +43,10 @@ export function Projectile3D({ proj }: ProjectileProps) {
         ringRef.current.rotation.x = Math.PI / 2 + Math.sin(t.current * 1.8) * 0.4;
         ringRef.current.rotation.z = t.current * 1.5;
       }
+    } else if (proj.style === "note") {
+      // Note: billboard facing camera, gentle bob
+      groupRef.current.position.y = 0.8 + Math.sin(t.current * 3 + (proj.x * 0.5)) * 0.1;
+      groupRef.current.rotation.y = t.current * 1.5;
     } else {
       // Dagger: align to travel direction + spin along travel axis
       const angle = Math.atan2(proj.vx, proj.vz);
@@ -70,13 +74,35 @@ export function Projectile3D({ proj }: ProjectileProps) {
     }
   });
 
+  if (proj.style === "note") {
+    return (
+      <group ref={groupRef}>
+        {/* Note head — filled circle */}
+        <mesh rotation={[-Math.PI / 4, 0, 0]}>
+          <circleGeometry args={[0.18, 8]} />
+          <meshBasicMaterial color="#ffd040" side={THREE.DoubleSide} />
+        </mesh>
+        {/* Note stem — thin vertical line */}
+        <mesh position={[0.16, 0.22, 0]} rotation={[-Math.PI / 4, 0, 0]}>
+          <boxGeometry args={[0.03, 0.4, 0.01]} />
+          <meshBasicMaterial color="#ffaa22" />
+        </mesh>
+        {/* Flag at top of stem */}
+        <mesh position={[0.2, 0.38, 0]} rotation={[-Math.PI / 4, 0, 0.3]}>
+          <boxGeometry args={[0.12, 0.03, 0.01]} />
+          <meshBasicMaterial color="#ffaa22" />
+        </mesh>
+      </group>
+    );
+  }
+
   if (proj.style === "orb") {
     return (
       <>
         <group ref={groupRef}>
           {/* Core orb */}
           <mesh ref={innerRef} castShadow>
-            <sphereGeometry args={[0.42, 10, 8]} />
+            <sphereGeometry args={[0.21, 10, 8]} />
             <meshStandardMaterial
               color={proj.color}
               emissive={proj.glowColor}
@@ -89,7 +115,7 @@ export function Projectile3D({ proj }: ProjectileProps) {
           </mesh>
           {/* Outer shell */}
           <mesh>
-            <sphereGeometry args={[0.56, 8, 6]} />
+            <sphereGeometry args={[0.28, 8, 6]} />
             <meshStandardMaterial
               color={proj.glowColor}
               emissive={proj.glowColor}
@@ -101,7 +127,7 @@ export function Projectile3D({ proj }: ProjectileProps) {
           </mesh>
           {/* Orbiting ring */}
           <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.6, 0.05, 6, 16]} />
+            <torusGeometry args={[0.3, 0.03, 6, 16]} />
             <meshStandardMaterial
               color={proj.glowColor}
               emissive={proj.glowColor}
@@ -127,7 +153,7 @@ export function Projectile3D({ proj }: ProjectileProps) {
         {/* Spinning inner group */}
         <group>
           {/* Blade */}
-          <mesh position={[0, 0, -0.22]} castShadow>
+          <mesh position={[0, 0, -0.22]} castShadow={!proj.fanOfKnives}>
             <boxGeometry args={[0.07, 0.07, 0.55]} />
             <meshStandardMaterial
               color={proj.color}
@@ -158,26 +184,30 @@ export function Projectile3D({ proj }: ProjectileProps) {
             />
           </mesh>
         </group>
-        {/* Motion trail */}
-        <mesh ref={trailRef} position={[0, 0, 0.35]}>
-          <boxGeometry args={[0.03, 0.03, 0.5]} />
-          <meshStandardMaterial
-            color={proj.glowColor}
-            emissive={proj.glowColor}
-            emissiveIntensity={2}
-            transparent
-            opacity={0.5}
-            depthWrite={false}
-          />
-        </mesh>
+        {/* Motion trail — skip for fan-of-knives burst */}
+        {!proj.fanOfKnives && (
+          <mesh ref={trailRef} position={[0, 0, 0.35]}>
+            <boxGeometry args={[0.03, 0.03, 0.5]} />
+            <meshStandardMaterial
+              color={proj.glowColor}
+              emissive={proj.glowColor}
+              emissiveIntensity={2}
+              transparent
+              opacity={0.5}
+              depthWrite={false}
+            />
+          </mesh>
+        )}
       </group>
-      <pointLight
-        ref={lightRef}
-        color={proj.glowColor}
-        intensity={1.5}
-        distance={4}
-        decay={2}
-      />
+      {!proj.fanOfKnives && (
+        <pointLight
+          ref={lightRef}
+          color={proj.glowColor}
+          intensity={1.5}
+          distance={4}
+          decay={2}
+        />
+      )}
     </>
   );
 }

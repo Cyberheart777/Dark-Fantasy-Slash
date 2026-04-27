@@ -30,12 +30,16 @@ export type UpgradeId =
   | "soul_feast"
   | "killing_blow"
   | "momentum_shift"
+  | "pickup_radius"
+  | "damage_reduction"
+  | "thorns"
+  | "shard_find"
   // ── Warrior-only ──
   | "cleave_start"
   | "blood_momentum"
   | "earthbreaker"
   | "iron_reprisal"
-  | "war_cry"
+  // war_cry removed — replaced by action ability system
   | "bloodforge"
   | "weakening_blows"
   | "concussive_charge"
@@ -54,7 +58,7 @@ export type UpgradeId =
   | "overcharged_orbs"
   | "residual_field"
   | "extra_orb"
-  | "volatile_blink"
+  // REMOVED | "volatile_blink"
   | "projectile_size"
   | "split_bolt"
   | "arcane_surge"
@@ -75,15 +79,47 @@ export type UpgradeId =
   | "cloak_and_dagger"
   | "ricochet"
   | "predators_instinct"
+  // ── Necromancer-only ──
+  | "grave_robber"
+  | "bone_shards"
+  | "dark_vigor"
+  | "undying_legion"
+  | "haunting_presence"
+  | "soul_harvest"
+  | "relentless_dead"
+  | "necrotic_edge"
+  | "dark_communion"
+  | "army_of_darkness"
+  | "lichs_bargain"
+  | "death_coil"
+  // ── Bard-only ──
+  | "bard_sustain"
+  | "bard_clear_voice"
+  | "bard_long_reach"
+  | "bard_sharp_ears"
+  | "bard_opening_act"
+  | "bard_vital_song"
+  | "bard_distant_melody"
+  | "bard_amplifier"
+  | "bard_lingering_confuse"
+  | "bard_staccato"
+  | "bard_resonance"
+  | "bard_harmony"
+  | "bard_maestro"
+  | "bard_crescendo"
+  | "bard_symphony"
+  | "bard_grand_finale"
+  | "bard_rhapsody"
   // ── Relics ──
   | "relic_soulfire"
   | "relic_vampiric"
   | "relic_phantom_echo"
-  | "relic_deaths_bargain"
+  // REMOVED | "relic_deaths_bargain"
   | "relic_abyss_crown"
   | "relic_blood_covenant"
   | "relic_iron_oath"
-  | "relic_convergence_blade";
+  | "relic_convergence_blade"
+  | "relic_berserkers_fury";
 
 // ─── Rarity ────────────────────────────────────────────────────────────────────
 
@@ -139,12 +175,18 @@ export interface PlayerStats {
   phantomEchoEvery: number;
   deathBargainActive: number;
   incomingDamageMult: number;
+  // ── New universal stats ────────────────────────────────────────────────────
+  pickupRadiusMult: number;      // 1.0 = base, 1.3 = +30%
+  damageReductionPct: number;    // 0.0 to 0.20 — flat % damage reduction after armor
+  thornsPct: number;             // 0.0 to 0.25 — reflect % of damage taken to attacker
+  shardFindMult: number;         // 1.0 = base, 1.3 = +30% more shards
+  healCap: number;               // 1.0 = full HP, 0.5 = can't heal above 50%
   // ── Warrior-specific ───────────────────────────────────────────────────────
   bloodMomentumPerHit: number;   // stacking damage % per hit (0 = off)
   earthbreakerEnabled: boolean;  // every 5th hit AoE slam
   ironReprisalEnabled: boolean;  // shockwave on damage taken
   warCryDmgBonus: number;        // % bonus damage for 5s after dash (baseline)
-  bloodforgeMaxHpPerKill: number; // +1 max HP per kill, capped at 20
+  bloodforgeMaxHpPerKill: number; // +0.2 max HP per kill, capped at +30
   weakeningBlowsPct: number;     // % damage reduction applied per melee hit on enemies
   dashKnockbackForce: number;    // knockback distance on dash (baseline, upgradeable)
   executionersWrathEnabled: boolean; // crits deal 40% AoE around target
@@ -186,6 +228,67 @@ export interface PlayerStats {
   ricochetBounces: number;        // daggers bounce to N enemies for 50% dmg
   predatorsInstinctEnabled: boolean; // +40% crit dmg vs enemies below 30% HP
   convergenceBladeEnabled: boolean;  // merge all daggers into single mega-projectile
+  // ── Necromancer-specific ────────────────────────────────────────────────────
+  necroRaiseChance: number;          // on-kill chance to raise skeletal mage (0.30 base)
+  necroMinionCap: number;            // max simultaneous skeletal mages (3 base)
+  necroMinionHp: number;             // per-minion HP pool (30 base)
+  necroMinionDamage: number;         // bone projectile damage per shot (4 base)
+  necroMinionFireRate: number;       // seconds between bone shots (1.5 base)
+  necroDeathSurgeDamageMult: number; // multiplier on Death Surge burst damage (1.0 base)
+  necroSoulHarvestHeal: number;      // HP healed when a minion-killed enemy dies (0 base)
+  necroRelentlessDeadDmg: number;    // damage dealt by minion death explosion (0 base)
+  necroNecroticEdge: boolean;        // scythe hits apply 1 poison stack
+  necroArmyOfDarkness: boolean;      // minion cap → 5
+  necroLichsBargain: boolean;        // raise chance → 60% but costs 5 HP
+  necroDeathCoil: boolean;           // Death Surge kills can raise minions
+  necroScytheArcBonus: number;       // extra arc degrees (0 base)
+  necroScytheDamageBonus: number;    // flat bonus scythe damage (0 base)
+  necroMinionHpBonus: number;        // flat bonus minion HP (0 base)
+  necroMinionDamageBonus: number;    // flat bonus bone projectile damage (0 base)
+  // ── Bard-specific ──────────────────────────────────────────────────────────
+  bardConfuseChance: number;         // 0.10 base
+  bardConfuseDuration: number;       // 5s base
+  bardConfuseCap: number;            // 2 base
+  bardMaxRange: number;              // 60 base
+  bardFalloff1: number;              // 1.00 (0-15u)
+  bardFalloff2: number;              // 0.75 (15-30u)
+  bardFalloff3: number;              // 0.50 (30-45u)
+  bardFalloff4: number;              // 0.25 (45-60u)
+  bardDissonancePct: number;         // 0 base — damage amp per stack (Vital Song)
+  bardDissonanceMaxStacks: number;   // 8
+  bardPierceCount: number;           // 0 base (Resonance: 3)
+  bardStaccatoEnabled: boolean;      // every 3rd shot fires 3-note spread
+  bardGrandFinaleEnabled: boolean;   // every 10th shot = 5× damage, no falloff
+  bardRhapsodyEnabled: boolean;      // continuous-fire damage ramp
+  bardSymphonyEnabled: boolean;      // confused enemies deal +100% dmg, take +30% dmg
+  bardDamageBonus: number;           // flat bonus from upgrades
+  bardAtkSpeedBonus: number;         // additive attack speed bonus
+  bardRangeBonus: number;            // additive max range bonus
+  bardHpBonus: number;               // flat HP bonus
+  // ── Gear proc stat fields ──────────────────────────────────────────────────
+  critDamageBonus: number;        // gear (+% crit damage), additive to critDamageMultiplier
+  poisonDamageBonus: number;      // gear (+% poison damage), additive bonus to poison DPS
+  lowHpDamageBonus: number;       // gear (Berserker Sigil), damage bonus when <50% HP
+  maxPoisonStacksBonus: number;   // gear (Serpent's Fang) increases poison stack cap by N
+  serpentsFangChance: number;     // gear (Serpent's Fang) extra-poison-stack chance per hit
+  blinkCdrPct: number;            // gear (Voidstaff) dash/blink cooldown reduction 0..1
+  bloodMomentumGainMult: number;  // gear (Bloodfury Axe) multiplies momentum stack gain rate
+  postDashSpeedBonus: number;     // gear (Boots of Speed) post-dash move speed bonus (fraction)
+  postDashSpeedDuration: number;  // gear (Boots of Speed) duration of the buff
+  postDashSpeedCd: number;        // gear (Boots of Speed) cooldown between triggers
+  arcSlashDamagePct: number;      // gear (Arc Warblade) arc slash damage as fraction of base
+  arcSlashInterval: number;       // gear (Arc Warblade) seconds between arc slashes
+  phantomWrapEnabled: boolean;    // gear (Phantom Wrap) on-damage intangible proc
+  phantomWrapCd: number;          // gear (Phantom Wrap) cooldown
+  phantomWrapDuration: number;    // gear (Phantom Wrap) i-frame duration
+  glacialRobeEnabled: boolean;    // gear (Glacial Robe) on-damage slow + amp
+  glacialRobeCd: number;          // gear (Glacial Robe) cooldown
+  plagueDaggerEnabled: boolean;   // gear (Plague Dagger) kill spawns poison puddle
+  orbitalStaffEnabled: boolean;   // gear (Orbital Staff) adds orbiting damage orbs
+  ricochetOrbEnabled: boolean;    // gear (Ricochet Orb) mage orbs ricochet off walls
+  // ── Action ability ─────────────────────────────────────────────────────────
+  actionCooldown: number;          // base 60s cooldown for class action ability
+  actionCdrPct: number;            // 0..1 percentage reduction on action cooldown (gear)
 }
 
 export function createDefaultStats(): PlayerStats {
@@ -216,6 +319,12 @@ export function createDefaultStats(): PlayerStats {
     phantomEchoEvery: 0,
     deathBargainActive: 0,
     incomingDamageMult: 1.0,
+    // New universal
+    pickupRadiusMult: 1.0,
+    damageReductionPct: 0,
+    thornsPct: 0,
+    shardFindMult: 1.0,
+    healCap: 1.0,
     // Warrior
     bloodMomentumPerHit: 0,
     earthbreakerEnabled: false,
@@ -263,6 +372,67 @@ export function createDefaultStats(): PlayerStats {
     ricochetBounces: 0,
     predatorsInstinctEnabled: false,
     convergenceBladeEnabled: false,
+    // Necromancer
+    necroRaiseChance: 0.30,
+    necroMinionCap: 3,
+    necroMinionHp: 30,
+    necroMinionDamage: 6,
+    necroMinionFireRate: 1.0,
+    necroDeathSurgeDamageMult: 1.0,
+    necroSoulHarvestHeal: 0,
+    necroRelentlessDeadDmg: 0,
+    necroNecroticEdge: false,
+    necroArmyOfDarkness: false,
+    necroLichsBargain: false,
+    necroDeathCoil: false,
+    necroScytheArcBonus: 0,
+    necroScytheDamageBonus: 0,
+    necroMinionHpBonus: 0,
+    necroMinionDamageBonus: 0,
+    // Bard
+    bardConfuseChance: 0.10,
+    bardConfuseDuration: 5,
+    bardConfuseCap: 2,
+    bardMaxRange: 60,
+    bardFalloff1: 1.00,
+    bardFalloff2: 0.75,
+    bardFalloff3: 0.50,
+    bardFalloff4: 0.25,
+    bardDissonancePct: 0,
+    bardDissonanceMaxStacks: 8,
+    bardPierceCount: 0,
+    bardStaccatoEnabled: false,
+    bardGrandFinaleEnabled: false,
+    bardRhapsodyEnabled: false,
+    bardSymphonyEnabled: false,
+    bardDamageBonus: 0,
+    bardAtkSpeedBonus: 0,
+    bardRangeBonus: 0,
+    bardHpBonus: 0,
+    // Gear proc defaults (neutral — no equipped gear)
+    critDamageBonus: 0,
+    poisonDamageBonus: 0,
+    lowHpDamageBonus: 0,
+    maxPoisonStacksBonus: 0,
+    serpentsFangChance: 0,
+    blinkCdrPct: 0,
+    bloodMomentumGainMult: 1,
+    postDashSpeedBonus: 0,
+    postDashSpeedDuration: 0,
+    postDashSpeedCd: 0,
+    arcSlashDamagePct: 0,
+    arcSlashInterval: 0,
+    phantomWrapEnabled: false,
+    phantomWrapCd: 0,
+    phantomWrapDuration: 0,
+    glacialRobeEnabled: false,
+    glacialRobeCd: 0,
+    plagueDaggerEnabled: false,
+    orbitalStaffEnabled: false,
+    ricochetOrbEnabled: false,
+    // Action ability
+    actionCooldown: 60,
+    actionCdrPct: 0,
   };
 }
 
@@ -274,15 +444,15 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   // ════════════════════════════════════════════════════════════════════════════
   damage_boost: {
     id: "damage_boost", name: "Whetstone",
-    description: "+15% weapon damage",
+    description: "+12% weapon damage",
     icon: "⚔️", maxStacks: 8, rarity: "common", classes: "all",
-    apply: (s) => { s.damage = Math.round(s.damage * 1.15); },
+    apply: (s) => { s.damage = Math.round(s.damage * 1.12); },
   },
   attack_speed_boost: {
     id: "attack_speed_boost", name: "Bladestorm",
-    description: "+10% attack speed",
+    description: "+8% attack speed",
     icon: "🌪️", maxStacks: 6, rarity: "common", classes: "all",
-    apply: (s) => { s.attackSpeed = parseFloat((s.attackSpeed * 1.10).toFixed(3)); },
+    apply: (s) => { s.attackSpeed = parseFloat((s.attackSpeed * 1.08).toFixed(3)); },
   },
   max_health_boost: {
     id: "max_health_boost", name: "Iron Constitution",
@@ -316,9 +486,13 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   lifesteal_boost: {
     id: "lifesteal_boost", name: "Bloodlord",
-    description: "+2% lifesteal",
-    icon: "🩸", maxStacks: 5, rarity: "common", classes: "all",
-    apply: (s) => { s.lifesteal += 0.02; }, // was 0.04 — max stack gave +20% alone
+    description: "+1.5% lifesteal (diminishing)",
+    icon: "🩸", maxStacks: 3, rarity: "common", classes: "all",
+    apply: (s) => {
+      const stacks = Math.round(s.lifesteal / 0.015);
+      const next = stacks === 0 ? 0.02 : stacks === 1 ? 0.015 : 0.01;
+      s.lifesteal += next;
+    },
   },
   double_strike: {
     id: "double_strike", name: "Twin Fang",
@@ -362,9 +536,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   iron_skin: {
     id: "iron_skin", name: "Iron Skin",
-    description: "+5% dodge chance",
+    description: "+8% dodge chance",
     icon: "🪬", maxStacks: 4, rarity: "common", classes: "all",
-    apply: (s) => { s.dodgeChance += 0.05; },
+    apply: (s) => { s.dodgeChance += 0.08; },
   },
   soul_feast: {
     id: "soul_feast", name: "Soul Feast",
@@ -383,6 +557,30 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     description: "Crits grant +4% move speed for 2s, stacks up to 5 times.",
     icon: "💨", maxStacks: 1, rarity: "rare", classes: "all",
     apply: (s) => { s.momentumShiftEnabled = true; },
+  },
+  pickup_radius: {
+    id: "pickup_radius", name: "Magnet Soul",
+    description: "+10% pickup radius.",
+    icon: "🧲", maxStacks: 3, rarity: "common", classes: "all",
+    apply: (s) => { s.pickupRadiusMult += 0.10; },
+  },
+  damage_reduction: {
+    id: "damage_reduction", name: "Warding Sigil",
+    description: "+5% damage reduction.",
+    icon: "🛡️", maxStacks: 4, rarity: "rare", classes: "all",
+    apply: (s) => { s.damageReductionPct = Math.min(0.20, s.damageReductionPct + 0.05); },
+  },
+  thorns: {
+    id: "thorns", name: "Barbed Soul",
+    description: "+5% thorns — reflect damage to melee attackers.",
+    icon: "🌹", maxStacks: 5, rarity: "rare", classes: "all",
+    apply: (s) => { s.thornsPct = Math.min(0.25, s.thornsPct + 0.05); },
+  },
+  shard_find: {
+    id: "shard_find", name: "Fortune's Favor",
+    description: "+15% shard find.",
+    icon: "💎", maxStacks: 2, rarity: "rare", classes: "all",
+    apply: (s) => { s.shardFindMult += 0.15; },
   },
   // ════════════════════════════════════════════════════════════════════════════
   // WARRIOR-ONLY — melee is hard mode, so these are slightly stronger
@@ -420,15 +618,10 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "💢", maxStacks: 1, rarity: "rare", classes: ["warrior"],
     apply: (s) => { s.ironReprisalEnabled = true; },
   },
-  war_cry: {
-    id: "war_cry", name: "Battle Roar",
-    description: "War Cry damage bonus increased to +35% for 6 seconds.",
-    icon: "📯", maxStacks: 1, rarity: "rare", classes: ["warrior"],
-    apply: (s) => { s.warCryDmgBonus = 0.35; },  // upgrades baseline 0.15 → 0.35
-  },
+  // war_cry removed — replaced by action ability system
   bloodforge: {
     id: "bloodforge", name: "Bloodforge",
-    description: "Each kill grants +1 max HP (capped at +20).",
+    description: "Each kill grants +0.2 max HP (capped at +30).",
     icon: "🩸", maxStacks: 1, rarity: "rare", classes: ["warrior"],
     apply: (s) => { s.bloodforgeMaxHpPerKill = 1; },
   },
@@ -537,12 +730,13 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "🟣", maxStacks: 3, rarity: "rare", classes: ["mage"],
     apply: (s) => { s.mageExtraOrbs += 1; },
   },
-  volatile_blink: {
-    id: "volatile_blink", name: "Volatile Blink",
-    description: "Blink afterimage now explodes for 1× damage in a wide radius.",
-    icon: "💥", maxStacks: 1, rarity: "epic", classes: ["mage"],
-    apply: (s) => { s.volatileBlinkEnabled = true; },
-  },
+  // REMOVED — volatile_blink
+  // volatile_blink: {
+  //   id: "volatile_blink", name: "Volatile Blink",
+  //   description: "Blink afterimage now explodes for 1× damage in a wide radius.",
+  //   icon: "💥", maxStacks: 1, rarity: "epic", classes: ["mage"],
+  //   apply: (s) => { s.volatileBlinkEnabled = true; },
+  // },
   projectile_size: {
     id: "projectile_size", name: "Amplified Orbs",
     description: "+20% orb size.",
@@ -663,6 +857,200 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
 
   // ════════════════════════════════════════════════════════════════════════════
+  // NECROMANCER-ONLY
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // ── Tier 1 — Common ──
+  grave_robber: {
+    id: "grave_robber", name: "Grave Robber",
+    description: "Raise chance +10% (30% → 40%).",
+    icon: "⚱", maxStacks: 3, rarity: "common", classes: ["necromancer"],
+    apply: (s) => { s.necroRaiseChance += 0.10; },
+  },
+  bone_shards: {
+    id: "bone_shards", name: "Bone Shards",
+    description: "Minion bone projectile damage +2.",
+    icon: "🦴", maxStacks: 5, rarity: "common", classes: ["necromancer"],
+    apply: (s) => { s.necroMinionDamageBonus += 2; },
+  },
+  dark_vigor: {
+    id: "dark_vigor", name: "Dark Vigor",
+    description: "Scythe damage +3.",
+    icon: "💀", maxStacks: 5, rarity: "common", classes: ["necromancer"],
+    apply: (s) => { s.necroScytheDamageBonus += 3; },
+  },
+  undying_legion: {
+    id: "undying_legion", name: "Undying Legion",
+    description: "Minion HP +15.",
+    icon: "🛡", maxStacks: 5, rarity: "common", classes: ["necromancer"],
+    apply: (s) => { s.necroMinionHpBonus += 15; },
+  },
+  haunting_presence: {
+    id: "haunting_presence", name: "Haunting Presence",
+    description: "Scythe arc width +15 degrees.",
+    icon: "👻", maxStacks: 3, rarity: "common", classes: ["necromancer"],
+    apply: (s) => { s.necroScytheArcBonus += 15; },
+  },
+
+  // ── Tier 2 — Rare ──
+  soul_harvest: {
+    id: "soul_harvest", name: "Soul Harvest",
+    description: "Killing a minion-killed enemy heals Necromancer for 8 HP.",
+    icon: "💚", maxStacks: 1, rarity: "rare", classes: ["necromancer"],
+    apply: (s) => { s.necroSoulHarvestHeal = 8; },
+  },
+  relentless_dead: {
+    id: "relentless_dead", name: "Relentless Dead",
+    description: "When a minion dies it explodes dealing 10 damage to nearby enemies.",
+    icon: "💥", maxStacks: 3, rarity: "rare", classes: ["necromancer"],
+    apply: (s) => { s.necroRelentlessDeadDmg += 10; },
+  },
+  necrotic_edge: {
+    id: "necrotic_edge", name: "Necrotic Edge",
+    description: "Scythe hits apply 1 poison stack.",
+    icon: "☠", maxStacks: 1, rarity: "rare", classes: ["necromancer"],
+    apply: (s) => { s.necroNecroticEdge = true; },
+  },
+  dark_communion: {
+    id: "dark_communion", name: "Dark Communion",
+    description: "Death Surge damage +25% per minion sacrificed.",
+    icon: "🌑", maxStacks: 3, rarity: "rare", classes: ["necromancer"],
+    apply: (s) => { s.necroDeathSurgeDamageMult += 0.25; },
+  },
+
+  // ── Tier 3 — Epic ──
+  army_of_darkness: {
+    id: "army_of_darkness", name: "Army of Darkness",
+    description: "Minion cap increases from 3 to 5.",
+    icon: "⚔", maxStacks: 1, rarity: "epic", classes: ["necromancer"],
+    apply: (s) => { s.necroArmyOfDarkness = true; },
+  },
+  lichs_bargain: {
+    id: "lichs_bargain", name: "Lich's Bargain",
+    description: "Raise chance becomes 60% but each raise costs 5 HP.",
+    icon: "📜", maxStacks: 1, rarity: "epic", classes: ["necromancer"],
+    apply: (s) => { s.necroLichsBargain = true; },
+  },
+  death_coil: {
+    id: "death_coil", name: "Death Coil",
+    description: "Death Surge kills also raise 1 skeletal mage from each slain enemy.",
+    icon: "🔮", maxStacks: 1, rarity: "epic", classes: ["necromancer"],
+    apply: (s) => { s.necroDeathCoil = true; },
+  },
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // BARD-ONLY
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // ── Tier 1 — Common ──
+  bard_sustain: {
+    id: "bard_sustain", name: "Sustain",
+    description: "Attack speed +20%.",
+    icon: "🎵", maxStacks: 3, rarity: "common", classes: ["bard"],
+    apply: (s) => { s.bardAtkSpeedBonus += 0.70; },
+  },
+  bard_clear_voice: {
+    id: "bard_clear_voice", name: "Clear Voice",
+    description: "Damage +6.",
+    icon: "🔊", maxStacks: 5, rarity: "common", classes: ["bard"],
+    apply: (s) => { s.bardDamageBonus += 6; },
+  },
+  bard_long_reach: {
+    id: "bard_long_reach", name: "Long Reach",
+    description: "Max range +15 units.",
+    icon: "📏", maxStacks: 3, rarity: "common", classes: ["bard"],
+    apply: (s) => { s.bardRangeBonus += 15; },
+  },
+  bard_sharp_ears: {
+    id: "bard_sharp_ears", name: "Sharp Ears",
+    description: "Confuse chance +10%.",
+    icon: "👂", maxStacks: 3, rarity: "common", classes: ["bard"],
+    apply: (s) => { s.bardConfuseChance += 0.10; },
+  },
+  bard_opening_act: {
+    id: "bard_opening_act", name: "Opening Act",
+    description: "HP +25.",
+    icon: "🎭", maxStacks: 5, rarity: "common", classes: ["bard"],
+    apply: (s) => { s.bardHpBonus += 25; s.maxHealth += 25; s.currentHealth += 25; },
+  },
+
+  // ── Tier 2 — Rare ──
+  bard_vital_song: {
+    id: "bard_vital_song", name: "Vital Song",
+    description: "Notes apply Dissonance: 3% damage taken per stack, max 8 (24% amp). Falls off after 3s.",
+    icon: "💀", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardDissonancePct = 0.03; },
+  },
+  bard_distant_melody: {
+    id: "bard_distant_melody", name: "Distant Melody",
+    description: "Damage falloff reduced: 75%→90%, 50%→80%, 25%→65%.",
+    icon: "🌙", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardFalloff2 = 0.90; s.bardFalloff3 = 0.80; s.bardFalloff4 = 0.65; },
+  },
+  bard_amplifier: {
+    id: "bard_amplifier", name: "Amplifier",
+    description: "Max range +25 units (60→85).",
+    icon: "📡", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardRangeBonus += 25; },
+  },
+  bard_lingering_confuse: {
+    id: "bard_lingering_confuse", name: "Lingering Confuse",
+    description: "Confuse duration +5s, max confused +1 (total 3).",
+    icon: "🌀", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardConfuseDuration += 5; s.bardConfuseCap += 1; },
+  },
+  bard_staccato: {
+    id: "bard_staccato", name: "Staccato",
+    description: "Every 3rd shot fires 7 notes in a wider scale cluster (2 extra at 10u and 11u offsets).",
+    icon: "⚡", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardStaccatoEnabled = true; },
+  },
+  bard_resonance: {
+    id: "bard_resonance", name: "Resonance",
+    description: "Notes pierce through enemies infinitely — no pierce limit.",
+    icon: "🔔", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.bardPierceCount = 999; },
+  },
+  bard_harmony: {
+    id: "bard_harmony", name: "Harmony",
+    description: "Crit chance +15%, crit damage +50%.",
+    icon: "🎶", maxStacks: 1, rarity: "rare", classes: ["bard"],
+    apply: (s) => { s.critChance += 0.15; s.critDamageMultiplier += 0.50; },
+  },
+
+  // ── Tier 3 — Epic ──
+  bard_maestro: {
+    id: "bard_maestro", name: "Maestro",
+    description: "Confuse chance tripled (10%→30%).",
+    icon: "🎩", maxStacks: 1, rarity: "epic", classes: ["bard"],
+    apply: (s) => { s.bardConfuseChance *= 3; },
+  },
+  bard_crescendo: {
+    id: "bard_crescendo", name: "Crescendo",
+    description: "Attack speed +75%, damage +40%.",
+    icon: "📈", maxStacks: 1, rarity: "epic", classes: ["bard"],
+    apply: (s) => { s.bardAtkSpeedBonus += 1.125; s.bardDamageBonus += Math.round(20 * 0.4); },
+  },
+  bard_symphony: {
+    id: "bard_symphony", name: "Symphony of Chaos",
+    description: "Confused enemies deal +100% damage to other enemies AND take +30% from all sources.",
+    icon: "🌪", maxStacks: 1, rarity: "epic", classes: ["bard"],
+    apply: (s) => { s.bardSymphonyEnabled = true; },
+  },
+  bard_grand_finale: {
+    id: "bard_grand_finale", name: "Grand Finale",
+    description: "Every 10th shot fires a massive note dealing 5× damage with no falloff.",
+    icon: "💥", maxStacks: 1, rarity: "epic", classes: ["bard"],
+    apply: (s) => { s.bardGrandFinaleEnabled = true; },
+  },
+  bard_rhapsody: {
+    id: "bard_rhapsody", name: "Rhapsody",
+    description: "After 3s of continuous attacking, damage ramps +10%/sec (capped at +100%).",
+    icon: "🔥", maxStacks: 1, rarity: "epic", classes: ["bard"],
+    apply: (s) => { s.bardRhapsodyEnabled = true; },
+  },
+
+  // ════════════════════════════════════════════════════════════════════════════
   // RELICS — TONED DOWN from original values
   // ════════════════════════════════════════════════════════════════════════════
   relic_soulfire: {
@@ -673,9 +1061,9 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   relic_vampiric: {
     id: "relic_vampiric", name: "Vampiric Shroud",
-    description: "+2% lifesteal. Heals overflow to 120% max HP. Lose 6 HP/sec — kill or die.",
+    description: "+1% lifesteal. Heals overflow to 120% max HP. Lose 6 HP/sec — kill or die.",
     icon: "🧛", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
-    apply: (s) => { s.lifesteal += 0.02; s.overhealShieldPct = 0.20; s.hpDrainPerSec = 6; },
+    apply: (s) => { s.lifesteal += 0.01; s.overhealShieldPct = 0.20; s.hpDrainPerSec = 6; },
   },
   relic_phantom_echo: {
     id: "relic_phantom_echo", name: "Phantom Echo",
@@ -683,12 +1071,13 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     icon: "👁️", maxStacks: 1, rarity: "epic", classes: ["warrior"], isRelic: true,
     apply: (s) => { s.phantomEchoEvery = 5; },  // damage reduced 70→50% in GameScene
   },
-  relic_deaths_bargain: {
-    id: "relic_deaths_bargain", name: "Death's Bargain",
-    description: "Once per run, survive a lethal blow with 1 HP. 1.5s invincibility.",
-    icon: "💀", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
-    apply: (s) => { s.deathBargainActive = 1; },  // was 2s, now 1.5s in GameScene
-  },
+  // REMOVED — relic_deaths_bargain
+  // relic_deaths_bargain: {
+  //   id: "relic_deaths_bargain", name: "Death's Bargain",
+  //   description: "Once per run, survive a lethal blow with 1 HP. 1.5s invincibility.",
+  //   icon: "💀", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
+  //   apply: (s) => { s.deathBargainActive = 1; },  // was 2s, now 1.5s in GameScene
+  // },
   relic_abyss_crown: {
     id: "relic_abyss_crown", name: "Abyss Crown",
     description: "+35% XP gain. Cursed: you take 15% more damage.",
@@ -729,13 +1118,24 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
       s.attackSpeed = parseFloat((s.attackSpeed * 0.70).toFixed(3));
     },
   },
+  relic_berserkers_fury: {
+    id: "relic_berserkers_fury", name: "Berserker's Fury",
+    description: "+40% damage. Cannot heal above 50% max HP.",
+    icon: "🔥", maxStacks: 1, rarity: "epic", classes: "all", isRelic: true,
+    apply: (s) => {
+      s.damage = Math.round(s.damage * 1.40);
+      s.healCap = 0.5;
+    },
+  },
 };
 
 // ─── Relic ID list ─────────────────────────────────────────────────────────────
 
 const RELIC_IDS: UpgradeId[] = [
-  "relic_soulfire", "relic_vampiric", "relic_phantom_echo", "relic_deaths_bargain",
+  "relic_soulfire", "relic_vampiric", "relic_phantom_echo",
+  // REMOVED "relic_deaths_bargain",
   "relic_abyss_crown", "relic_blood_covenant", "relic_iron_oath", "relic_convergence_blade",
+  "relic_berserkers_fury",
 ];
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -779,11 +1179,13 @@ export function pickUpgradeChoices(
   count = 3,
   level = 1,
   charClass: CharacterClass = "warrior",
+  excludeIds?: Set<string>,
 ): UpgradeDef[] {
   const allUpgrades = Object.values(UPGRADES) as UpgradeDef[];
 
   const normalPool = allUpgrades.filter((u) => {
     if (u.isRelic) return false;
+    if (excludeIds && excludeIds.has(u.id)) return false;
     if (!isClassCompatible(u, charClass)) return false;
     return (acquired.get(u.id) ?? 0) < u.maxStacks;
   });
@@ -791,6 +1193,7 @@ export function pickUpgradeChoices(
   const relicPool = RELIC_IDS
     .map((id) => UPGRADES[id])
     .filter((u) => {
+      if (excludeIds && excludeIds.has(u.id)) return false;
       if (!isClassCompatible(u, charClass)) return false;
       return (acquired.get(u.id) ?? 0) < u.maxStacks;
     });

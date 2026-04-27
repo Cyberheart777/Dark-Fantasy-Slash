@@ -12,6 +12,7 @@ import { useAnimations, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { GameState } from "../game/GameScene";
+import { meshScaleForRace } from "../data/RaceData";
 
 interface PlayerProps {
   gs: React.RefObject<GameState | null>;
@@ -27,9 +28,11 @@ const WARRIOR_GLB_URL = `${import.meta.env.BASE_URL}models/warrior/Character_out
 export function Player3D({ gs }: PlayerProps) {
   const charClass = gs.current?.charClass ?? "warrior";
 
-  if (charClass === "mage")  return <MageMeshAnimated  gs={gs} />;
-  if (charClass === "rogue") return <RogueMeshAnimated gs={gs} />;
-  return <WarriorMeshWithGLB gs={gs} />;
+  if (charClass === "mage")       return <MageMeshAnimated  gs={gs} />;
+  if (charClass === "rogue")      return <RogueMeshAnimated gs={gs} />;
+  if (charClass === "necromancer") return <NecromancerMeshAnimated gs={gs} />;
+  if (charClass === "bard")       return <BardMeshAnimated gs={gs} />;
+  return <WarriorMeshAnimated gs={gs} />;
 }
 
 // ─── Warrior: GLB loader with procedural fallback ────────────────────────────
@@ -168,9 +171,25 @@ function WarriorMeshGLB({ gs }: PlayerProps) {
   return <primitive object={scene} />;
 }
 
-// Preload the GLB so the first character-select → playing transition doesn't
-// hitch waiting on an 8MB fetch. Safe to call at module scope.
-useGLTF.preload(WARRIOR_GLB_URL);
+// Warrior GLB preload disabled — reverted to procedural warrior.
+// The GLB loader + preload below stays as dead code in case the
+// asset is re-enabled later; commenting the preload stops the
+// browser from fetching the 8 MB file on every page load.
+// useGLTF.preload(WARRIOR_GLB_URL);
+
+// ─── Shared race-scale helper ────────────────────────────────────────────────
+// Reads `race` from gs.current and applies the corresponding non-uniform
+// scale to the character's outer group. Called each frame by all three
+// class meshes (Warrior / Mage / Rogue) so race selection is reflected
+// consistently across the roster. Hitbox + collision radius + move
+// speed are deliberately NOT touched — this is a visual-only scale
+// per the Alpha-pass spec. If race is unset (labyrinth shim default),
+// falls back to "human" → [1, 1, 1].
+function applyRaceScale(gs: React.RefObject<GameState | null>, group: THREE.Group) {
+  const race = gs.current?.race ?? "human";
+  const [sx, sy, sz] = meshScaleForRace(race);
+  group.scale.set(sx, sy, sz);
+}
 
 // ─── Warrior — low-poly geometry (GLBs load at Electron/Steam package time) ───
 
@@ -194,7 +213,8 @@ function WarriorMeshAnimated({ gs }: PlayerProps) {
     t.current += delta;
     const p = gs.current.player;
     groupRef.current.position.set(p.x, 0, p.z);
-    groupRef.current.rotation.y = p.angle + Math.PI;
+    groupRef.current.rotation.y = p.angle;
+    applyRaceScale(gs, groupRef.current);
     const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
     lastX.current = p.x; lastZ.current = p.z;
     if (leftArmRef.current && rightArmRef.current && legsRef.current) {
@@ -260,7 +280,7 @@ function WarriorMeshAnimated({ gs }: PlayerProps) {
         <group ref={rightArmRef} position={[0.45, 1.15, 0]}>
           <mesh castShadow position={[0, -0.2, 0]}><boxGeometry args={[0.2, 0.45, 0.2]} /><meshStandardMaterial color={ARMOR} roughness={0.6} metalness={0.3} emissive={EMIS} emissiveIntensity={EMIS_I} /></mesh>
           <mesh castShadow position={[0, -0.47, 0]}><boxGeometry args={[0.22, 0.18, 0.22]} /><meshStandardMaterial color="#3a5070" roughness={0.5} metalness={0.5} /></mesh>
-          <group ref={weaponRef} position={[0.1, -0.45, 0]}>
+          <group ref={weaponRef} position={[0.1, -0.45, 0.18]}>
             <mesh castShadow position={[0, -0.5, 0]}><boxGeometry args={[0.08, 1.0, 0.04]} /><meshStandardMaterial color={SWORD} roughness={0.2} metalness={0.9} emissive="#8080ff" emissiveIntensity={0.4} /></mesh>
             <mesh castShadow position={[0, -0.02, 0]}><boxGeometry args={[0.28, 0.06, 0.08]} /><meshStandardMaterial color="#c0a020" roughness={0.4} metalness={0.7} /></mesh>
           </group>
@@ -299,7 +319,8 @@ function MageMeshAnimated({ gs }: PlayerProps) {
     t.current += delta;
     const p = gs.current.player;
     groupRef.current.position.set(p.x, 0, p.z);
-    groupRef.current.rotation.y = p.angle + Math.PI;
+    groupRef.current.rotation.y = p.angle;
+    applyRaceScale(gs, groupRef.current);
     const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
     lastX.current = p.x; lastZ.current = p.z;
     if (leftArmRef.current && rightArmRef.current && legsRef.current) {
@@ -337,20 +358,33 @@ function MageMeshAnimated({ gs }: PlayerProps) {
     }
   });
 
-  const ROBE = "#5a2090"; const INNER = "#380a60"; const SKIN = "#dac8a8";
-  const STAFF = "#4a3060"; const ORB = "#cc66ff"; const TRIM = "#8030c0";
+  // Palette — tuned for visibility against the dark stone floor.
+  // ROBE reads as deep violet (lighter than original near-black), with
+  // emissive accents pushed bright enough to punch through tone mapping.
+  const ROBE = "#4a1e80"; const INNER = "#2d1b4e"; const SKIN = "#dac8a8";
+  const STAFF = "#1a0a2e"; const ORB = "#cc44ff"; const TRIM = "#8833cc";
+  const EYE = "#00ffff"; const STAFF_LINE = "#9933ff";
+
+  // Visual-only scale bump so the Mage reads clearly from the top-down
+  // camera without looking oversized. Wrapped in a static inner group so
+  // it compounds with the per-race scale on groupRef. Hitbox and
+  // collision are runtime-side and unaffected.
+  const MAGE_SCALE = 1.12;
+
   return (
     <>
       <group ref={groupRef}>
+       <group scale={[MAGE_SCALE, MAGE_SCALE, MAGE_SCALE]}>
         <group ref={legsRef}>
           <group position={[-0.18, 0.45, 0]}><mesh castShadow><boxGeometry args={[0.24, 0.58, 0.28]} /><meshStandardMaterial color={ROBE} roughness={0.95} emissive={INNER} emissiveIntensity={0.3} /></mesh></group>
           <group position={[0.18, 0.45, 0]}><mesh castShadow><boxGeometry args={[0.24, 0.58, 0.28]} /><meshStandardMaterial color={ROBE} roughness={0.95} emissive={INNER} emissiveIntensity={0.3} /></mesh></group>
         </group>
         <mesh ref={bodyRef} position={[0, 1.02, 0]} castShadow><boxGeometry args={[0.62, 0.72, 0.36]} /><meshStandardMaterial color={ROBE} roughness={0.9} emissive={INNER} emissiveIntensity={0.25} /></mesh>
-        <mesh position={[0, 1.02, 0.19]}><boxGeometry args={[0.18, 0.18, 0.01]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={2.5} /></mesh>
-        <mesh position={[-0.40, 1.25, 0]} castShadow><boxGeometry args={[0.18, 0.16, 0.34]} /><meshStandardMaterial color={TRIM} roughness={0.7} metalness={0.2} /></mesh>
-        <mesh position={[0.40, 1.25, 0]} castShadow><boxGeometry args={[0.18, 0.16, 0.34]} /><meshStandardMaterial color={TRIM} roughness={0.7} metalness={0.2} /></mesh>
-        <mesh ref={capeRef} position={[0, 1.0, -0.26]} castShadow><boxGeometry args={[0.58, 0.88, 0.06]} /><meshStandardMaterial color={INNER} roughness={0.95} emissive="#1a004a" emissiveIntensity={0.4} /></mesh>
+        {/* Chest sigil — brighter emissive so it reads at distance */}
+        <mesh position={[0, 1.02, 0.19]}><boxGeometry args={[0.18, 0.18, 0.01]} /><meshStandardMaterial color={TRIM} emissive={TRIM} emissiveIntensity={4.5} toneMapped={false} /></mesh>
+        <mesh position={[-0.40, 1.25, 0]} castShadow><boxGeometry args={[0.18, 0.16, 0.34]} /><meshStandardMaterial color={TRIM} roughness={0.7} metalness={0.2} emissive={TRIM} emissiveIntensity={0.6} /></mesh>
+        <mesh position={[0.40, 1.25, 0]} castShadow><boxGeometry args={[0.18, 0.16, 0.34]} /><meshStandardMaterial color={TRIM} roughness={0.7} metalness={0.2} emissive={TRIM} emissiveIntensity={0.6} /></mesh>
+        <mesh ref={capeRef} position={[0, 1.0, -0.26]} castShadow><boxGeometry args={[0.58, 0.88, 0.06]} /><meshStandardMaterial color={INNER} roughness={0.95} emissive="#1a004a" emissiveIntensity={0.6} /></mesh>
         <group ref={leftArmRef} position={[-0.42, 1.18, 0]}>
           <mesh castShadow position={[0, -0.2, 0]}><boxGeometry args={[0.18, 0.44, 0.18]} /><meshStandardMaterial color={ROBE} roughness={0.9} /></mesh>
           <mesh castShadow position={[0, -0.46, 0]}><boxGeometry args={[0.16, 0.18, 0.16]} /><meshStandardMaterial color={SKIN} roughness={0.85} /></mesh>
@@ -358,19 +392,35 @@ function MageMeshAnimated({ gs }: PlayerProps) {
         <group ref={rightArmRef} position={[0.42, 1.18, 0]}>
           <mesh castShadow position={[0, -0.2, 0]}><boxGeometry args={[0.18, 0.44, 0.18]} /><meshStandardMaterial color={ROBE} roughness={0.9} /></mesh>
           <mesh castShadow position={[0, -0.46, 0]}><boxGeometry args={[0.16, 0.18, 0.16]} /><meshStandardMaterial color={SKIN} roughness={0.85} /></mesh>
-          <group ref={weaponRef} position={[0.08, -0.4, 0]}>
-            <mesh castShadow position={[0, -0.55, 0]}><boxGeometry args={[0.07, 1.1, 0.07]} /><meshStandardMaterial color={STAFF} roughness={0.8} metalness={0.1} /></mesh>
-            <mesh position={[0, 0.08, 0]}><sphereGeometry args={[0.18, 8, 6]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={3} roughness={0.1} /></mesh>
-            <mesh position={[0, 0.08, 0]}><sphereGeometry args={[0.25, 6, 4]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={1.2} transparent opacity={0.25} /></mesh>
+          {/* Staff — proper wizard hold: shaft extends UP from the hand with
+              the orb floating above the head. Hand grips near the bottom of
+              the shaft. The outer group's static z-tilt gives a slight inward
+              lean so the staff isn't perfectly vertical; the inner weaponRef
+              is the part the swing animation rotates. */}
+          <group position={[0.08, -0.4, 0]} rotation={[0, 0, -0.12]}>
+            <group ref={weaponRef}>
+              {/* Shaft — length 1.4, centered at y=+0.55 so it spans from
+                  slightly below the hand up past the head. */}
+              <mesh castShadow position={[0, 0.55, 0]}><boxGeometry args={[0.08, 1.4, 0.08]} /><meshStandardMaterial color={STAFF} roughness={0.8} metalness={0.1} emissive={STAFF_LINE} emissiveIntensity={0.5} /></mesh>
+              {/* Staff energy line — thin bright strip on the front face of the shaft */}
+              <mesh position={[0, 0.55, 0.045]}><boxGeometry args={[0.014, 1.30, 0.003]} /><meshStandardMaterial color={STAFF_LINE} emissive={STAFF_LINE} emissiveIntensity={3.0} toneMapped={false} /></mesh>
+              {/* Shaft grip wrap at the hand — small accent so the hold reads */}
+              <mesh position={[0, -0.05, 0]}><boxGeometry args={[0.11, 0.14, 0.11]} /><meshStandardMaterial color={INNER} roughness={0.85} /></mesh>
+              {/* Orb — floats above the top of the shaft (small gap, not touching) */}
+              <mesh position={[0, 1.40, 0]}><sphereGeometry args={[0.18, 10, 8]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={6.0} toneMapped={false} /></mesh>
+              <mesh position={[0, 1.40, 0]}><sphereGeometry args={[0.24, 8, 6]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={2.5} transparent opacity={0.35} depthWrite={false} /></mesh>
+            </group>
           </group>
         </group>
         <group position={[0, 1.66, 0]}>
           <mesh castShadow><boxGeometry args={[0.40, 0.40, 0.36]} /><meshStandardMaterial color={SKIN} roughness={0.85} /></mesh>
-          <mesh castShadow position={[0, 0.28, 0]}><boxGeometry args={[0.44, 0.44, 0.40]} /><meshStandardMaterial color={ROBE} roughness={0.9} emissive={INNER} emissiveIntensity={0.2} /></mesh>
-          <mesh castShadow position={[0, 0.58, 0]}><boxGeometry args={[0.22, 0.36, 0.22]} /><meshStandardMaterial color={ROBE} roughness={0.9} /></mesh>
-          <mesh position={[-0.1, 0.05, 0.19]}><boxGeometry args={[0.07, 0.06, 0.02]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={4} /></mesh>
-          <mesh position={[0.1, 0.05, 0.19]}><boxGeometry args={[0.07, 0.06, 0.02]} /><meshStandardMaterial color={ORB} emissive={ORB} emissiveIntensity={4} /></mesh>
+          <mesh castShadow position={[0, 0.28, 0]}><boxGeometry args={[0.44, 0.44, 0.40]} /><meshStandardMaterial color={INNER} roughness={0.9} emissive={INNER} emissiveIntensity={0.35} /></mesh>
+          <mesh castShadow position={[0, 0.58, 0]}><boxGeometry args={[0.22, 0.36, 0.22]} /><meshStandardMaterial color={INNER} roughness={0.9} /></mesh>
+          {/* Eye slits — bright cyan emissive */}
+          <mesh position={[-0.1, 0.05, 0.19]}><boxGeometry args={[0.07, 0.06, 0.02]} /><meshStandardMaterial color={EYE} emissive={EYE} emissiveIntensity={7.0} toneMapped={false} /></mesh>
+          <mesh position={[0.1, 0.05, 0.19]}><boxGeometry args={[0.07, 0.06, 0.02]} /><meshStandardMaterial color={EYE} emissive={EYE} emissiveIntensity={7.0} toneMapped={false} /></mesh>
         </group>
+       </group>
       </group>
       <pointLight ref={playerLtRef} color="#a030ff" intensity={1.5} distance={10} decay={2} />
     </>
@@ -399,7 +449,8 @@ function RogueMeshAnimated({ gs }: PlayerProps) {
     t.current += delta;
     const p = gs.current.player;
     groupRef.current.position.set(p.x, 0, p.z);
-    groupRef.current.rotation.y = p.angle + Math.PI;
+    groupRef.current.rotation.y = p.angle;
+    applyRaceScale(gs, groupRef.current);
     const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
     lastX.current = p.x; lastZ.current = p.z;
     if (leftArmRef.current && rightArmRef.current && legsRef.current) {
@@ -477,4 +528,296 @@ function RogueMeshAnimated({ gs }: PlayerProps) {
   );
 }
 
-const GAME_CONFIG_INV_TIME = 0.8;
+// ─── Necromancer — robed scythe-wielder (meshBasicMaterial, iOS-safe) ────────
+
+function NecromancerMeshAnimated({ gs }: PlayerProps) {
+  const groupRef    = useRef<THREE.Group>(null);
+  const bodyRef     = useRef<THREE.Mesh>(null);
+  const leftArmRef  = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const legsRef     = useRef<THREE.Group>(null);
+  const weaponRef   = useRef<THREE.Group>(null);
+  const capeRef     = useRef<THREE.Mesh>(null);
+  const playerLtRef = useRef<THREE.PointLight>(null);
+  const t           = useRef(0);
+  const lastX       = useRef(0);
+  const lastZ       = useRef(0);
+  const weaponSwing = useRef(0);
+  const lastAttack  = useRef(0);
+
+  useFrame((_, delta) => {
+    if (!gs.current || !groupRef.current) return;
+    t.current += delta;
+    const p = gs.current.player;
+    groupRef.current.position.set(p.x, 0, p.z);
+    groupRef.current.rotation.y = p.angle;
+    applyRaceScale(gs, groupRef.current);
+    const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
+    lastX.current = p.x; lastZ.current = p.z;
+    if (leftArmRef.current && rightArmRef.current && legsRef.current) {
+      if (isMoving && !p.isDashing) {
+        const freq = 7, amp = 0.45;
+        leftArmRef.current.rotation.x  =  Math.sin(t.current * freq) * amp;
+        rightArmRef.current.rotation.x = -Math.sin(t.current * freq) * amp;
+        const lg = legsRef.current.children;
+        if (lg[0]) (lg[0] as THREE.Group).rotation.x =  Math.sin(t.current * freq) * amp;
+        if (lg[1]) (lg[1] as THREE.Group).rotation.x = -Math.sin(t.current * freq) * amp;
+      } else {
+        leftArmRef.current.rotation.x  = Math.sin(t.current * 1.5) * 0.04;
+        rightArmRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.04 + 0.08;
+        const lg = legsRef.current.children;
+        if (lg[0]) (lg[0] as THREE.Group).rotation.x = 0;
+        if (lg[1]) (lg[1] as THREE.Group).rotation.x = 0;
+      }
+    }
+    if (bodyRef.current) bodyRef.current.position.y = 1.0 + Math.sin(t.current * 1.5) * 0.02;
+    if (p.attackTrigger !== lastAttack.current) { lastAttack.current = p.attackTrigger; weaponSwing.current = 1; }
+    if (weaponSwing.current > 0) weaponSwing.current = Math.max(0, weaponSwing.current - delta * 4);
+    if (weaponRef.current) {
+      const swp = weaponSwing.current;
+      if (swp > 0) {
+        const prog = 1 - swp;
+        // Wide horizontal slash for scythe
+        weaponRef.current.rotation.z = -0.3 + prog * Math.PI * 0.8;
+        weaponRef.current.rotation.x = Math.sin(prog * Math.PI) * 0.4;
+      } else {
+        weaponRef.current.rotation.z = THREE.MathUtils.lerp(weaponRef.current.rotation.z, -0.3, 0.12);
+        weaponRef.current.rotation.x = THREE.MathUtils.lerp(weaponRef.current.rotation.x, 0, 0.12);
+      }
+    }
+    groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, p.isDashing ? -0.2 : 0, 0.2);
+    if (capeRef.current) capeRef.current.rotation.x = Math.sin(t.current * 2.5) * 0.08;
+    if (playerLtRef.current) {
+      playerLtRef.current.position.set(p.x, 2, p.z);
+      const invPct = Math.max(0, p.invTimer / GAME_CONFIG_INV_TIME);
+      playerLtRef.current.intensity = 1.2 + invPct * 3;
+      if (invPct > 0.1) playerLtRef.current.color.setRGB(0.8, 0.1, 0.8);
+      else playerLtRef.current.color.setRGB(0.5, 0.15, 0.7);
+    }
+  });
+
+  // Palette
+  const ROBE = "#1a0828"; const INNER = "#0e0418"; const HOOD = "#120620";
+  const SKIN = "#c8b8a0"; const SCYTHE_SHAFT = "#2a1840"; const SCYTHE_BLADE = "#6a1e8a";
+  const EYE = "#cc66ff";
+
+  return (
+    <>
+      <group ref={groupRef}>
+        {/* Legs (hidden under robe, short stubs) */}
+        <group ref={legsRef}>
+          <group position={[-0.15, 0.4, 0]}>
+            <mesh castShadow><boxGeometry args={[0.18, 0.45, 0.18]} /><meshBasicMaterial color={INNER} /></mesh>
+          </group>
+          <group position={[0.15, 0.4, 0]}>
+            <mesh castShadow><boxGeometry args={[0.18, 0.45, 0.18]} /><meshBasicMaterial color={INNER} /></mesh>
+          </group>
+        </group>
+        {/* Robe body — wide at bottom (tattered skirt look) */}
+        <mesh ref={bodyRef} castShadow position={[0, 1.0, 0]}>
+          <boxGeometry args={[0.68, 0.95, 0.5]} />
+          <meshBasicMaterial color={ROBE} />
+        </mesh>
+        {/* Robe skirt — wider hem */}
+        <mesh castShadow position={[0, 0.55, 0]}>
+          <boxGeometry args={[0.78, 0.35, 0.58]} />
+          <meshBasicMaterial color={ROBE} />
+        </mesh>
+        {/* Hood — slightly forward-tilted */}
+        <mesh castShadow position={[0, 1.72, 0.06]}>
+          <boxGeometry args={[0.52, 0.52, 0.52]} />
+          <meshBasicMaterial color={HOOD} />
+        </mesh>
+        {/* Hood top rim */}
+        <mesh castShadow position={[0, 1.95, -0.04]}>
+          <boxGeometry args={[0.46, 0.12, 0.48]} />
+          <meshBasicMaterial color={HOOD} />
+        </mesh>
+        {/* Glowing eyes (deep inside hood) */}
+        <mesh position={[-0.1, 1.7, 0.27]}>
+          <boxGeometry args={[0.08, 0.05, 0.02]} />
+          <meshBasicMaterial color={EYE} />
+        </mesh>
+        <mesh position={[0.1, 1.7, 0.27]}>
+          <boxGeometry args={[0.08, 0.05, 0.02]} />
+          <meshBasicMaterial color={EYE} />
+        </mesh>
+        {/* Left arm — skeletal hand visible at hem */}
+        <group ref={leftArmRef} position={[-0.42, 1.12, 0]}>
+          <mesh castShadow position={[0, -0.15, 0]}><boxGeometry args={[0.2, 0.55, 0.2]} /><meshBasicMaterial color={ROBE} /></mesh>
+          {/* Skeletal hand */}
+          <mesh castShadow position={[0, -0.48, 0.04]}><boxGeometry args={[0.14, 0.16, 0.1]} /><meshBasicMaterial color={SKIN} /></mesh>
+        </group>
+        {/* Right arm — holds scythe */}
+        <group ref={rightArmRef} position={[0.42, 1.12, 0]}>
+          <mesh castShadow position={[0, -0.15, 0]}><boxGeometry args={[0.2, 0.55, 0.2]} /><meshBasicMaterial color={ROBE} /></mesh>
+        </group>
+        {/* Scythe weapon — shaft up from right hand, blade curves forward at top */}
+        <group position={[0.12, -0.35, 0]} rotation={[0, 0, -0.3]}>
+          <group ref={weaponRef}>
+            {/* Shaft */}
+            <mesh castShadow position={[0, 0.8, 0]}><boxGeometry args={[0.06, 1.8, 0.06]} /><meshBasicMaterial color={SCYTHE_SHAFT} /></mesh>
+            {/* Curved blade — angled forward */}
+            <mesh castShadow position={[0.2, 1.75, 0]} rotation={[0, 0, -0.8]}>
+              <boxGeometry args={[0.06, 0.8, 0.03]} />
+              <meshBasicMaterial color={SCYTHE_BLADE} />
+            </mesh>
+            {/* Blade edge glow */}
+            <mesh position={[0.25, 1.72, 0]} rotation={[0, 0, -0.8]}>
+              <boxGeometry args={[0.02, 0.82, 0.02]} />
+              <meshBasicMaterial color="#cc44ff" />
+            </mesh>
+            {/* Pommel */}
+            <mesh position={[0, -0.15, 0]}>
+              <sphereGeometry args={[0.06, 6, 6]} />
+              <meshBasicMaterial color={SCYTHE_SHAFT} />
+            </mesh>
+          </group>
+        </group>
+        {/* Tattered cape */}
+        <mesh ref={capeRef} castShadow position={[0, 0.95, -0.28]}>
+          <boxGeometry args={[0.6, 0.95, 0.05]} />
+          <meshBasicMaterial color={INNER} />
+        </mesh>
+      </group>
+      <pointLight ref={playerLtRef} />
+    </>
+  );
+}
+
+// ─── Bard — theatrical sniper with lute (meshBasicMaterial, iOS-safe) ────────
+
+function BardMeshAnimated({ gs }: PlayerProps) {
+  const groupRef    = useRef<THREE.Group>(null);
+  const bodyRef     = useRef<THREE.Mesh>(null);
+  const leftArmRef  = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const legsRef     = useRef<THREE.Group>(null);
+  const capeRef     = useRef<THREE.Mesh>(null);
+  const playerLtRef = useRef<THREE.PointLight>(null);
+  const t           = useRef(0);
+  const lastX       = useRef(0);
+  const lastZ       = useRef(0);
+
+  useFrame((_, delta) => {
+    if (!gs.current || !groupRef.current) return;
+    t.current += delta;
+    const p = gs.current.player;
+    groupRef.current.position.set(p.x, 0, p.z);
+    groupRef.current.rotation.y = p.angle;
+    applyRaceScale(gs, groupRef.current);
+    const isMoving = Math.abs(p.x - lastX.current) > 0.001 || Math.abs(p.z - lastZ.current) > 0.001;
+    lastX.current = p.x; lastZ.current = p.z;
+    if (leftArmRef.current && rightArmRef.current && legsRef.current) {
+      if (isMoving && !p.isDashing) {
+        const freq = 8, amp = 0.4;
+        leftArmRef.current.rotation.x  =  Math.sin(t.current * freq) * amp;
+        rightArmRef.current.rotation.x = -Math.sin(t.current * freq) * amp * 0.3;
+        const lg = legsRef.current.children;
+        if (lg[0]) (lg[0] as THREE.Group).rotation.x =  Math.sin(t.current * freq) * amp;
+        if (lg[1]) (lg[1] as THREE.Group).rotation.x = -Math.sin(t.current * freq) * amp;
+      } else {
+        leftArmRef.current.rotation.x  = Math.sin(t.current * 2) * 0.06;
+        rightArmRef.current.rotation.x = Math.sin(t.current * 2.5) * 0.04;
+        const lg = legsRef.current.children;
+        if (lg[0]) (lg[0] as THREE.Group).rotation.x = 0;
+        if (lg[1]) (lg[1] as THREE.Group).rotation.x = 0;
+      }
+    }
+    if (bodyRef.current) bodyRef.current.position.y = 0.95 + Math.sin(t.current * 1.8) * 0.02;
+    groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, p.isDashing ? -0.2 : 0, 0.2);
+    if (capeRef.current) capeRef.current.rotation.x = Math.sin(t.current * 2.2) * 0.06;
+    if (playerLtRef.current) {
+      playerLtRef.current.position.set(p.x, 2, p.z);
+      const invPct = Math.max(0, p.invTimer / GAME_CONFIG_INV_TIME);
+      playerLtRef.current.intensity = 1.0 + invPct * 3;
+      if (invPct > 0.1) playerLtRef.current.color.setRGB(1, 0.7, 0.2);
+      else playerLtRef.current.color.setRGB(0.8, 0.6, 0.2);
+    }
+  });
+
+  const ROBE = "#0a0808"; const TRIM = "#c8a020"; const HOOD = "#3a2810";
+  const SKIN = "#c0b0a0"; const EYE = "#ffaa22";
+  const LUTE_BODY = "#2a1a08"; const LUTE_STRING = "#ffc030";
+
+  return (
+    <>
+      <group ref={groupRef}>
+        {/* Legs */}
+        <group ref={legsRef}>
+          <group position={[-0.12, 0.38, 0]}>
+            <mesh castShadow><boxGeometry args={[0.16, 0.42, 0.16]} /><meshBasicMaterial color={ROBE} /></mesh>
+          </group>
+          <group position={[0.12, 0.38, 0]}>
+            <mesh castShadow><boxGeometry args={[0.16, 0.42, 0.16]} /><meshBasicMaterial color={ROBE} /></mesh>
+          </group>
+        </group>
+        {/* Robe body — wider at shoulders */}
+        <mesh ref={bodyRef} castShadow position={[0, 0.95, 0]}>
+          <boxGeometry args={[0.6, 0.8, 0.42]} />
+          <meshBasicMaterial color={ROBE} />
+        </mesh>
+        {/* Gold trim band at waist */}
+        <mesh position={[0, 0.6, 0]}>
+          <boxGeometry args={[0.55, 0.08, 0.4]} />
+          <meshBasicMaterial color={TRIM} />
+        </mesh>
+        {/* Shoulder accents */}
+        <mesh position={[-0.34, 1.22, 0]}>
+          <boxGeometry args={[0.14, 0.1, 0.32]} />
+          <meshBasicMaterial color={TRIM} />
+        </mesh>
+        <mesh position={[0.34, 1.22, 0]}>
+          <boxGeometry args={[0.14, 0.1, 0.32]} />
+          <meshBasicMaterial color={TRIM} />
+        </mesh>
+        {/* Hood */}
+        <mesh castShadow position={[0, 1.58, 0.04]}>
+          <boxGeometry args={[0.46, 0.44, 0.44]} />
+          <meshBasicMaterial color={HOOD} />
+        </mesh>
+        {/* Eyes — amber glow */}
+        <mesh position={[-0.09, 1.56, 0.24]}>
+          <boxGeometry args={[0.07, 0.04, 0.02]} />
+          <meshBasicMaterial color={EYE} />
+        </mesh>
+        <mesh position={[0.09, 1.56, 0.24]}>
+          <boxGeometry args={[0.07, 0.04, 0.02]} />
+          <meshBasicMaterial color={EYE} />
+        </mesh>
+        {/* Right arm */}
+        <group ref={rightArmRef} position={[0.38, 1.05, 0]}>
+          <mesh castShadow position={[0, -0.15, 0]}><boxGeometry args={[0.16, 0.48, 0.16]} /><meshBasicMaterial color={ROBE} /></mesh>
+          <mesh position={[0, -0.44, 0.03]}><boxGeometry args={[0.12, 0.12, 0.08]} /><meshBasicMaterial color={SKIN} /></mesh>
+        </group>
+        {/* Left arm — holds lute */}
+        <group ref={leftArmRef} position={[-0.38, 1.05, 0]}>
+          <mesh castShadow position={[0, -0.15, 0]}><boxGeometry args={[0.16, 0.48, 0.16]} /><meshBasicMaterial color={ROBE} /></mesh>
+          {/* Lute body */}
+          <mesh castShadow position={[-0.06, -0.35, 0.12]}>
+            <boxGeometry args={[0.22, 0.3, 0.08]} />
+            <meshBasicMaterial color={LUTE_BODY} />
+          </mesh>
+          {/* Lute neck */}
+          <mesh position={[-0.06, -0.08, 0.12]}>
+            <boxGeometry args={[0.05, 0.35, 0.04]} />
+            <meshBasicMaterial color={LUTE_BODY} />
+          </mesh>
+          {/* Lute strings — amber emissive */}
+          <mesh position={[-0.06, -0.22, 0.17]}>
+            <boxGeometry args={[0.12, 0.22, 0.01]} />
+            <meshBasicMaterial color={LUTE_STRING} />
+          </mesh>
+        </group>
+        {/* Cape */}
+        <mesh ref={capeRef} castShadow position={[0, 0.88, -0.24]}>
+          <boxGeometry args={[0.52, 0.78, 0.04]} />
+          <meshBasicMaterial color={ROBE} />
+        </mesh>
+      </group>
+      <pointLight ref={playerLtRef} />
+    </>
+  );
+}
+
+const GAME_CONFIG_INV_TIME = 0.6;

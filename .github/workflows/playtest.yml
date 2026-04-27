@@ -1,9 +1,21 @@
 # Build the dungeon-requiem artifact and deploy it to GitHub Pages so the
 # game can be playtested directly from a live URL — no Replit pull needed.
 #
+# DEPLOY RACE AVOIDANCE
+# ---------------------
+# GitHub Pages serves a single site — whichever branch pushes most recently
+# becomes the live build. To prevent feature branches from silently clobbering
+# each other's deploys, only this branch is allowed to publish here. It is
+# the canonical "everything merged" branch carrying both the Labyrinth game
+# mode and the gear-overhaul commits.
+#
+# If you want to add another branch to the live deploy list, first make sure
+# it contains every game mode (classic + labyrinth) so it won't regress the
+# live URL when it wins the deploy race.
+#
 # After the first successful run, visit the repo Settings → Pages and set
-# "Source" to "GitHub Actions". From then on every push to the branches
-# below will rebuild and redeploy the site automatically.
+# "Source" to "GitHub Actions". From then on every push to the branch below
+# will rebuild and redeploy the site automatically.
 #
 # Published URL: https://cyberheart777.github.io/Dark-Fantasy-Slash/
 
@@ -12,8 +24,7 @@ name: Playtest Deploy
 on:
   push:
     branches:
-      - main
-      - claude/upload-hero-glb-files-HzrBb
+      - claude/labyrinth-portals-shroud-HzrBb
   workflow_dispatch:
 
 # Minimum permissions needed for GitHub Pages deployment via Actions.

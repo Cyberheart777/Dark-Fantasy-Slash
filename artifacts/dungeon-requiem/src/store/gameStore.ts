@@ -9,6 +9,7 @@ import type { UpgradeDef } from "../data/UpgradeData";
 import type { CharacterClass } from "../data/CharacterData";
 import type { RaceType } from "../data/RaceData";
 import type { DifficultyTier } from "../data/DifficultyData";
+import type { LabyrinthDifficulty } from "../game/labyrinth/LabyrinthConfig";
 
 import type { GearDef } from "../data/GearData";
 
@@ -37,7 +38,9 @@ export type GamePhase =
   | "paused"
   | "levelup"
   | "gameover"
-  | "trialvictory";
+  | "trialvictory"
+  | "labyrinth_charselect"
+  | "labyrinth";
 
 export interface EnemyUIState {
   id: string;
@@ -104,6 +107,9 @@ export interface GameUIState {
   attackFlash: boolean;
   attackTrigger: number;
   isDashing: boolean;
+  actionCooldownTimer: number;
+  actionCooldownMax: number;
+  actionReady: boolean;
 
   // Settings
   masterVolume: number;
@@ -122,6 +128,8 @@ export interface GameUIState {
   // Difficulty & mode
   difficultyTier: DifficultyTier;
   trialMode: boolean;
+  labyrinthDifficulty: LabyrinthDifficulty;
+  trialDeathKnight: boolean;
 
   // Soul shards (per-run counter — persistent total lives in metaStore)
   shardsThisRun: number;
@@ -151,6 +159,21 @@ export interface GameUIState {
   // Active buffs/debuffs (synced each frame from the game loop)
   activeBuffs: ActiveBuff[];
 
+  /** Currently-inspected affixed enemy. Set by Enemy3D.onClick when
+   *  the player taps an affixed enemy; cleared when the player taps
+   *  outside the tooltip OR when the inspected enemy dies. Drives
+   *  the AffixTooltip overlay (HUD-level DOM popup). */
+  inspectedAffix: { enemyType: string; affixes: string[] } | null;
+
+  /** Set of affix ids encountered in the CURRENT SESSION (resets on
+   *  reload). Used to gate the first-encounter banner — each affix
+   *  shows the banner once per session, never repeats. */
+  encounteredAffixesSession: Set<string>;
+  /** Affix to show in the first-encounter banner overlay. Set by
+   *  markAffixEncountered() the moment a new-this-session affix is
+   *  spotted; AffixBanner clears it after the 3.5s fade. */
+  pendingAffixBanner: string | null;
+
   // Gear
   equippedWeapon: GearDef | null;
   equippedArmor: GearDef | null;
@@ -165,10 +188,20 @@ export interface GameUIState {
   addGuaranteedShards: (n: number) => void;
   setBossState: (hp: number, maxHp: number, name: string, alive: boolean) => void;
   setBossSpecialWarn: (active: boolean) => void;
+  setInspectedAffix: (info: { enemyType: string; affixes: string[] } | null) => void;
+  /** Records an affix encounter for the session. If this is the
+   *  FIRST sighting of this affix this session, also sets
+   *  pendingAffixBanner so the AffixBanner overlay shows. Returns
+   *  true on first sight (banner triggered), false on repeat. */
+  markAffixEncountered: (affix: string) => boolean;
+  /** Clears the pending banner — called by AffixBanner after its
+   *  3.5s fade-out completes. */
+  clearAffixBanner: () => void;
   setSelectedClass: (cls: CharacterClass) => void;
   setSelectedRace: (race: RaceType) => void;
   setDifficultyTier: (tier: DifficultyTier) => void;
   setTrialMode: (trial: boolean) => void;
+  setLabyrinthDifficulty: (d: LabyrinthDifficulty) => void;
   setPlayerHP: (hp: number, maxHp: number) => void;
   setPlayerPos: (x: number, z: number, angle: number) => void;
   setProgression: (level: number, xp: number, xpToNext: number) => void;
@@ -180,6 +213,7 @@ export interface GameUIState {
   addDamagePopup: (popup: DamagePopup) => void;
   removeDamagePopup: (id: string) => void;
   setAttackState: (attackTrigger: number, isDashing: boolean) => void;
+  setActionState: (cooldownTimer: number, cooldownMax: number) => void;
   setVolume: (master: number, sfx: number, music: number, muted: boolean) => void;
   setBestScore: (score: number, wave: number) => void;
   setNemesisState: (alive: boolean, announce: string) => void;
@@ -214,6 +248,9 @@ const initialState = {
   attackFlash: false,
   attackTrigger: 0,
   isDashing: false,
+  actionCooldownTimer: 0,
+  actionCooldownMax: 60,
+  actionReady: true,
   masterVolume: 0.6,
   sfxVolume: 0.7,
   musicVolume: 0.3,
@@ -224,6 +261,8 @@ const initialState = {
   selectedRace: "human" as RaceType,
   difficultyTier: "normal" as DifficultyTier,
   trialMode: false,
+  labyrinthDifficulty: "normal" as LabyrinthDifficulty,
+  trialDeathKnight: false,
   shardsThisRun: 0,
   guaranteedShards: 0,
   bossHP: 0,
@@ -237,13 +276,16 @@ const initialState = {
   runExtracted: false,
   extractedBonusShards: 0,
   activeBuffs: [] as ActiveBuff[],
+  inspectedAffix: null as { enemyType: string; affixes: string[] } | null,
+  encounteredAffixesSession: new Set<string>(),
+  pendingAffixBanner: null as string | null,
   equippedWeapon: null as GearDef | null,
   equippedArmor: null as GearDef | null,
   equippedTrinket: null as GearDef | null,
   inventory: [] as GearDef[],
 };
 
-export const useGameStore = create<GameUIState>((set) => ({
+export const useGameStore = create<GameUIState>((set, get) => ({
   ...initialState,
 
   setPhase: (phase) => set({ phase }),
@@ -251,6 +293,7 @@ export const useGameStore = create<GameUIState>((set) => ({
   setSelectedRace: (selectedRace) => set({ selectedRace }),
   setDifficultyTier: (difficultyTier) => set({ difficultyTier }),
   setTrialMode: (trialMode) => set({ trialMode }),
+  setLabyrinthDifficulty: (labyrinthDifficulty: LabyrinthDifficulty) => set({ labyrinthDifficulty }),
   addRunShards: (n) => set((s) => ({ shardsThisRun: s.shardsThisRun + n })),
   addGuaranteedShards: (n) => set((s) => ({
     shardsThisRun: s.shardsThisRun + n,
@@ -258,6 +301,18 @@ export const useGameStore = create<GameUIState>((set) => ({
   })),
   setBossState: (hp, maxHp, name, alive) => set({ bossHP: hp, bossMaxHP: maxHp, bossName: name, bossAlive: alive }),
   setBossSpecialWarn: (active) => set({ bossSpecialWarn: active }),
+  setInspectedAffix: (info) => set({ inspectedAffix: info }),
+  markAffixEncountered: (affix) => {
+    const seen = get().encounteredAffixesSession;
+    if (seen.has(affix)) return false;
+    // Mutate the same Set instance + bump via a fresh wrapper so
+    // selectors that compare reference identity see the change.
+    const next = new Set(seen);
+    next.add(affix);
+    set({ encounteredAffixesSession: next, pendingAffixBanner: affix });
+    return true;
+  },
+  clearAffixBanner: () => set({ pendingAffixBanner: null }),
   setNemesisState: (alive, announce) => set({ nemesisAlive: alive, nemesisAnnounce: announce }),
   setHighestBossWaveCleared: (wave) => set({ highestBossWaveCleared: wave }),
   setRunExtracted: (extracted) => set({ runExtracted: extracted }),
@@ -295,6 +350,9 @@ export const useGameStore = create<GameUIState>((set) => ({
 
   setAttackState: (attackTrigger, isDashing) =>
     set({ attackTrigger, isDashing }),
+
+  setActionState: (cooldownTimer, cooldownMax) =>
+    set({ actionCooldownTimer: cooldownTimer, actionCooldownMax: cooldownMax, actionReady: cooldownTimer <= 0 }),
 
   setVolume: (masterVolume, sfxVolume, musicVolume, muted) =>
     set({ masterVolume, sfxVolume, musicVolume, muted }),

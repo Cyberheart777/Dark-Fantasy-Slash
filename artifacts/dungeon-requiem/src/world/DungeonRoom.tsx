@@ -14,6 +14,7 @@
 import { useMemo, useState, useEffect } from "react";
 import * as THREE from "three";
 import { GAME_CONFIG } from "../data/GameConfig";
+import { DungeonFloor } from "./DungeonFloor";
 
 const H = GAME_CONFIG.ARENA_HALF;
 const W = GAME_CONFIG.WALL_THICKNESS;
@@ -21,7 +22,6 @@ const WH = GAME_CONFIG.WALL_HEIGHT;
 const FULL = H * 2;
 
 // Stone colors — used as tint on procedural textures
-const FLOOR_COLOR = "#4a3860";
 const WALL_COLOR = "#3a2c50";
 const PILLAR_COLOR = "#42305a";
 const ACCENT_COLOR = "#6a4888";
@@ -162,74 +162,12 @@ function generateNormalMap(size: number, tileW: number, tileH: number, groutWidt
   return tex;
 }
 
-function generateFloorTexture(): THREE.CanvasTexture {
-  const size = 512;
-  const tileW = 64, tileH = 64;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d")!;
+// Floor rendering moved to DungeonFloor.tsx — see <DungeonFloor /> below. The
+// floor is now procedural geometry (instanced stone tiles + merged rune
+// line-segments) instead of a single MeshStandardMaterial plane with a
+// canvas-based PBR texture. Kept the wall-side PBR helpers (generateNormalMap
+// + usePBRTextures) since Walls still uses them.
 
-  ctx.fillStyle = "#5a4470";
-  ctx.fillRect(0, 0, size, size);
-
-  for (let row = 0; row < size / tileH; row++) {
-    for (let col = 0; col < size / tileW; col++) {
-      const offset = row % 2 === 0 ? 0 : tileW / 2;
-      const x = col * tileW + offset;
-      const y = row * tileH;
-      const brightness = 0.85 + Math.random() * 0.15;
-      const r = Math.floor(80 * brightness);
-      const g = Math.floor(62 * brightness);
-      const b = Math.floor(100 * brightness);
-      ctx.fillStyle = `rgb(${r},${g},${b})`;
-      ctx.fillRect(x + 2, y + 2, tileW - 4, tileH - 4);
-      ctx.fillStyle = "#150f1a";
-      ctx.fillRect(x, y, tileW, 2);
-      ctx.fillRect(x, y, 2, tileH);
-    }
-  }
-  for (let i = 0; i < 3000; i++) {
-    const px = Math.random() * size;
-    const py = Math.random() * size;
-    const alpha = Math.random() * 0.15;
-    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
-    ctx.fillRect(px, py, 2, 2);
-  }
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(8, 8);
-  return tex;
-}
-
-// ─── Floor ──────────────────────────────────────────────────────────────────
-
-function FloorTile() {
-  const { proceduralAlbedo, proceduralNormal } = useMemo(() => {
-    const albedo = generateFloorTexture();
-    const normal = generateNormalMap(512, 64, 64, 2, true);
-    normal.repeat.set(8, 8);
-    return { proceduralAlbedo: albedo, proceduralNormal: normal };
-  }, []);
-
-  const pbr = usePBRTextures("floor", 8, 8, proceduralAlbedo, proceduralNormal);
-
-  return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <planeGeometry args={[FULL, FULL, 1, 1]} />
-      <meshStandardMaterial
-        map={pbr.albedo}
-        normalMap={pbr.normal}
-        normalScale={new THREE.Vector2(0.6, 0.6)}
-        roughnessMap={pbr.roughness ?? undefined}
-        color={pbr.isExternal ? "#ffffff" : FLOOR_COLOR}
-        roughness={pbr.roughness ? 1.0 : 0.9}
-        metalness={0.0}
-      />
-    </mesh>
-  );
-}
 
 // ─── Walls ──────────────────────────────────────────────────────────────────
 
@@ -332,6 +270,88 @@ function Walls() {
           />
         </mesh>
       ))}
+
+      {/* Base trim — dark stone baseboard at floor level */}
+      {[
+        [0, 0.25, -H - W / 2 + 0.1, FULL + W * 2, 0.5, 0.3, false] as const,
+        [0, 0.25, H + W / 2 - 0.1, FULL + W * 2, 0.5, 0.3, true] as const,
+        [-H - W / 2 + 0.1, 0.25, 0, 0.3, 0.5, FULL, false] as const,
+        [H + W / 2 - 0.1, 0.25, 0, 0.3, 0.5, FULL, false] as const,
+      ].map(([x, y, z, w, h, d, isSouth], i) => (
+        <mesh key={`base_${i}`} position={[x, y, z]}>
+          <boxGeometry args={[w, h, d]} />
+          <meshStandardMaterial
+            color="#1e1430"
+            roughness={0.95}
+            transparent={isSouth || undefined}
+            opacity={isSouth ? 0.3 : 1}
+          />
+        </mesh>
+      ))}
+
+      {/* Mid-height stone band — horizontal molding */}
+      {[
+        [0, WH * 0.5, -H - W / 2 + 0.15, FULL + W * 2, 0.25, 0.35, false] as const,
+        [0, WH * 0.5, H + W / 2 - 0.15, FULL + W * 2, 0.25, 0.35, true] as const,
+        [-H - W / 2 + 0.15, WH * 0.5, 0, 0.35, 0.25, FULL, false] as const,
+        [H + W / 2 - 0.15, WH * 0.5, 0, 0.35, 0.25, FULL, false] as const,
+      ].map(([x, y, z, w, h, d, isSouth], i) => (
+        <mesh key={`mid_${i}`} position={[x, y, z]}>
+          <boxGeometry args={[w, h, d]} />
+          <meshStandardMaterial
+            color="#4a3868"
+            roughness={0.85}
+            metalness={0.08}
+            transparent={isSouth || undefined}
+            opacity={isSouth ? 0.3 : 1}
+          />
+        </mesh>
+      ))}
+
+      <WallButtresses />
+    </group>
+  );
+}
+
+// ─── Wall Buttresses — vertical pilasters + decorative details ──────────────
+
+function WallButtress({ x, y, z, along }: { x: number; y: number; z: number; along: "x" | "z" }) {
+  const depth = along === "x" ? 0.5 : 0.35;
+  const width = along === "x" ? 0.35 : 0.5;
+  return (
+    <group position={[x, 0, z]}>
+      <mesh position={[0, WH / 2, 0]}>
+        <boxGeometry args={[width, WH, depth]} />
+        <meshStandardMaterial color="#3e3058" roughness={0.9} metalness={0.05} />
+      </mesh>
+      <mesh position={[0, WH * 0.55, along === "z" ? (z > 0 ? -depth / 2 - 0.02 : depth / 2 + 0.02) : 0]}>
+        <boxGeometry args={[width * 0.4, 0.5, 0.02]} />
+        <meshStandardMaterial color="#5a30a0" emissive="#4a2080" emissiveIntensity={0.8} roughness={0.3} />
+      </mesh>
+    </group>
+  );
+}
+
+function WallButtresses() {
+  const buttresses: { x: number; z: number; along: "x" | "z" }[] = [];
+  const spacing = 10;
+
+  // North + south walls — buttresses along X axis
+  for (let bx = -H + spacing; bx < H; bx += spacing) {
+    buttresses.push({ x: bx, z: -H - W / 2 + 0.3, along: "z" });
+    buttresses.push({ x: bx, z: H + W / 2 - 0.3, along: "z" });
+  }
+  // West + east walls — buttresses along Z axis
+  for (let bz = -H + spacing; bz < H; bz += spacing) {
+    buttresses.push({ x: -H - W / 2 + 0.3, z: bz, along: "x" });
+    buttresses.push({ x: H + W / 2 - 0.3, z: bz, along: "x" });
+  }
+
+  return (
+    <group>
+      {buttresses.map((b, i) => (
+        <WallButtress key={i} x={b.x} y={0} z={b.z} along={b.along} />
+      ))}
     </group>
   );
 }
@@ -411,7 +431,7 @@ function ArenaBorderGlow() {
 export function DungeonRoom() {
   return (
     <group>
-      <FloorTile />
+      <DungeonFloor />
       <Walls />
       <Pillars />
       <ArenaBorderGlow />

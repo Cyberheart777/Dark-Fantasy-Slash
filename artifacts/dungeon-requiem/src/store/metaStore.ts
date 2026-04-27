@@ -12,6 +12,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { DifficultyTier } from "../data/DifficultyData";
+import { ENHANCE_COST, ENHANCE_MAX } from "../data/GearData";
 import { useAchievementStore } from "./achievementStore";
 
 // ─── Trial buff definitions ──────────────────────────────────────────────────
@@ -40,6 +41,15 @@ export const TRIAL_BUFFS: TrialBuff[] = [
   { class: "rogue",   difficulty: "normal",    label: "Shadow's Swiftness",   description: "+0.5 Move Speed permanently",    stat: "moveSpeed",   value: 0.5 },
   { class: "rogue",   difficulty: "hard",      label: "Shadow's Edge",        description: "+3% Dodge Chance permanently",   stat: "dodgeChance", value: 0.03 },
   { class: "rogue",   difficulty: "nightmare", label: "Shadow's Embrace",     description: "+3% Lifesteal permanently",      stat: "lifesteal",   value: 0.03 },
+  // ── Necromancer champion rewards ──
+  // TODO: replace with Necromancer-specific trial track when available
+  { class: "necromancer", difficulty: "normal",    label: "Shepherd's Vigor",    description: "+15 Max HP permanently",         stat: "maxHealth",   value: 15 },
+  { class: "necromancer", difficulty: "hard",      label: "Shepherd's Command",  description: "+3 Damage permanently",          stat: "damage",      value: 3 },
+  { class: "necromancer", difficulty: "nightmare", label: "Shepherd's Dominion", description: "+3 Armor permanently",           stat: "armor",       value: 3 },
+  // ── Bard champion rewards ──
+  { class: "bard",        difficulty: "normal",    label: "Minstrel's Tempo",    description: "+0.10 Attack Speed permanently",   stat: "attackSpeed", value: 0.10 },
+  { class: "bard",        difficulty: "hard",      label: "Minstrel's Verse",    description: "+4 Damage permanently",            stat: "damage",      value: 4 },
+  { class: "bard",        difficulty: "nightmare", label: "Minstrel's Opus",     description: "+4% Crit Chance permanently",      stat: "critChance",  value: 0.04 },
 ];
 
 /** Difficulty ranking for comparison. */
@@ -91,6 +101,12 @@ export interface StashItem {
   enhanceLevel?: number;
   /** Stored bonuses from the original GearDef. Needed for stat display in UI. */
   bonuses?: Record<string, number>;
+  /** Full description including proc effects. */
+  description?: string;
+  /** Proc identifier for gear with special effects (e.g. arc_warblade_slash). */
+  proc?: string;
+  /** Class restriction if any. */
+  class?: string;
 }
 
 export interface MetaState {
@@ -121,6 +137,28 @@ export interface MetaState {
   // First-run onboarding flag — set once the player has seen the HUD tutorial
   hasSeenTutorial: boolean;
 
+  // ─── Labyrinth cross-run counters ─────────────────────────────────
+  // Persisted across sessions. Labyrinth achievements use these for
+  // "X across all runs" goals. Incremented by actions below; read
+  // by achievement-unlock checks inside LabyrinthScene run-end.
+  /** Total enemies killed across all labyrinth runs (Nemesis). */
+  labyrinthKillCount: number;
+  /** Which classes have extracted at least once (All Roads Lead Out).
+   *  Map keyed by CharacterClass id → true when that class has
+   *  extracted. Boolean-true entries are never removed; the "All
+   *  Roads" achievement fires when all three classes are present. */
+  labyrinthExtractedClasses: Record<string, boolean>;
+  /** Total champion keys obtained across all runs (Skeleton Key). */
+  labyrinthChampionKeyCount: number;
+  /** Total labyrinth runs completed — extract OR defeat both count
+   *  (The Long Game). Incremented once per run on the run-end
+   *  salvage fire. */
+  labyrinthRunCount: number;
+  /** Total successful extractions across all runs (Extractor). */
+  labyrinthExtractionCount: number;
+  /** Total Warden defeats across all runs (Warden's Bane). */
+  labyrinthWardenKills: number;
+
   // User settings — persisted across runs
   settings: {
     screenShake: boolean;   // camera shake on hits / kills / boss slams
@@ -131,6 +169,23 @@ export interface MetaState {
   addShards: (amount: number) => void;
   spendShards: (amount: number) => boolean;
   setUpgradeRank: (id: string, rank: number) => void;
+
+  // ─── Labyrinth cross-run actions ──────────────────────────────────
+  /** Increment the labyrinth kill counter by `n`. Fires the Nemesis
+   *  achievement when it crosses 100. */
+  addLabyrinthKills: (n: number) => void;
+  /** Mark `cls` as having extracted at least once. Fires the All
+   *  Roads Lead Out achievement when all 3 classes are present.
+   *  Also increments labyrinthExtractionCount (cross-run counter
+   *  for the Extractor achievement). */
+  recordLabyrinthExtraction: (cls: string) => void;
+  /** Increment the champion-key counter. Fires Skeleton Key at 7. */
+  recordLabyrinthKeyObtain: () => void;
+  /** Increment the run counter on run end (extract or defeat).
+   *  Fires The Long Game at 10. */
+  recordLabyrinthRunComplete: () => void;
+  /** Increment the Warden-kill counter. Fires Warden's Bane at 3. */
+  recordLabyrinthWardenKill: () => void;
   purchaseRank: (id: string, cost: number, maxRanks: number) => boolean;
   hardReset: () => void;
 
@@ -145,6 +200,9 @@ export interface MetaState {
   equipToLoadout: (stashIndex: number) => void;
   unequipFromLoadout: (slot: string) => void;
   enhanceGear: (stashIndex: number) => boolean;
+  /** Find the best duplicate fuel for enhancing an item at stashIndex.
+   *  Returns the fuel stash index, or -1 if no duplicate is available. */
+  findDuplicateFuel: (stashIndex: number) => number;
   markTutorialSeen: () => void;
   setSettings: (patch: Partial<MetaState["settings"]>) => void;
 }
@@ -163,13 +221,19 @@ const DEFAULT_STATE = {
   milestones: {} as Record<string, boolean>,
   totalKills: 0,
   bestWaveEver: 0,
-  unlockedClasses: ["warrior"] as string[],
+  unlockedClasses: ["warrior", "necromancer", "bard"] as string[],
   unlockedRaces: ["human"] as string[],
   trialWins: {} as Record<string, string>,
   difficultyClears: { normal: 0, hard: 0, nightmare: 0 } as Record<DifficultyTier, number>,
   gearStash: [] as StashItem[],
   equippedLoadout: { weapon: null, armor: null, trinket: null } as Record<string, StashItem | null>,
   hasSeenTutorial: false,
+  labyrinthKillCount: 0,
+  labyrinthExtractedClasses: {} as Record<string, boolean>,
+  labyrinthChampionKeyCount: 0,
+  labyrinthRunCount: 0,
+  labyrinthExtractionCount: 0,
+  labyrinthWardenKills: 0,
   settings: {
     screenShake: true,
     damageNumbers: true,
@@ -199,6 +263,55 @@ export const useMetaStore = create<MetaState>()(
 
       setUpgradeRank: (id, rank) =>
         set((s) => ({ purchased: { ...s.purchased, [id]: rank } })),
+
+      // ─── Labyrinth cross-run counters ─────────────────────────────
+      // Each mutator writes through to the persistence layer AND
+      // fires the matching achievement the moment its threshold is
+      // crossed. Same pattern as addTotalKills (see below) so Steam
+      // SDK integration later can hook at the tryUnlock site only.
+      addLabyrinthKills: (n) => {
+        const s = get();
+        const newTotal = s.labyrinthKillCount + n;
+        set({ labyrinthKillCount: newTotal });
+        if (newTotal >= 100) useAchievementStore.getState().tryUnlock("lab_nemesis");
+      },
+      recordLabyrinthExtraction: (cls) => {
+        const s = get();
+        // Always bump the extraction counter — Extractor fires on
+        // total count (5+) regardless of class. Per-class map is
+        // the separate All Roads Lead Out tracker.
+        const newCount = s.labyrinthExtractionCount + 1;
+        const ach = useAchievementStore.getState();
+        if (s.labyrinthExtractedClasses[cls]) {
+          set({ labyrinthExtractionCount: newCount });
+        } else {
+          const nextClasses = { ...s.labyrinthExtractedClasses, [cls]: true };
+          set({ labyrinthExtractedClasses: nextClasses, labyrinthExtractionCount: newCount });
+          // All three classes extracted → All Roads Lead Out.
+          if (nextClasses["warrior"] && nextClasses["mage"] && nextClasses["rogue"]) {
+            ach.tryUnlock("lab_all_roads");
+          }
+        }
+        if (newCount >= 5) ach.tryUnlock("lab_extractor");
+      },
+      recordLabyrinthKeyObtain: () => {
+        const s = get();
+        const newTotal = s.labyrinthChampionKeyCount + 1;
+        set({ labyrinthChampionKeyCount: newTotal });
+        if (newTotal >= 7) useAchievementStore.getState().tryUnlock("lab_skeleton_key");
+      },
+      recordLabyrinthRunComplete: () => {
+        const s = get();
+        const newTotal = s.labyrinthRunCount + 1;
+        set({ labyrinthRunCount: newTotal });
+        if (newTotal >= 10) useAchievementStore.getState().tryUnlock("lab_long_game");
+      },
+      recordLabyrinthWardenKill: () => {
+        const s = get();
+        const newTotal = s.labyrinthWardenKills + 1;
+        set({ labyrinthWardenKills: newTotal });
+        if (newTotal >= 3) useAchievementStore.getState().tryUnlock("lab_wardens_bane");
+      },
 
       purchaseRank: (id, cost, maxRanks) => {
         const s = get();
@@ -247,14 +360,18 @@ export const useMetaStore = create<MetaState>()(
         const newMilestones = { ...s.milestones };
         if (wave >= 5) newMilestones["wave5"] = true;
         if (wave >= 10) newMilestones["wave10"] = true;
+        if (wave >= 15) newMilestones["wave15"] = true;
+        if (wave >= 20) newMilestones["wave20"] = true;
         set({ bestWaveEver: wave, milestones: newMilestones });
       },
 
       checkUnlocks: () => {
         const s = get();
-        const classes: string[] = ["warrior"];
+        const classes: string[] = ["warrior", "necromancer", "bard"];
         if (s.milestones["wave5"]) classes.push("mage");
         if (s.milestones["kills100"]) classes.push("rogue");
+        if (s.milestones["wave15"]) classes.push("necromancer");
+        if (s.milestones["wave20"]) classes.push("bard");
         const races: string[] = ["human"];
         if (s.milestones["boss_kill"]) races.push("dwarf");
         if (s.milestones["wave10"]) races.push("elf");
@@ -360,22 +477,46 @@ export const useMetaStore = create<MetaState>()(
         });
       },
 
+      findDuplicateFuel: (stashIndex: number) => {
+        const s = get();
+        const item = s.gearStash[stashIndex];
+        if (!item) return -1;
+        let bestIdx = -1;
+        let bestLevel = Infinity;
+        for (let i = 0; i < s.gearStash.length; i++) {
+          if (i === stashIndex) continue;
+          const other = s.gearStash[i];
+          if (other.id === item.id) {
+            const lvl = other.enhanceLevel ?? 0;
+            if (lvl < bestLevel) { bestLevel = lvl; bestIdx = i; }
+          }
+        }
+        return bestIdx;
+      },
+
       enhanceGear: (stashIndex: number) => {
         const s = get();
         const item = s.gearStash[stashIndex];
         if (!item) return false;
         const currentLevel = item.enhanceLevel ?? 0;
-        // Max enhancement by rarity: common +3, rare +5, epic +7
-        const maxLevel = item.rarity === "epic" ? 7 : item.rarity === "rare" ? 5 : 3;
+        const rarity = item.rarity as keyof typeof ENHANCE_MAX;
+        const maxLevel = ENHANCE_MAX[rarity] ?? 3;
         if (currentLevel >= maxLevel) return false;
-        const costs = [0, 30, 60, 100, 150, 220, 300, 400];
-        const cost = costs[currentLevel + 1] ?? 400;
+        const cost = ENHANCE_COST[currentLevel + 1] ?? ENHANCE_COST[ENHANCE_COST.length - 1];
         if (s.shards < cost) return false;
+        const fuelIdx = get().findDuplicateFuel(stashIndex);
+        if (fuelIdx < 0) return false;
         const newStash = [...s.gearStash];
         const newLevel = currentLevel + 1;
-        newStash[stashIndex] = { ...item, enhanceLevel: newLevel };
+        // Remove fuel first (splice from higher index first to avoid shift)
+        if (fuelIdx > stashIndex) {
+          newStash.splice(fuelIdx, 1);
+          newStash[stashIndex] = { ...item, enhanceLevel: newLevel };
+        } else {
+          newStash.splice(fuelIdx, 1);
+          newStash[stashIndex - 1] = { ...item, enhanceLevel: newLevel };
+        }
         set({ gearStash: newStash, shards: s.shards - cost });
-        // Achievement: max enhancement + golden arsenal
         if (newLevel >= maxLevel) {
           const ach = useAchievementStore.getState();
           ach.tryUnlock("perfection");
@@ -434,6 +575,9 @@ export const useMetaStore = create<MetaState>()(
           };
         }
         return state as MetaState;
+      },
+      onRehydrateStorage: () => (state) => {
+        if (state) state.checkUnlocks();
       },
     },
   ),

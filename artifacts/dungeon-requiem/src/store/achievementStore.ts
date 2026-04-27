@@ -2,6 +2,7 @@
  * achievementStore.ts
  * Zustand store for achievement unlock tracking.
  * tryUnlock() is the single hook point for future Steam SDK integration.
+ * Shard rewards are claimed manually via the Achievements panel.
  */
 
 import { create } from "zustand";
@@ -12,11 +13,17 @@ export interface AchievementState {
   /** Map of achievement id → unlock timestamp (ms). */
   unlocked: Record<string, number>;
 
+  /** Map of achievement id → true if shard reward has been claimed. */
+  claimed: Record<string, boolean>;
+
   /** Queue of achievement ids to show as toasts (FIFO). */
   toastQueue: string[];
 
   /** Try to unlock an achievement. Returns true if newly unlocked. */
   tryUnlock: (id: string) => boolean;
+
+  /** Claim the shard reward for an unlocked achievement. Returns shards awarded (0 if already claimed). */
+  claimReward: (id: string) => number;
 
   /** Check if an achievement is already unlocked. */
   isUnlocked: (id: string) => boolean;
@@ -32,13 +39,12 @@ export const useAchievementStore = create<AchievementState>()(
   persist(
     (set, get) => ({
       unlocked: {},
+      claimed: {},
       toastQueue: [],
 
       tryUnlock: (id: string) => {
         const s = get();
-        // Already unlocked — no-op
         if (s.unlocked[id]) return false;
-        // Unknown achievement — guard
         if (!ACHIEVEMENT_MAP[id]) return false;
 
         set({
@@ -46,10 +52,17 @@ export const useAchievementStore = create<AchievementState>()(
           toastQueue: [...s.toastQueue, id],
         });
 
-        // Future Steam SDK hook point:
-        // steamworks?.unlockAchievement(id);
-
         return true;
+      },
+
+      claimReward: (id: string) => {
+        const s = get();
+        if (!s.unlocked[id]) return 0;
+        if (s.claimed[id]) return 0;
+        const def = ACHIEVEMENT_MAP[id];
+        if (!def || !def.shardReward || def.shardReward <= 0) return 0;
+        set({ claimed: { ...s.claimed, [id]: true } });
+        return def.shardReward;
       },
 
       isUnlocked: (id: string) => !!get().unlocked[id],
@@ -62,12 +75,12 @@ export const useAchievementStore = create<AchievementState>()(
         return next;
       },
 
-      resetAchievements: () => set({ unlocked: {}, toastQueue: [] }),
+      resetAchievements: () => set({ unlocked: {}, claimed: {}, toastQueue: [] }),
     }),
     {
       name: "dungeon-requiem-achievements",
-      version: 1,
-      partialize: (state) => ({ unlocked: state.unlocked }),
+      version: 2,
+      partialize: (state) => ({ unlocked: state.unlocked, claimed: state.claimed }),
     },
   ),
 );

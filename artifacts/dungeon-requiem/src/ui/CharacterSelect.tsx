@@ -25,13 +25,27 @@ const clickSfx = () => audioManager.play("menu_click");
  */
 const CHARSELECT_BG_URL = `${import.meta.env.BASE_URL}images/character-menu-bg.png`;
 
-const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue"];
+const CLASSES: CharacterClass[] = ["warrior", "mage", "rogue", "necromancer", "bard", "death_knight"];
 
 const CLASS_UNLOCK_CONDITION: Record<CharacterClass, string | null> = {
   warrior: null,
   mage: "Reach Wave 5",
   rogue: "Slay 100 enemies (cumulative)",
+  necromancer: "Clear Wave 15",
+  bard: "Clear Wave 20",
+  death_knight: "Defeat the Death Knight",
 };
+
+const CLASS_AVAILABLE: Record<CharacterClass, boolean> = {
+  warrior: true,
+  mage: true,
+  rogue: true,
+  necromancer: false,
+  bard: false,
+  death_knight: false,
+};
+
+const COMING_SOON_HINT = "Coming soon in a future update.";
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -70,6 +84,7 @@ export function CharacterSelect() {
   };
 
   const confirmClass = (c: CharacterClass) => {
+    if (!CLASS_AVAILABLE[c]) return;
     if (!isClassUnlocked(c)) return;
     clickSfx();
     if (cls === c) {
@@ -83,6 +98,7 @@ export function CharacterSelect() {
       setSelectedClass(c);
       setDifficultyTier(difficulty);
       setTrialMode(trialMode);
+      useGameStore.setState({ trialDeathKnight: false });
       setPhase("playing");
     } else {
       setCls(c);
@@ -255,7 +271,8 @@ export function CharacterSelect() {
               <div style={S.cards}>
                 {CLASSES.map((c) => {
                   const def = CHARACTER_DATA[c];
-                  const locked = !isClassUnlocked(c);
+                  const comingSoon = !CLASS_AVAILABLE[c];
+                  const locked = comingSoon || !isClassUnlocked(c);
                   const isSelected = cls === c;
                   return (
                     <button
@@ -286,7 +303,7 @@ export function CharacterSelect() {
                         {/* Compact attack badge — always visible */}
                         {!locked && !isSelected && (
                           <span style={{ fontSize: 9, letterSpacing: 1, color: def.accentColor, fontFamily: "monospace", flexShrink: 0 }}>
-                            {c === "warrior" ? "⚔ MELEE" : c === "mage" ? "✦ ORB" : "◆ DAGGERS"}
+                            {c === "warrior" ? "⚔ MELEE" : c === "mage" ? "✦ ORB" : c === "rogue" ? "◆ DAGGERS" : c === "necromancer" ? "⚰ SCYTHE" : c === "death_knight" ? "⛓ CHAINS" : "♪ NOTES"}
                           </span>
                         )}
                         {isSelected && !locked && <span style={{ ...S.checkmark, color: def.accentColor }}>✔</span>}
@@ -295,7 +312,7 @@ export function CharacterSelect() {
 
                       {/* Collapsed: only top row shown. Expanded: full detail */}
                       {locked && (
-                        <div style={S.lockNote}>🔒 {CLASS_UNLOCK_CONDITION[c]}</div>
+                        <div style={S.lockNote}>🔒 {comingSoon ? COMING_SOON_HINT : CLASS_UNLOCK_CONDITION[c]}</div>
                       )}
                       {isSelected && !locked && (
                         <>
@@ -307,7 +324,7 @@ export function CharacterSelect() {
                             <StatBar label="ATK" value={def.attackSpeed}  max={2.5}  color="#c040e0" />
                           </div>
                           <div style={{ ...S.attackBadge, color: def.accentColor, borderColor: def.color + "50" }}>
-                            {c === "warrior" ? "⚔ MELEE SWEEP" : c === "mage" ? "✦ PIERCING ORB" : "◆ TWIN DAGGERS"}
+                            {c === "warrior" ? "⚔ MELEE SWEEP" : c === "mage" ? "✦ PIERCING ORB" : c === "rogue" ? "◆ TWIN DAGGERS" : c === "necromancer" ? "⚰ SCYTHE + MINIONS" : c === "death_knight" ? "⛓ CHAINS + UNDEAD" : "♪ CASCADING NOTES"}
                           </div>
                           <div style={{ ...S.storyBlurb, borderColor: def.color + "40" }}>
                             {def.story}

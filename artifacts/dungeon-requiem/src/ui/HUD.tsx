@@ -7,6 +7,7 @@
 import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
 import { DIFFICULTY_DATA } from "../data/DifficultyData";
+import { UPGRADES } from "../data/UpgradeData";
 import { useEffect, useRef, useState } from "react";
 import { AchievementToast } from "./AchievementToast";
 
@@ -30,6 +31,7 @@ export function HUD({ onExtract }: HUDProps) {
     playerHP, playerMaxHP, xp, xpToNext, level,
     wave, score, kills, survivalTime,
     acquiredUpgrades, isDashing,
+    actionCooldownTimer, actionCooldownMax, actionReady, selectedClass,
     bossHP, bossMaxHP, bossName, bossAlive, bossSpecialWarn,
     nemesisAnnounce,
     highestBossWaveCleared, trialMode,
@@ -37,6 +39,7 @@ export function HUD({ onExtract }: HUDProps) {
     damagePopups, playerX, playerZ,
     difficultyTier, activeBuffs,
   } = useGameStore();
+  const shards = useMetaStore((s) => s.shards);
   const diffDef = DIFFICULTY_DATA[difficultyTier];
 
   // First-run tutorial — show the large prompt panel until the player either
@@ -111,7 +114,7 @@ export function HUD({ onExtract }: HUDProps) {
   return (
     <div style={styles.hud}>
       {/* Top-left: player vitals */}
-      <div style={{ ...styles.vitals, width: isMobile ? 160 : 220 }}>
+      <div style={{ ...styles.vitals, width: isMobile ? 140 : 220, padding: isMobile ? "8px 10px" : "12px 16px", top: isMobile ? 12 : 20, left: isMobile ? 10 : 20 }}>
         {/* HP bar */}
         <div style={styles.barLabel}>
           <span style={{ color: isOverheal ? "#ffcc44" : "#ff6666", fontWeight: "bold", textShadow: isOverheal ? "0 0 6px #ffaa00" : undefined }}>
@@ -149,7 +152,10 @@ export function HUD({ onExtract }: HUDProps) {
       </div>
 
       {/* Top-center: wave/score */}
-      <div style={styles.center}>
+      <div style={{
+        ...styles.center,
+        padding: isMobile ? "4px 12px" : "8px 24px",
+      }}>
         <div style={{
           display: "inline-block",
           padding: "2px 10px",
@@ -157,18 +163,19 @@ export function HUD({ onExtract }: HUDProps) {
           background: diffDef.color + "22",
           border: `1px solid ${diffDef.color}aa`,
           color: diffDef.accentColor,
-          fontSize: 10,
+          fontSize: isMobile ? 8 : 10,
           fontWeight: 900,
           letterSpacing: 2,
           fontFamily: "monospace",
-          marginBottom: 4,
+          marginBottom: isMobile ? 2 : 4,
           textShadow: `0 0 6px ${diffDef.color}80`,
         }}>{diffDef.label}</div>
-        <div style={styles.waveText}>WAVE {wave}</div>
-        <div style={styles.statsRow}>
+        <div style={{ ...styles.waveText, fontSize: isMobile ? 14 : 22, letterSpacing: isMobile ? 2 : 3 }}>WAVE {wave}</div>
+        <div style={{ ...styles.statsRow, fontSize: isMobile ? 10 : 14, gap: isMobile ? 10 : 20, marginTop: isMobile ? 2 : 4 }}>
           <span>⚔ {kills}</span>
           <span>★ {score.toLocaleString()}</span>
           <span>⏱ {timeStr}</span>
+          <span style={{ color: "#ffcc44" }}>◈ {shards.toLocaleString()}</span>
         </div>
       </div>
 
@@ -178,6 +185,7 @@ export function HUD({ onExtract }: HUDProps) {
           <span>WASD Move</span>
           <span>Mouse Aim &amp; auto-attack</span>
           <span>Shift Dash</span>
+          <span>Space Action</span>
           <span>ESC Pause</span>
         </div>
       )}
@@ -199,6 +207,10 @@ export function HUD({ onExtract }: HUDProps) {
             <span style={styles.tutorialLabel}>Dash — brief invincibility</span>
           </div>
           <div style={styles.tutorialRow}>
+            <span style={styles.tutorialKey}>Space</span>
+            <span style={styles.tutorialLabel}>Action ability — powerful class skill</span>
+          </div>
+          <div style={styles.tutorialRow}>
             <span style={styles.tutorialKey}>ESC</span>
             <span style={styles.tutorialLabel}>Pause</span>
           </div>
@@ -211,36 +223,46 @@ export function HUD({ onExtract }: HUDProps) {
       {/* Bottom-left: upgrades (hidden on mobile to keep joystick area clear) */}
       {upgradeEntries.length > 0 && !isMobile && (
         <div style={styles.upgradePanel}>
-          <div style={styles.upgradeTitle}>UPGRADES</div>
+          <div style={styles.upgradeTitle}>UPGRADES ({upgradeEntries.length})</div>
           <div style={styles.upgradeGrid}>
-            {upgradeEntries.map(([id, count]) => (
-              <div key={id} style={styles.upgradeChip}>
-                <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: "#ddd" }}>
-                  {id.replace(/_/g, " ")}
-                </span>
-                {count > 1 && <span style={{ color: "#ffcc00", marginLeft: 4, fontWeight: "bold" }}>×{count}</span>}
-              </div>
-            ))}
+            {upgradeEntries.map(([id, count]) => {
+              const def = UPGRADES[id as keyof typeof UPGRADES];
+              const name = def?.name ?? id.replace(/_/g, " ");
+              const icon = def?.icon ?? "";
+              const rarityColor = def?.rarity === "epic" ? "#aa44ff" : def?.rarity === "rare" ? "#4488ff" : "#aaa";
+              return (
+                <div key={id} style={{ ...styles.upgradeChip, borderLeft: `2px solid ${rarityColor}` }}>
+                  <span style={{ fontSize: 10, letterSpacing: 1, color: "#ddd" }}>
+                    {icon} {name}
+                  </span>
+                  {count > 1 && <span style={{ color: "#ffcc00", marginLeft: 4, fontWeight: "bold" }}>×{count}</span>}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* Gear slots — top-right */}
-      <div style={styles.gearPanel}>
-        {([["⚔", equippedWeapon], ["🛡", equippedArmor], ["💎", equippedTrinket]] as [string, any][]).map(([slotIcon, gear], i) => (
-          <div key={i} style={{
-            ...styles.gearSlot,
-            borderColor: gear ? (gear.rarity === "epic" ? "#aa44ff" : gear.rarity === "rare" ? "#4488dd" : "#6a6a7a") : "#2a2035",
-            boxShadow: gear?.rarity === "epic" ? "0 0 8px rgba(140,40,255,0.3)" : gear?.rarity === "rare" ? "0 0 6px rgba(60,120,255,0.2)" : "none",
-          }}>
-            <div style={{ fontSize: 16 }}>{gear ? gear.icon : slotIcon}</div>
-            {gear && (
-              <div style={{ fontSize: 8, color: gear.rarity === "epic" ? "#cc88ff" : gear.rarity === "rare" ? "#70b0ff" : "#999", letterSpacing: 1, marginTop: 2, textAlign: "center" as const, lineHeight: 1.2, maxWidth: 52, overflow: "hidden" }}>
-                {gear.name}
-              </div>
-            )}
-          </div>
-        ))}
+      <div style={{ ...styles.gearPanel, top: isMobile ? 80 : 120, right: isMobile ? 8 : 12, gap: isMobile ? 4 : 6 }}>
+        {([["⚔", equippedWeapon], ["🛡", equippedArmor], ["💎", equippedTrinket]] as [string, any][]).map(([slotIcon, gear], i) => {
+          const sz = isMobile ? 40 : 52;
+          return (
+            <div key={i} style={{
+              ...styles.gearSlot,
+              width: sz, height: sz,
+              borderColor: gear ? (gear.rarity === "epic" ? "#aa44ff" : gear.rarity === "rare" ? "#4488dd" : "#6a6a7a") : "#2a2035",
+              boxShadow: gear?.rarity === "epic" ? "0 0 8px rgba(140,40,255,0.3)" : gear?.rarity === "rare" ? "0 0 6px rgba(60,120,255,0.2)" : "none",
+            }}>
+              <div style={{ fontSize: isMobile ? 13 : 16 }}>{gear ? gear.icon : slotIcon}</div>
+              {gear && (
+                <div style={{ fontSize: isMobile ? 7 : 8, color: gear.rarity === "epic" ? "#cc88ff" : gear.rarity === "rare" ? "#70b0ff" : "#999", letterSpacing: 1, marginTop: 1, textAlign: "center" as const, lineHeight: 1.1, maxWidth: sz, overflow: "hidden" }}>
+                  {gear.name}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Dash cooldown indicator — desktop only (mobile has its own dash button) */}
@@ -250,10 +272,70 @@ export function HUD({ onExtract }: HUDProps) {
         </div>
       )}
 
+      {/* Action ability indicator — desktop only */}
+      {!isMobile && (
+        <div style={{
+          position: "absolute",
+          bottom: 40,
+          right: 20,
+          display: "flex",
+          flexDirection: "column" as const,
+          alignItems: "center",
+          gap: 4,
+          padding: "8px 14px",
+          background: actionReady ? "rgba(20,60,20,0.85)" : "rgba(20,20,40,0.75)",
+          border: `1px solid ${actionReady ? "#44cc44" : "#444"}`,
+          borderRadius: 10,
+          transition: "all 0.3s",
+          boxShadow: actionReady ? "0 0 12px rgba(60,200,60,0.4)" : "none",
+        }}>
+          <span style={{
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 2,
+            color: actionReady ? "#88ff88" : "#888",
+            fontFamily: "monospace",
+          }}>
+            {selectedClass === "warrior" ? "WAR CRY" :
+             selectedClass === "mage" ? "ARCANE BARRAGE" :
+             selectedClass === "rogue" ? "FAN OF KNIVES" :
+             selectedClass === "necromancer" ? "ARMY OF DEAD" :
+             "DISCORD"}
+          </span>
+          {!actionReady && (
+            <span style={{
+              fontSize: 13,
+              fontWeight: "bold",
+              color: "#ffaa44",
+              fontFamily: "monospace",
+            }}>
+              {Math.ceil(actionCooldownTimer)}s
+            </span>
+          )}
+          {actionReady && (
+            <span style={{
+              fontSize: 10,
+              color: "#66cc66",
+              fontFamily: "monospace",
+            }}>
+              READY
+            </span>
+          )}
+          <span style={{
+            fontSize: 9,
+            color: "rgba(180,180,180,0.5)",
+            letterSpacing: 1,
+            fontFamily: "monospace",
+          }}>
+            SPACE
+          </span>
+        </div>
+      )}
+
       {/* Extract Run button — shown only after first boss kill, normal mode */}
       {showExtract && (
-        <div style={styles.extractWrapper}>
-          <button style={styles.extractBtn} onClick={onExtract}>
+        <div style={{ ...styles.extractWrapper, top: isMobile ? 12 : 64, right: isMobile ? 8 : 16 }}>
+          <button style={{ ...styles.extractBtn, padding: isMobile ? "8px 12px" : "12px 20px", fontSize: isMobile ? 11 : 13 }} onClick={onExtract}>
             ↑ EXTRACT RUN
             <span style={styles.extractSub}>Keep {extractFraction} of run shards</span>
           </button>

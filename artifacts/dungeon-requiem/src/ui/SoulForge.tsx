@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useMetaStore, TRIAL_BUFFS, getEarnedTrialBuffs, type StashItem } from "../store/metaStore";
 import { META_UPGRADES, buildMetaModifiers, buildTrialModifiers, nextRankCost, nextRankLine } from "../data/MetaUpgradeData";
 import { DIFFICULTIES, DIFFICULTY_DATA } from "../data/DifficultyData";
-import { ENHANCE_MULT, ENHANCE_COST, ENHANCE_COLORS, formatBonuses, type GearDef } from "../data/GearData";
+import { ENHANCE_MULT, ENHANCE_COST, ENHANCE_MAX, ENHANCE_COLORS, PERCENTAGE_BONUS_KEYS, PERCENTAGE_ENHANCE_CAP, formatBonuses, rollGearDrop, type GearDef, type GearRarity } from "../data/GearData";
 import { useGameStore } from "../store/gameStore";
 import { audioManager } from "../audio/AudioManager";
 import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
@@ -18,12 +18,18 @@ import { StatsPanel } from "./PauseMenu";
 
 const clickSfx = () => audioManager.play("menu_click");
 
-/** Scale bonuses by enhancement level for display purposes. */
+/**
+ * Scale bonuses by enhancement level for display purposes. Percentage-based
+ * stats are capped at 1.5× regardless of rarity so the preview matches runtime.
+ * Kept in sync with getEnhancedBonuses in GearData.ts.
+ */
 function scaleBonuses(bonuses: Record<string, number>, enhanceLevel: number): Record<string, number> {
   const mult = ENHANCE_MULT[enhanceLevel] ?? 1;
+  const cappedMult = Math.min(mult, PERCENTAGE_ENHANCE_CAP);
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(bonuses)) {
-    if (typeof v === "number") out[k] = v * mult;
+    if (typeof v !== "number") continue;
+    out[k] = v * (PERCENTAGE_BONUS_KEYS.has(k) ? cappedMult : mult);
   }
   return out;
 }
@@ -68,9 +74,12 @@ function computePreviewStats(
     if (!item || !item.bonuses) continue;
     const enh = item.enhanceLevel ?? 0;
     const mult = ENHANCE_MULT[enh] ?? 1;
+    const cappedMult = Math.min(mult, PERCENTAGE_ENHANCE_CAP);
     const scaled: Partial<Record<keyof PlayerStats, number>> = {};
     for (const [key, val] of Object.entries(item.bonuses)) {
-      if (typeof val === "number") (scaled as Record<string, number>)[key] = val * mult;
+      if (typeof val !== "number") continue;
+      const m = PERCENTAGE_BONUS_KEYS.has(key) ? cappedMult : mult;
+      (scaled as Record<string, number>)[key] = val * m;
     }
     gearMods.push(...flatModifiers(scaled, `gear:${item.id}`));
   }
@@ -89,12 +98,32 @@ function computePreviewStats(
 const SOUL_FORGE_BG_URL = `${import.meta.env.BASE_URL}images/Soul-Forge-bg.png`;
 
 export function SoulForge() {
-  const { shards, totalShardsEarned, purchased, purchaseRank, trialWins, gearStash, sellGear, equippedLoadout, equipToLoadout, unequipFromLoadout, enhanceGear } = useMetaStore();
+  const { shards, totalShardsEarned, purchased, purchaseRank, trialWins, gearStash, sellGear, equippedLoadout, equipToLoadout, unequipFromLoadout, enhanceGear, findDuplicateFuel } = useMetaStore();
   const setPhase = useGameStore((s) => s.setPhase);
   const selectedClass = useGameStore((s) => s.selectedClass);
   const [flash, setFlash] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"forge" | "armory">("forge");
+  const [activeTab, setActiveTab] = useState<"forge" | "armory" | "gambler">("forge");
   const [previewClass, setPreviewClass] = useState<CharacterClass>(selectedClass);
+  const [sortBy, setSortBy] = useState<"default" | "slot" | "rarity" | "name">("default");
+  const [lastGamble, setLastGamble] = useState<StashItem | null>(null);
+  const [gambleAnim, setGambleAnim] = useState(false);
+
+  const duplicateCounts = new Map<string, number>();
+  for (const item of gearStash) {
+    duplicateCounts.set(item.id, (duplicateCounts.get(item.id) ?? 0) + 1);
+  }
+
+  const RARITY_ORDER: Record<string, number> = { epic: 0, rare: 1, common: 2 };
+  const SLOT_ORDER: Record<string, number> = { weapon: 0, armor: 1, trinket: 2 };
+
+  const sortedStashIndices = gearStash.map((_, i) => i);
+  if (sortBy === "slot") {
+    sortedStashIndices.sort((a, b) => (SLOT_ORDER[gearStash[a].slot] ?? 9) - (SLOT_ORDER[gearStash[b].slot] ?? 9));
+  } else if (sortBy === "rarity") {
+    sortedStashIndices.sort((a, b) => (RARITY_ORDER[gearStash[a].rarity] ?? 9) - (RARITY_ORDER[gearStash[b].rarity] ?? 9));
+  } else if (sortBy === "name") {
+    sortedStashIndices.sort((a, b) => gearStash[a].name.localeCompare(gearStash[b].name));
+  }
 
   const previewStats = computePreviewStats(previewClass, purchased, trialWins, equippedLoadout);
 
@@ -157,6 +186,15 @@ export function SoulForge() {
             {gearStash.length > 0 && (
               <span style={styles.tabBadge}>{gearStash.length}</span>
             )}
+          </button>
+          <button
+            style={{
+              ...styles.tabBtn,
+              ...(activeTab === "gambler" ? styles.tabBtnActive : {}),
+            }}
+            onClick={() => { clickSfx(); setActiveTab("gambler"); }}
+          >
+            🎲 GAMBLER
           </button>
         </div>
 
@@ -301,8 +339,8 @@ export function SoulForge() {
         {activeTab === "armory" && (
           <div style={styles.armoryContainer}>
             <div style={styles.armoryIntro}>
-              Equip gear from your stash before your next run. Each slot holds
-              one item. Click an equipped slot to unequip.
+              Equip gear before your next run. Enhancement requires a duplicate
+              of the same gear as fusion material, plus soul shards.
             </div>
 
             {/* ── Stats preview (with class picker) ── */}
@@ -348,7 +386,7 @@ export function SoulForge() {
                   const enh = equipped?.enhanceLevel ?? 0;
                   const enhColor = ENHANCE_COLORS[enh] ?? ENHANCE_COLORS[0];
                   const rarityColor = equipped
-                    ? equipped.rarity === "epic" ? "#aa44ff" : equipped.rarity === "rare" ? "#4488dd" : enhColor.border
+                    ? equipped.rarity === "epic" ? "#aa44ff" : equipped.rarity === "rare" ? "#4488dd" : "#8a8a7a"
                     : "#2a1f3d";
                   return (
                     <button
@@ -374,6 +412,11 @@ export function SoulForge() {
                               {formatBonuses(scaleBonuses(equipped.bonuses as Record<string, number>, enh))}
                             </div>
                           )}
+                          {equipped.description && (
+                            <div style={{ fontSize: 9, color: "#8a70a0", fontStyle: "italic", marginTop: 2, lineHeight: 1.3 }}>
+                              {equipped.description}
+                            </div>
+                          )}
                           <div style={styles.slotUnequipHint}>click to unequip</div>
                         </>
                       ) : (
@@ -387,20 +430,43 @@ export function SoulForge() {
 
             {/* ── Stash ── */}
             <div style={styles.armorySection}>
-              <div style={styles.armorySectionTitle}>
-                STASH {gearStash.length > 0 && <span style={{ color: "#a060c0" }}>({gearStash.length})</span>}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                <div style={styles.armorySectionTitle}>
+                  STASH {gearStash.length > 0 && <span style={{ color: "#a060c0" }}>({gearStash.length})</span>}
+                </div>
+                {gearStash.length > 1 && (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {(["default", "slot", "rarity", "name"] as const).map(s => (
+                      <button
+                        key={s}
+                        onClick={() => { clickSfx(); setSortBy(s); }}
+                        style={{
+                          padding: "4px 10px", fontSize: 10, fontWeight: 900, letterSpacing: 1,
+                          fontFamily: "monospace", borderRadius: 4, cursor: "pointer",
+                          background: sortBy === s ? "#5020a0" : "transparent",
+                          border: `1px solid ${sortBy === s ? "#8040d0" : "#2a1f3d"}`,
+                          color: sortBy === s ? "#d0a0ff" : "#504060",
+                        }}
+                      >{s === "default" ? "ALL" : s.toUpperCase()}</button>
+                    ))}
+                  </div>
+                )}
               </div>
               {gearStash.length > 0 ? (
                 <div style={styles.stashGrid}>
-                  {gearStash.map((item, i) => {
+                  {sortedStashIndices.map((i) => {
+                    const item = gearStash[i];
                     const enh = item.enhanceLevel ?? 0;
                     const enhColor = ENHANCE_COLORS[enh] ?? ENHANCE_COLORS[0];
-                    const rarityColor = item.rarity === "epic" ? "#aa44ff" : item.rarity === "rare" ? "#4488dd" : enhColor.border;
+                    const rarityColor = item.rarity === "epic" ? "#aa44ff" : item.rarity === "rare" ? "#4488dd" : "#8a8a7a";
                     const sellVal = item.rarity === "epic" ? 35 : item.rarity === "rare" ? 15 : 5;
-                    const enhMax = item.rarity === "epic" ? 7 : item.rarity === "rare" ? 5 : 3;
+                    const enhMax = ENHANCE_MAX[item.rarity as keyof typeof ENHANCE_MAX] ?? 3;
                     const canEnhance = enh < enhMax;
-                    const enhanceCost = canEnhance ? (ENHANCE_COST[enh + 1] ?? 400) : 0;
+                    const enhanceCost = canEnhance ? (ENHANCE_COST[enh + 1] ?? ENHANCE_COST[ENHANCE_COST.length - 1]) : 0;
                     const canAffordEnhance = shards >= enhanceCost;
+                    const hasDuplicate = findDuplicateFuel(i) >= 0;
+                    const canFuse = canEnhance && canAffordEnhance && hasDuplicate;
+                    const dupeCount = duplicateCounts.get(item.id) ?? 1;
                     return (
                       <div
                         key={`${item.id}-${i}`}
@@ -411,7 +477,19 @@ export function SoulForge() {
                         }}
                       >
                         <div style={styles.stashCardHeader}>
-                          <span style={styles.stashIcon}>{item.icon}</span>
+                          <div style={{ position: "relative" as const }}>
+                            <span style={styles.stashIcon}>{item.icon}</span>
+                            {dupeCount > 1 && (
+                              <span style={{
+                                position: "absolute" as const, top: -4, right: -8,
+                                background: "#5020a0", color: "#d0a0ff",
+                                fontSize: 10, fontWeight: 900, fontFamily: "monospace",
+                                borderRadius: 8, padding: "1px 5px", minWidth: 16,
+                                textAlign: "center" as const, lineHeight: "14px",
+                                border: "1px solid #8040d0",
+                              }}>x{dupeCount}</span>
+                            )}
+                          </div>
                           <div style={styles.stashCardTitles}>
                             <div style={{ ...styles.stashName, color: rarityColor }}>
                               {item.name}{enh > 0 ? ` +${enh}` : ""}
@@ -428,6 +506,11 @@ export function SoulForge() {
                             {formatBonuses(scaleBonuses(item.bonuses as Record<string, number>, enh))}
                           </div>
                         )}
+                        {(item as any).description && (
+                          <div style={{ fontSize: 9, color: "#8a70a0", fontStyle: "italic", marginTop: 2, lineHeight: 1.3, padding: "0 8px" }}>
+                            {(item as any).description}
+                          </div>
+                        )}
                         <div style={styles.stashActions}>
                           <button
                             onClick={() => { clickSfx(); equipToLoadout(i); }}
@@ -440,15 +523,22 @@ export function SoulForge() {
                           {canEnhance && (
                             <button
                               onClick={() => { clickSfx(); enhanceGear(i); }}
+                              disabled={!canFuse}
+                              title={!hasDuplicate ? "Needs a duplicate to fuse" : !canAffordEnhance ? "Not enough shards" : `Fuse duplicate + ◈${enhanceCost}`}
                               style={{
                                 ...styles.enhanceBtn,
-                                background: canAffordEnhance ? "#0a2010" : "#1a1040",
-                                borderColor: canAffordEnhance ? "#40aa40" : "#2a3030",
-                                color: canAffordEnhance ? "#60cc60" : "#3a4a3a",
-                                cursor: canAffordEnhance ? "pointer" : "default",
-                                opacity: canAffordEnhance ? 1 : 0.5,
+                                background: canFuse ? "#0a2010" : "#1a1040",
+                                borderColor: canFuse ? "#40aa40" : "#2a3030",
+                                color: canFuse ? "#60cc60" : "#3a4a3a",
+                                cursor: canFuse ? "pointer" : "default",
+                                opacity: canFuse ? 1 : 0.4,
                               }}
-                            >+{enh + 1} ◈{enhanceCost}</button>
+                            >
+                              {hasDuplicate
+                                ? <>FUSE +{enh + 1} ◈{enhanceCost}</>
+                                : <>+{enh + 1} NO DUPE</>
+                              }
+                            </button>
                           )}
                         </div>
                       </div>
@@ -461,6 +551,142 @@ export function SoulForge() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {activeTab === "gambler" && (
+          <div style={styles.armoryContainer}>
+            <div style={{
+              ...styles.armoryIntro,
+              borderLeftColor: "#806020",
+              background: "rgba(20,14,6,0.5)",
+            }}>
+              "Every shard you offer… the darkness remembers.
+              It may reward you… or it may not."
+            </div>
+
+            {/* Single gamble option */}
+            {(() => {
+              const GAMBLE_COST = 500;
+              const canAfford = shards >= GAMBLE_COST;
+              const handleGamble = () => {
+                if (!canAfford || gambleAnim) return;
+                clickSfx();
+                const ok = useMetaStore.getState().spendShards(GAMBLE_COST);
+                if (!ok) return;
+                setGambleAnim(true);
+                setLastGamble(null);
+                setTimeout(() => {
+                  const roll = Math.random();
+                  let rarity: GearRarity = "common";
+                  if (roll < 0.01) rarity = "epic";
+                  else if (roll < 0.16) rarity = "rare";
+                  const gear = rollGearDrop(rarity);
+                  const stashItem: StashItem = {
+                    id: gear.id,
+                    name: gear.name,
+                    icon: gear.icon,
+                    rarity: gear.rarity,
+                    slot: gear.slot,
+                    enhanceLevel: 0,
+                    bonuses: { ...gear.bonuses } as Record<string, number>,
+                    ...(gear.description ? { description: gear.description } : {}),
+                    ...(gear.proc ? { proc: gear.proc } : {}),
+                    ...(gear.class ? { class: gear.class } : {}),
+                  };
+                  useMetaStore.getState().addGearToStash(stashItem);
+                  setLastGamble(stashItem);
+                  setGambleAnim(false);
+                  audioManager.play("gear_drop");
+                }, 800);
+              };
+              return (
+                <div style={{
+                  ...styles.armorySection,
+                  borderColor: "rgba(180,140,60,0.3)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    <div style={{ fontSize: 40, textShadow: "0 0 16px rgba(180,140,60,0.5)" }}>🎲</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: 3, color: "#c0a050", fontFamily: "monospace" }}>
+                        TEMPT FATE
+                      </div>
+                      <div style={{ fontSize: 11, color: "#806090", fontFamily: "monospace", marginTop: 6, lineHeight: 1.5 }}>
+                        Offer 500 shards to the void. Receive a random piece of gear.
+                      </div>
+                      <div style={{ fontSize: 10, color: "#504060", fontFamily: "monospace", marginTop: 8, letterSpacing: 1 }}>
+                        84% COMMON · 15% RARE · 1% EPIC
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleGamble}
+                      disabled={!canAfford || gambleAnim}
+                      style={{
+                        padding: "16px 24px",
+                        background: canAfford && !gambleAnim ? "rgba(180,140,60,0.1)" : "#0a0610",
+                        border: `2px solid ${canAfford && !gambleAnim ? "#c0a050" : "#2a1f3d"}`,
+                        borderRadius: 8,
+                        color: canAfford && !gambleAnim ? "#c0a050" : "#3a2850",
+                        fontSize: 15,
+                        fontWeight: 900,
+                        fontFamily: "monospace",
+                        letterSpacing: 2,
+                        cursor: canAfford && !gambleAnim ? "pointer" : "default",
+                        opacity: canAfford && !gambleAnim ? 1 : 0.4,
+                        minWidth: 110,
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      {gambleAnim ? "..." : "◈500"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Last roll result */}
+            {lastGamble && (
+              <div style={{
+                ...styles.armorySection,
+                borderColor: lastGamble.rarity === "epic" ? "#aa44ff60" : lastGamble.rarity === "rare" ? "#4488dd60" : "#60606040",
+                background: lastGamble.rarity === "epic" ? "#12061a" : "#080612",
+              }}>
+                <div style={styles.armorySectionTitle}>
+                  {lastGamble.rarity === "epic" ? "THE DARKNESS REWARDS YOU" : lastGamble.rarity === "rare" ? "A WORTHY OFFERING" : "THE VOID STIRS"}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <div style={{ fontSize: 40 }}>{lastGamble.icon}</div>
+                  <div>
+                    <div style={{
+                      fontSize: 16, fontWeight: 900, letterSpacing: 2, fontFamily: "monospace",
+                      color: lastGamble.rarity === "epic" ? "#aa44ff" : lastGamble.rarity === "rare" ? "#4488dd" : "#aaa",
+                    }}>
+                      {lastGamble.name}
+                    </div>
+                    <div style={{ fontSize: 10, letterSpacing: 2, fontFamily: "monospace", marginTop: 4 }}>
+                      <span style={{ color: lastGamble.rarity === "epic" ? "#aa44ff" : lastGamble.rarity === "rare" ? "#4488dd" : "#888" }}>
+                        {lastGamble.rarity.toUpperCase()}
+                      </span>
+                      <span style={{ color: "#504060" }}> · </span>
+                      <span style={{ color: "#806090" }}>{lastGamble.slot.toUpperCase()}</span>
+                    </div>
+                    {lastGamble.bonuses && (
+                      <div style={{ fontSize: 12, color: "#a080c0", marginTop: 6, lineHeight: 1.5 }}>
+                        {formatBonuses(lastGamble.bonuses as Record<string, number>)}
+                      </div>
+                    )}
+                    {lastGamble.description && (
+                      <div style={{ fontSize: 10, color: "#8a70a0", fontStyle: "italic", marginTop: 4, lineHeight: 1.3 }}>
+                        {lastGamble.description}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: "#504060", fontFamily: "monospace", letterSpacing: 1, textAlign: "center" as const }}>
+                  Added to your stash
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -19,6 +19,8 @@ import { useAnimations, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EnemyRuntime } from "../game/GameScene";
+import { AFFIX_DEFS, AFFIX_TYPES, isAffixed, type EnemyAffix } from "../data/AffixData";
+import { useGameStore } from "../store/gameStore";
 
 interface EnemyProps {
   enemy: EnemyRuntime;
@@ -263,8 +265,6 @@ function WraithMesh({ color, emissive, flash, attackTimer, attackInterval }: { c
   const leftArmRef = useRef<THREE.Mesh>(null);
   const rightArmRef = useRef<THREE.Mesh>(null);
   const robeRef = useRef<THREE.Mesh>(null);
-  const eyeLeftRef = useRef<THREE.Mesh>(null);
-  const eyeRightRef = useRef<THREE.Mesh>(null);
   const prevAttackRef = useRef(attackTimer);
   const windupRef = useRef(0);
   const strikeRef = useRef(0);
@@ -291,10 +291,6 @@ function WraithMesh({ color, emissive, flash, attackTimer, attackInterval }: { c
       robeRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.08;
       robeRef.current.rotation.z = Math.sin(t.current * 1.1) * 0.05;
     }
-    // Eye flicker — intensifies on windup, peaks on strike
-    const flicker = 3 + Math.sin(t.current * 8) * 2 + windup * 4 + strike * 6;
-    if (eyeLeftRef.current) (eyeLeftRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity = flicker;
-    if (eyeRightRef.current) (eyeRightRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity = flicker;
   });
 
   return (
@@ -311,11 +307,11 @@ function WraithMesh({ color, emissive, flash, attackTimer, attackInterval }: { c
         <sphereGeometry args={[0.32, 8, 8]} />
         <meshStandardMaterial color={flash ? "#ffffff" : "#2a1550"} emissive="#1a0040" emissiveIntensity={flash ? 3 : 0.5} roughness={0.8} />
       </mesh>
-      <mesh ref={eyeLeftRef} position={[-0.1, 1.58, 0.3]}>
+      <mesh position={[-0.1, 1.58, 0.3]}>
         <sphereGeometry args={[0.055, 6, 6]} />
         <meshStandardMaterial color="#00ccff" emissive="#00aaff" emissiveIntensity={5} />
       </mesh>
-      <mesh ref={eyeRightRef} position={[0.1, 1.58, 0.3]}>
+      <mesh position={[0.1, 1.58, 0.3]}>
         <sphereGeometry args={[0.055, 6, 6]} />
         <meshStandardMaterial color="#00ccff" emissive="#00aaff" emissiveIntensity={5} />
       </mesh>
@@ -331,16 +327,21 @@ function WraithMesh({ color, emissive, flash, attackTimer, attackInterval }: { c
   );
 }
 
-// ─── Elite (NEW: walk cycle + weapon sway + breathing) ──────────────────────
+// ─── Elite: Voidclaw Champion ───────────────────────────────────────────────
+//
+// Armored crimson champion. Signature: clawed gauntlet on the off-hand
+// (the "Voidclaw") + a curved glowing blade in the main hand. Skull-faced
+// helm with bright red eye-slits; chest rune pulses through the plate.
+// Walk cycle + diagonal slash on strike preserved from prior revision.
 
 function EliteMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
   const leftLegRef = useRef<THREE.Mesh>(null);
   const rightLegRef = useRef<THREE.Mesh>(null);
-  const leftArmRef = useRef<THREE.Mesh>(null);
-  const rightArmRef = useRef<THREE.Mesh>(null);
-  const torsoRef = useRef<THREE.Mesh>(null);
-  const weaponRef = useRef<THREE.Mesh>(null);
+  const leftArmRef = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const torsoRef = useRef<THREE.Group>(null);
+  const weaponRef = useRef<THREE.Group>(null);
   const prevAttackRef = useRef(attackTimer);
   const windupRef = useRef(0);
   const strikeRef = useRef(0);
@@ -372,82 +373,135 @@ function EliteMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInter
     }
   });
 
-  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 3 : 0.8, roughness: 0.4, metalness: 0.5 };
+  const PLATE  = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 3 : 0.8, roughness: 0.35, metalness: 0.75 };
+  const DARK   = { color: flash ? "#ffffff" : "#2a0000", emissive: "#400000", emissiveIntensity: flash ? 3 : 0.5, roughness: 0.55, metalness: 0.4 };
+  const TRIM   = { color: flash ? "#ffffff" : "#8b0000", emissive: "#aa0000", emissiveIntensity: flash ? 4 : 1.5, roughness: 0.3, metalness: 0.7 };
+  const CLAW   = { color: "#1a0000", emissive: "#5a0000", emissiveIntensity: 1.0, roughness: 0.25, metalness: 0.9 };
 
   return (
     <group>
-      <mesh ref={leftLegRef} castShadow position={[-0.28, 0.55, 0]}>
-        <boxGeometry args={[0.3, 1.1, 0.3]} />
-        <meshStandardMaterial {...mat} />
+      {/* Legs — merged greaves */}
+      <mesh ref={leftLegRef} castShadow position={[-0.3, 0.55, 0]}>
+        <boxGeometry args={[0.32, 1.1, 0.3]} />
+        <meshStandardMaterial {...PLATE} />
       </mesh>
-      <mesh ref={rightLegRef} castShadow position={[0.28, 0.55, 0]}>
-        <boxGeometry args={[0.3, 1.1, 0.3]} />
-        <meshStandardMaterial {...mat} />
+      <mesh ref={rightLegRef} castShadow position={[0.3, 0.55, 0]}>
+        <boxGeometry args={[0.32, 1.1, 0.3]} />
+        <meshStandardMaterial {...PLATE} />
       </mesh>
-      <mesh ref={torsoRef} castShadow position={[0, 1.4, 0]}>
-        <boxGeometry args={[0.85, 0.85, 0.55]} />
-        <meshStandardMaterial {...mat} />
+      {/* Belt */}
+      <mesh position={[0, 1.0, 0]}>
+        <boxGeometry args={[0.92, 0.2, 0.55]} />
+        <meshStandardMaterial {...DARK} />
       </mesh>
-      <mesh castShadow position={[-0.65, 1.55, 0]}>
-        <boxGeometry args={[0.3, 0.25, 0.45]} />
-        <meshStandardMaterial color="#6a0000" roughness={0.4} metalness={0.6} />
+
+      {/* Torso with rune */}
+      <group ref={torsoRef} position={[0, 1.4, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.95, 0.95, 0.6]} />
+          <meshStandardMaterial {...PLATE} />
+        </mesh>
+        <mesh position={[0, 0, 0.31]}>
+          <cylinderGeometry args={[0.15, 0.15, 0.04, 6]} />
+          <meshStandardMaterial color="#ff40ff" emissive="#ff00ff" emissiveIntensity={3} roughness={0.2} metalness={0.3} />
+        </mesh>
+      </group>
+
+      {/* Pauldrons */}
+      <mesh castShadow position={[-0.65, 1.7, 0]}>
+        <sphereGeometry args={[0.32, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial {...PLATE} />
       </mesh>
-      <mesh castShadow position={[0.65, 1.55, 0]}>
-        <boxGeometry args={[0.3, 0.25, 0.45]} />
-        <meshStandardMaterial color="#6a0000" roughness={0.4} metalness={0.6} />
+      <mesh castShadow position={[0.65, 1.7, 0]}>
+        <sphereGeometry args={[0.32, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial {...PLATE} />
       </mesh>
-      <mesh ref={leftArmRef} castShadow position={[-0.62, 1.2, 0]}>
-        <boxGeometry args={[0.28, 0.8, 0.28]} />
-        <meshStandardMaterial {...mat} />
-      </mesh>
-      <mesh ref={rightArmRef} castShadow position={[0.62, 1.2, 0]}>
-        <boxGeometry args={[0.28, 0.8, 0.28]} />
-        <meshStandardMaterial {...mat} />
-      </mesh>
-      {[-0.62, 0.62].map((x, i) => (
-        [-0.1, 0.0, 0.1].map((ox, j) => (
-          <mesh key={`${i}-${j}`} castShadow position={[x + ox * 0.5, 0.75, 0.15]}>
-            <boxGeometry args={[0.06, 0.2, 0.06]} />
-            <meshStandardMaterial color="#aa0000" roughness={0.4} metalness={0.4} />
+
+      {/* Left arm — Voidclaw with 2 claws (down from 3) */}
+      <group ref={leftArmRef} position={[-0.62, 1.2, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.28, 0.85, 0.28]} />
+          <meshStandardMaterial {...PLATE} />
+        </mesh>
+        <mesh position={[0, -0.5, 0.04]}>
+          <boxGeometry args={[0.34, 0.22, 0.36]} />
+          <meshStandardMaterial {...DARK} />
+        </mesh>
+        {[-0.09, 0.09].map((dx, i) => (
+          <mesh key={`c${i}`} position={[dx, -0.62, 0.24]} rotation={[0.45, 0, 0]}>
+            <coneGeometry args={[0.04, 0.32, 4]} />
+            <meshStandardMaterial {...CLAW} />
           </mesh>
-        ))
-      ))}
-      <mesh castShadow position={[0, 2.05, 0]}>
-        <boxGeometry args={[0.55, 0.55, 0.5]} />
-        <meshStandardMaterial {...mat} />
+        ))}
+      </group>
+
+      {/* Right arm */}
+      <group ref={rightArmRef} position={[0.62, 1.2, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.28, 0.85, 0.28]} />
+          <meshStandardMaterial {...PLATE} />
+        </mesh>
+      </group>
+
+      {/* Weapon — blade only (grip + pommel removed) */}
+      <group ref={weaponRef} position={[0.88, 1.0, 0.22]} rotation={[0.2, 0, 0.3]}>
+        <mesh castShadow position={[0.08, 0.5, 0]} rotation={[0, 0, -0.14]}>
+          <boxGeometry args={[0.09, 1.4, 0.04]} />
+          <meshStandardMaterial color="#c0c0e0" roughness={0.15} metalness={0.95} emissive="#ff4488" emissiveIntensity={1.4} />
+        </mesh>
+        <mesh position={[0.14, 0.5, 0]} rotation={[0, 0, -0.14]}>
+          <boxGeometry args={[0.02, 1.44, 0.02]} />
+          <meshStandardMaterial color="#ff88aa" emissive="#ff2266" emissiveIntensity={6} />
+        </mesh>
+      </group>
+
+      {/* Head — skull helm */}
+      <mesh castShadow position={[0, 2.1, 0]}>
+        <boxGeometry args={[0.58, 0.58, 0.54]} />
+        <meshStandardMaterial {...PLATE} />
       </mesh>
-      <mesh castShadow position={[-0.22, 2.38, 0]} rotation={[0, 0, -0.4]}>
-        <coneGeometry args={[0.07, 0.4, 6]} />
-        <meshStandardMaterial color="#3a0000" roughness={0.5} metalness={0.3} />
+      {/* Horns */}
+      <mesh position={[-0.28, 2.52, -0.04]} rotation={[0.3, 0, -0.55]}>
+        <coneGeometry args={[0.08, 0.52, 4]} />
+        <meshStandardMaterial {...DARK} />
       </mesh>
-      <mesh castShadow position={[0.22, 2.38, 0]} rotation={[0, 0, 0.4]}>
-        <coneGeometry args={[0.07, 0.4, 6]} />
-        <meshStandardMaterial color="#3a0000" roughness={0.5} metalness={0.3} />
+      <mesh position={[0.28, 2.52, -0.04]} rotation={[0.3, 0, 0.55]}>
+        <coneGeometry args={[0.08, 0.52, 4]} />
+        <meshStandardMaterial {...DARK} />
       </mesh>
-      <mesh position={[-0.14, 2.1, 0.26]}>
-        <boxGeometry args={[0.1, 0.06, 0.02]} />
-        <meshStandardMaterial color="#ffff00" emissive="#ffcc00" emissiveIntensity={5} />
+      {/* Eyes */}
+      <mesh position={[-0.13, 2.16, 0.28]}>
+        <boxGeometry args={[0.11, 0.05, 0.02]} />
+        <meshStandardMaterial color="#ff6600" emissive="#ff3300" emissiveIntensity={7} />
       </mesh>
-      <mesh position={[0.14, 2.1, 0.26]}>
-        <boxGeometry args={[0.1, 0.06, 0.02]} />
-        <meshStandardMaterial color="#ffff00" emissive="#ffcc00" emissiveIntensity={5} />
+      <mesh position={[0.13, 2.16, 0.28]}>
+        <boxGeometry args={[0.11, 0.05, 0.02]} />
+        <meshStandardMaterial color="#ff6600" emissive="#ff3300" emissiveIntensity={7} />
       </mesh>
-      <mesh ref={weaponRef} castShadow position={[0.85, 1.0, 0.2]} rotation={[0.2, 0, 0.3]}>
-        <boxGeometry args={[0.1, 1.6, 0.06]} />
-        <meshStandardMaterial color="#c0c0e0" roughness={0.15} metalness={0.95} emissive="#8080ff" emissiveIntensity={0.5} />
-      </mesh>
+
+      {/* Ambient elite glow */}
     </group>
   );
 }
 
-// ─── Boss (IMPROVED: arm movement + breathing + aura pulse) ─────────────────
+// ─── Boss: The Warden Reborn ────────────────────────────────────────────────
+//
+// Armored corrupted jailer. Silhouette: tapered greaves → sealed chestplate →
+// massive pauldrons → horned visor-helm, crowned with a halo of shattered
+// chain-links. Right hand grips a glowing warhammer. Twin aura rings counter-
+// rotate at the feet. Animation hooks preserved from prior version: torso
+// breathes + leans on strike; both arms raise on windup and slam on strike
+// (the hammer travels with the right arm group).
 
 function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
   const auraRef = useRef<THREE.Mesh>(null);
-  const leftArmRef = useRef<THREE.Mesh>(null);
-  const rightArmRef = useRef<THREE.Mesh>(null);
-  const torsoRef = useRef<THREE.Mesh>(null);
+  const auraRef2 = useRef<THREE.Mesh>(null);
+  const leftArmRef = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const torsoRef = useRef<THREE.Group>(null);
+  const capeRef = useRef<THREE.Mesh>(null);
+  const crownRef = useRef<THREE.Group>(null);
   const prevAttackRef = useRef(attackTimer);
   const windupRef = useRef(0);
   const strikeRef = useRef(0);
@@ -456,12 +510,14 @@ function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { col
     t.current += delta;
     const { windup, strike } = updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
     if (auraRef.current) {
-      auraRef.current.rotation.y = t.current * 0.8;
-      // Aura expands on windup, flashes on strike
-      auraRef.current.scale.y = 1 + Math.sin(t.current * 2) * 0.1 + strike * 0.8;
-      const auraSpread = 1 + windup * 0.25 + strike * 0.4;
-      auraRef.current.scale.x = auraSpread;
-      auraRef.current.scale.z = auraSpread;
+      auraRef.current.rotation.z = t.current * 0.8;
+      const auraSpread = 1 + windup * 0.25 + strike * 0.5;
+      auraRef.current.scale.set(auraSpread, auraSpread, 1);
+    }
+    if (auraRef2.current) {
+      auraRef2.current.rotation.z = -t.current * 1.2;
+      const auraSpread2 = 1 + windup * 0.35 + strike * 0.7;
+      auraRef2.current.scale.set(auraSpread2, auraSpread2, 1);
     }
     // Breathing — torso scale pulse + lean forward on strike
     if (torsoRef.current) {
@@ -469,70 +525,163 @@ function BossMesh({ color, emissive, flash, attackTimer, attackInterval }: { col
       torsoRef.current.scale.set(breath, 1, breath);
       torsoRef.current.rotation.x = strike * 0.3 - windup * 0.08;
     }
-    // Menacing arm sway + overhead slam:
-    //   windup → both arms raise up (negative X = raise)
-    //   strike → slam down hard (positive X)
+    // Crown of shattered chains orbits slowly, bobs on breath
+    if (crownRef.current) {
+      crownRef.current.rotation.y = t.current * 0.5;
+      crownRef.current.position.y = 3.95 + Math.sin(t.current * 1.2) * 0.04;
+    }
+    // Tattered cape sway
+    if (capeRef.current) {
+      capeRef.current.rotation.x = Math.sin(t.current * 1.8) * 0.08 - 0.05;
+    }
+    // Arm slam:
+    //   windup → arms raise back (negative X)
+    //   strike → slam down (positive X)
     const slam = -windup * 1.6 + strike * 2.4;
     if (leftArmRef.current) {
-      leftArmRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.15 + slam;
-      leftArmRef.current.rotation.z = -0.1 + Math.sin(t.current * 0.8) * 0.05;
+      leftArmRef.current.rotation.x = Math.sin(t.current * 1.5) * 0.12 + slam;
+      leftArmRef.current.rotation.z = -0.08 + Math.sin(t.current * 0.8) * 0.04;
     }
     if (rightArmRef.current) {
-      rightArmRef.current.rotation.x = Math.sin(t.current * 1.5 + 1.5) * 0.15 + slam;
-      rightArmRef.current.rotation.z = 0.1 - Math.sin(t.current * 0.8 + 1) * 0.05;
+      rightArmRef.current.rotation.x = Math.sin(t.current * 1.5 + 1.5) * 0.12 + slam;
+      rightArmRef.current.rotation.z = 0.08 - Math.sin(t.current * 0.8 + 1) * 0.04;
     }
   });
 
-  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 5 : 2.0, roughness: 0.3, metalness: 0.6 };
+  const plate  = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 5 : 1.8, roughness: 0.35, metalness: 0.75 };
+  const dark   = { color: flash ? "#ffffff" : "#0a0012", emissive, emissiveIntensity: flash ? 5 : 0.6, roughness: 0.55, metalness: 0.4 };
+  const trim   = { color: flash ? "#ffffff" : "#3a0a4a", emissive: "#55008a", emissiveIntensity: flash ? 6 : 2.0, roughness: 0.3, metalness: 0.8 };
+  const hammer = { color: "#1a0a2a", emissive: "#9920ee", emissiveIntensity: 2.5, roughness: 0.25, metalness: 0.9 };
 
   return (
     <group>
-      <mesh ref={auraRef} position={[0, 0.1, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[1.8, 0.08, 8, 32]} />
-        <meshStandardMaterial color="#cc00ff" emissive="#aa00ff" emissiveIntensity={3} transparent opacity={0.7} />
+      {/* Aura ring — single flat circle instead of torus (cheaper) */}
+      <mesh ref={auraRef} position={[0, 0.08, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[1.65, 1.85, 16]} />
+        <meshStandardMaterial color="#cc00ff" emissive="#aa00ff" emissiveIntensity={3} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
-      <mesh castShadow position={[-0.55, 0.75, 0]}>
-        <boxGeometry args={[0.7, 1.5, 0.65]} />
-        <meshStandardMaterial {...mat} />
+      <mesh ref={auraRef2} position={[0, 0.2, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[1.2, 1.4, 12]} />
+        <meshStandardMaterial color="#ff40ff" emissive="#ff00cc" emissiveIntensity={3.5} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
-      <mesh castShadow position={[0.55, 0.75, 0]}>
-        <boxGeometry args={[0.7, 1.5, 0.65]} />
-        <meshStandardMaterial {...mat} />
+
+      {/* Legs — greaves + boots merged */}
+      <mesh castShadow position={[-0.5, 0.5, 0]}>
+        <boxGeometry args={[0.55, 1.1, 0.6]} />
+        <meshStandardMaterial {...plate} />
       </mesh>
-      <mesh ref={torsoRef} castShadow position={[0, 2.0, 0]}>
-        <boxGeometry args={[1.8, 1.4, 1.0]} />
-        <meshStandardMaterial {...mat} />
+      <mesh castShadow position={[0.5, 0.5, 0]}>
+        <boxGeometry args={[0.55, 1.1, 0.6]} />
+        <meshStandardMaterial {...plate} />
       </mesh>
-      <mesh ref={leftArmRef} castShadow position={[-1.35, 1.8, 0.2]}>
-        <boxGeometry args={[0.65, 1.4, 0.65]} />
-        <meshStandardMaterial {...mat} />
+
+      {/* Belt */}
+      <mesh position={[0, 1.3, 0]}>
+        <boxGeometry args={[1.55, 0.25, 0.85]} />
+        <meshStandardMaterial {...dark} />
       </mesh>
-      <mesh ref={rightArmRef} castShadow position={[1.35, 1.8, 0.2]}>
-        <boxGeometry args={[0.65, 1.4, 0.65]} />
-        <meshStandardMaterial {...mat} />
+
+      {/* Torso — chestplate with seal */}
+      <group ref={torsoRef} position={[0, 2.0, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[1.75, 1.45, 1.0]} />
+          <meshStandardMaterial {...plate} />
+        </mesh>
+        {/* Glowing warden-seal */}
+        <mesh position={[0, 0.05, 0.53]}>
+          <cylinderGeometry args={[0.28, 0.28, 0.04, 6]} />
+          <meshStandardMaterial color="#ff00ff" emissive="#cc00ff" emissiveIntensity={3.5} roughness={0.2} metalness={0.3} />
+        </mesh>
+      </group>
+
+      {/* Pauldrons */}
+      <mesh castShadow position={[-1.0, 2.55, 0]}>
+        <sphereGeometry args={[0.55, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial {...plate} />
       </mesh>
-      <mesh castShadow position={[0, 3.05, 0]}>
-        <boxGeometry args={[1.1, 0.9, 0.85]} />
-        <meshStandardMaterial {...mat} />
+      <mesh castShadow position={[1.0, 2.55, 0]}>
+        <sphereGeometry args={[0.55, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial {...plate} />
       </mesh>
-      {[0, 1, 2, 3, 4, 5].map((i) => {
-        const angle = (i / 6) * Math.PI * 2;
-        return (
-          <mesh key={i} castShadow position={[Math.sin(angle) * 0.45, 3.6, Math.cos(angle) * 0.35]}>
-            <coneGeometry args={[0.07, 0.4, 5]} />
-            <meshStandardMaterial color="#4a0050" roughness={0.4} metalness={0.5} />
-          </mesh>
-        );
-      })}
-      <mesh position={[-0.25, 3.1, 0.44]}>
-        <boxGeometry args={[0.2, 0.1, 0.02]} />
-        <meshStandardMaterial color="#ff00ff" emissive="#cc00cc" emissiveIntensity={6} />
+
+      {/* Cape */}
+      <mesh ref={capeRef} position={[0, 1.9, -0.52]}>
+        <boxGeometry args={[1.55, 1.8, 0.05]} />
+        <meshStandardMaterial color="#1a0024" emissive="#300040" emissiveIntensity={0.5} roughness={0.95} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[0.25, 3.1, 0.44]}>
-        <boxGeometry args={[0.2, 0.1, 0.02]} />
-        <meshStandardMaterial color="#ff00ff" emissive="#cc00cc" emissiveIntensity={6} />
+
+      {/* Left arm — upper + forearm + fist merged to 2 meshes */}
+      <group ref={leftArmRef} position={[-1.3, 2.45, 0]}>
+        <mesh castShadow position={[0, -0.7, 0]}>
+          <boxGeometry args={[0.55, 1.8, 0.55]} />
+          <meshStandardMaterial {...plate} />
+        </mesh>
+        <mesh position={[0, -1.65, 0]}>
+          <boxGeometry args={[0.56, 0.3, 0.56]} />
+          <meshStandardMaterial {...dark} />
+        </mesh>
+      </group>
+
+      {/* Right arm + warhammer */}
+      <group ref={rightArmRef} position={[1.3, 2.45, 0]}>
+        <mesh castShadow position={[0, -0.7, 0]}>
+          <boxGeometry args={[0.55, 1.8, 0.55]} />
+          <meshStandardMaterial {...plate} />
+        </mesh>
+        <mesh position={[0, -1.65, 0]}>
+          <boxGeometry args={[0.56, 0.3, 0.56]} />
+          <meshStandardMaterial {...dark} />
+        </mesh>
+        {/* Hammer shaft */}
+        <mesh position={[0, -2.65, 0.1]}>
+          <cylinderGeometry args={[0.08, 0.08, 1.6, 6]} />
+          <meshStandardMaterial color="#2a1040" roughness={0.6} metalness={0.5} />
+        </mesh>
+        {/* Hammer head */}
+        <mesh castShadow position={[0, -3.5, 0.1]}>
+          <boxGeometry args={[0.8, 0.55, 0.55]} />
+          <meshStandardMaterial {...plate} />
+        </mesh>
+        <mesh position={[0, -3.5, 0.4]}>
+          <boxGeometry args={[0.82, 0.4, 0.04]} />
+          <meshStandardMaterial {...hammer} />
+        </mesh>
+      </group>
+
+      {/* Helm */}
+      <mesh castShadow position={[0, 3.25, 0]}>
+        <boxGeometry args={[0.95, 0.85, 0.9]} />
+        <meshStandardMaterial {...plate} />
       </mesh>
-      <pointLight color="#aa00ff" intensity={3} distance={15} decay={2} />
+      {/* Visor slit */}
+      <mesh position={[0, 3.22, 0.47]}>
+        <boxGeometry args={[0.7, 0.1, 0.02]} />
+        <meshStandardMaterial color="#ff00ff" emissive="#ff00ff" emissiveIntensity={7} />
+      </mesh>
+      {/* Horns */}
+      <mesh castShadow position={[-0.48, 3.75, -0.05]} rotation={[0.3, 0, -0.5]}>
+        <coneGeometry args={[0.13, 0.85, 5]} />
+        <meshStandardMaterial {...plate} />
+      </mesh>
+      <mesh castShadow position={[0.48, 3.75, -0.05]} rotation={[0.3, 0, 0.5]}>
+        <coneGeometry args={[0.13, 0.85, 5]} />
+        <meshStandardMaterial {...plate} />
+      </mesh>
+
+      {/* Crown — 5 chain-links (reduced from 7) */}
+      <group ref={crownRef} position={[0, 3.95, 0]}>
+        {[0, 1, 2, 3, 4].map((i) => {
+          const angle = (i / 5) * Math.PI * 2;
+          return (
+            <mesh key={i} position={[Math.sin(angle) * 0.55, Math.sin(angle * 2) * 0.08, Math.cos(angle) * 0.55]} rotation={[0, angle, Math.PI / 2]}>
+              <boxGeometry args={[0.16, 0.05, 0.16]} />
+              <meshStandardMaterial color="#2a1030" emissive="#6a20a0" emissiveIntensity={1.2} />
+            </mesh>
+          );
+        })}
+      </group>
+
+      {/* Ambient boss light */}
     </group>
   );
 }
@@ -595,7 +744,6 @@ function XPGoblinMesh({ color, emissive, flash }: { color: string; emissive: str
         <boxGeometry args={[0.16, 0.2, 0.16]} />
         <meshStandardMaterial {...mat} />
       </mesh>
-      <pointLight color="#ffaa00" intensity={2} distance={4} decay={2} position={[0, 0.2, 0]} />
     </group>
   );
 }
@@ -681,8 +829,11 @@ class GLBErrorBoundary extends Component<
   }
 }
 
-// Preload alongside the player's preload — same URL, useGLTF dedupes.
-useGLTF.preload(WARRIOR_GLB_URL);
+// Warrior-champion GLB preload disabled alongside the player-warrior
+// revert — both now render with the procedural WarriorChampionMesh /
+// WarriorMeshAnimated. Commented (not deleted) so the GLB path can
+// be re-enabled by uncommenting if the asset is restored.
+// useGLTF.preload(WARRIOR_GLB_URL);
 
 function WarriorChampionMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
   const t = useRef(Math.random() * 100);
@@ -783,7 +934,6 @@ function WarriorChampionMesh({ color, emissive, flash, walkSpeed, attackTimer, a
           <meshStandardMaterial {...goldMat} />
         </mesh>
       ))}
-      <pointLight color="#4488ff" intensity={4} distance={12} decay={2} />
     </group>
   );
 }
@@ -885,7 +1035,6 @@ function MageChampionMesh({ color, emissive, flash }: { color: string; emissive:
         <sphereGeometry args={[0.07, 6, 6]} />
         <meshStandardMaterial color="#ee00ff" emissive="#cc00ff" emissiveIntensity={8} />
       </mesh>
-      <pointLight color="#9900ff" intensity={5} distance={14} decay={2} />
     </group>
   );
 }
@@ -979,7 +1128,122 @@ function RogueChampionMesh({ color, emissive, flash, walkSpeed }: { color: strin
         <boxGeometry args={[0.12, 0.05, 0.02]} />
         <meshStandardMaterial color="#00ff88" emissive="#00dd66" emissiveIntensity={8} />
       </mesh>
-      <pointLight color="#00ff88" intensity={4} distance={12} decay={2} />
+    </group>
+  );
+}
+
+// ─── Necromancer Champion ─────────────────────────────────────────────────────
+
+function NecromancerChampionMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
+  const t = useRef(Math.random() * 100);
+  const groupRef = useRef<THREE.Group>(null);
+  const prevAttackRef = useRef(attackTimer);
+  const windupRef = useRef(0);
+  const strikeRef = useRef(0);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (!groupRef.current) return;
+    const moving = walkSpeed > 0.3;
+    const bob = moving ? Math.abs(Math.sin(t.current * 6)) * 0.04 : Math.sin(t.current * 1.5) * 0.02;
+    groupRef.current.position.y = bob;
+    updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
+  });
+
+  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 4 : 1.2, roughness: 0.4, metalness: 0.5 };
+  const dark = { color: flash ? "#ffffff" : "#0a0012", emissive: "#1a0030", emissiveIntensity: flash ? 3 : 0.6 };
+
+  return (
+    <group ref={groupRef}>
+      {/* Robe body — void black */}
+      <mesh castShadow position={[0, 1.0, 0]}><boxGeometry args={[0.7, 1.0, 0.5]} /><meshStandardMaterial {...dark} /></mesh>
+      {/* Robe skirt */}
+      <mesh castShadow position={[0, 0.5, 0]}><boxGeometry args={[0.82, 0.4, 0.58]} /><meshStandardMaterial {...dark} /></mesh>
+      {/* Hood */}
+      <mesh castShadow position={[0, 1.75, 0.06]}><boxGeometry args={[0.55, 0.55, 0.55]} /><meshStandardMaterial {...mat} /></mesh>
+      {/* Eyes — purple glow */}
+      <mesh position={[-0.12, 1.75, 0.32]}><boxGeometry args={[0.1, 0.06, 0.02]} /><meshStandardMaterial color="#cc00ff" emissive="#cc00ff" emissiveIntensity={8} /></mesh>
+      <mesh position={[0.12, 1.75, 0.32]}><boxGeometry args={[0.1, 0.06, 0.02]} /><meshStandardMaterial color="#cc00ff" emissive="#cc00ff" emissiveIntensity={8} /></mesh>
+      {/* Scythe */}
+      <mesh castShadow position={[0.5, 0.8, 0.15]} rotation={[0, 0, -0.2]}><boxGeometry args={[0.06, 1.8, 0.06]} /><meshStandardMaterial color="#1a0828" /></mesh>
+      <mesh castShadow position={[0.68, 1.75, 0.15]} rotation={[0, 0, -0.8]}><boxGeometry args={[0.06, 0.7, 0.03]} /><meshStandardMaterial {...mat} /></mesh>
+      {/* Tattered cape */}
+      <mesh castShadow position={[0, 0.9, -0.28]}><boxGeometry args={[0.65, 1.0, 0.05]} /><meshStandardMaterial {...dark} /></mesh>
+    </group>
+  );
+}
+
+// ─── Death Knight Champion ──────────────────────────────────────────────────
+
+function DeathKnightChampionMesh({ color, emissive, flash, walkSpeed, attackTimer, attackInterval }: { color: string; emissive: string; flash: boolean; walkSpeed: number; attackTimer: number; attackInterval: number }) {
+  const t = useRef(Math.random() * 100);
+  const groupRef = useRef<THREE.Group>(null);
+  const prevAttackRef = useRef(attackTimer);
+  const windupRef = useRef(0);
+  const strikeRef = useRef(0);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (!groupRef.current) return;
+    const moving = walkSpeed > 0.3;
+    const bob = moving ? Math.abs(Math.sin(t.current * 4)) * 0.05 : Math.sin(t.current * 1.2) * 0.02;
+    groupRef.current.position.y = bob;
+    updateAttackState(attackTimer, attackInterval, prevAttackRef, windupRef, strikeRef, delta);
+  });
+
+  const armor = { color: flash ? "#ffffff" : "#1a1a2a", emissive: flash ? "#ffffff" : "#0a0a18", emissiveIntensity: flash ? 4 : 0.8, roughness: 0.3, metalness: 0.8 };
+  const dark = { color: flash ? "#ffffff" : "#0a0610", emissive: "#0a0610", emissiveIntensity: flash ? 3 : 0.3 };
+
+  return (
+    <group ref={groupRef}>
+      {/* Body — heavy dark armor */}
+      <mesh castShadow position={[0, 1.1, 0]}><boxGeometry args={[0.9, 1.2, 0.6]} /><meshStandardMaterial {...armor} /></mesh>
+      {/* Shoulder pauldrons */}
+      <mesh castShadow position={[-0.55, 1.5, 0]}><boxGeometry args={[0.3, 0.3, 0.35]} /><meshStandardMaterial {...armor} /></mesh>
+      <mesh castShadow position={[0.55, 1.5, 0]}><boxGeometry args={[0.3, 0.3, 0.35]} /><meshStandardMaterial {...armor} /></mesh>
+      {/* Helmet */}
+      <mesh castShadow position={[0, 1.9, 0.05]}><boxGeometry args={[0.5, 0.55, 0.5]} /><meshStandardMaterial {...armor} /></mesh>
+      {/* Visor glow — green eyes */}
+      <mesh position={[-0.1, 1.9, 0.3]}><boxGeometry args={[0.1, 0.05, 0.02]} /><meshStandardMaterial color="#44ff88" emissive="#44ff88" emissiveIntensity={8} /></mesh>
+      <mesh position={[0.1, 1.9, 0.3]}><boxGeometry args={[0.1, 0.05, 0.02]} /><meshStandardMaterial color="#44ff88" emissive="#44ff88" emissiveIntensity={8} /></mesh>
+      {/* Legs */}
+      <mesh castShadow position={[-0.2, 0.35, 0]}><boxGeometry args={[0.3, 0.7, 0.3]} /><meshStandardMaterial {...armor} /></mesh>
+      <mesh castShadow position={[0.2, 0.35, 0]}><boxGeometry args={[0.3, 0.7, 0.3]} /><meshStandardMaterial {...armor} /></mesh>
+      {/* Greatsword */}
+      <mesh castShadow position={[0.6, 0.9, 0.2]} rotation={[0, 0, -0.15]}><boxGeometry args={[0.08, 2.2, 0.06]} /><meshStandardMaterial color="#2a2a3a" metalness={0.9} roughness={0.1} /></mesh>
+      <mesh position={[0.6, 0.0, 0.2]}><boxGeometry args={[0.25, 0.08, 0.08]} /><meshStandardMaterial color="#1a1a2a" metalness={0.8} roughness={0.2} /></mesh>
+      {/* Cape */}
+      <mesh castShadow position={[0, 1.0, -0.35]}><boxGeometry args={[0.8, 1.3, 0.05]} /><meshStandardMaterial {...dark} /></mesh>
+    </group>
+  );
+}
+
+// ─── Bard Champion ───────────────────────────────────────────────────────────
+
+function BardChampionMesh({ color, emissive, flash }: { color: string; emissive: string; flash: boolean }) {
+  const t = useRef(Math.random() * 100);
+  const groupRef = useRef<THREE.Group>(null);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+    if (groupRef.current) {
+      groupRef.current.position.y = Math.sin(t.current * 2) * 0.03;
+    }
+  });
+
+  const mat = { color: flash ? "#ffffff" : color, emissive, emissiveIntensity: flash ? 4 : 1.0 };
+  const dark = { color: flash ? "#ffffff" : "#0a0800", emissive: "#1a1000", emissiveIntensity: flash ? 3 : 0.5 };
+
+  return (
+    <group ref={groupRef}>
+      <mesh castShadow position={[0, 0.95, 0]}><boxGeometry args={[0.6, 0.8, 0.4]} /><meshStandardMaterial {...dark} /></mesh>
+      <mesh position={[0, 0.6, 0]}><boxGeometry args={[0.55, 0.08, 0.38]} /><meshStandardMaterial {...mat} /></mesh>
+      <mesh castShadow position={[0, 1.55, 0.04]}><boxGeometry args={[0.46, 0.44, 0.44]} /><meshStandardMaterial color={flash ? "#fff" : "#3a2810"} /></mesh>
+      <mesh position={[-0.09, 1.55, 0.28]}><boxGeometry args={[0.07, 0.04, 0.02]} /><meshStandardMaterial color="#ffaa22" emissive="#ffaa22" emissiveIntensity={6} /></mesh>
+      <mesh position={[0.09, 1.55, 0.28]}><boxGeometry args={[0.07, 0.04, 0.02]} /><meshStandardMaterial color="#ffaa22" emissive="#ffaa22" emissiveIntensity={6} /></mesh>
+      <mesh castShadow position={[-0.3, 0.7, 0.1]}><boxGeometry args={[0.2, 0.28, 0.07]} /><meshStandardMaterial color="#2a1a08" /></mesh>
+      <mesh position={[-0.3, 0.7, 0.15]}><boxGeometry args={[0.1, 0.2, 0.01]} /><meshStandardMaterial color="#ffc030" emissive="#ffc030" emissiveIntensity={2} /></mesh>
+      <mesh castShadow position={[0, 0.85, -0.22]}><boxGeometry args={[0.5, 0.7, 0.04]} /><meshStandardMaterial {...dark} /></mesh>
     </group>
   );
 }
@@ -1067,17 +1331,19 @@ function StatusFxLayer({ poisonStacks, bleedTimer, slowTimer }: { poisonStacks: 
 }
 
 // ─── Elite Affix Aura ────────────────────────────────────────────────────────
-
-const AFFIX_COLORS: Record<string, string> = {
-  shielded: "#4488ff",
-  vampiric: "#ff2040",
-  berserker: "#ff8020",
-};
+// Affix data (color, name, description, icon symbol) lives in
+// src/data/AffixData.ts. Renderers read AFFIX_DEFS — no inline color
+// duplication. Module-scoped material cache keeps GC pressure down.
 
 const _ringGeo = new THREE.RingGeometry(0.8, 1.0, 24);
 const _ringMats: Record<string, THREE.MeshBasicMaterial> = {};
-for (const [affix, color] of Object.entries(AFFIX_COLORS)) {
-  _ringMats[affix] = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
+for (const id of AFFIX_TYPES) {
+  _ringMats[id] = new THREE.MeshBasicMaterial({
+    color: AFFIX_DEFS[id].color,
+    transparent: true,
+    opacity: 0.4,
+    side: THREE.DoubleSide,
+  });
 }
 
 function AffixAura({ affix, shieldHp, scale }: { affix: string; shieldHp: number; scale: number }) {
@@ -1102,6 +1368,149 @@ function AffixAura({ affix, shieldHp, scale }: { affix: string; shieldHp: number
 
   return (
     <mesh ref={ref} geometry={_ringGeo} material={mat} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} scale={scale} />
+  );
+}
+
+// ─── Affix Icon Overlay ──────────────────────────────────────────────────────
+// Floating icon(s) above each affixed enemy. Camera-billboarded so they
+// read flat from the top-down view. Today each enemy has at most one
+// affix, but the implementation iterates a list so multi-affix support
+// drops in trivially when the runtime adds it.
+//
+// Each affix is rendered as a distinct geometric primitive in the
+// affix's color, so players read the SHAPE as the icon and the COLOR
+// as the affix family (matching the existing aura ring tint):
+//
+//   shielded  → octagonal plate with white centre crossbar (shield)
+//   vampiric  → diamond-rotated square (drop)
+//   berserker → upward-pointing triangle (flame)
+//
+// Mobile-readable, no asset dependencies, no font/text rendering.
+
+function AffixIcons({ enemy }: { enemy: EnemyRuntime }) {
+  const groupRef = useRef<THREE.Group>(null);
+  // Today: one affix per enemy. Build as a list so multi-affix drops
+  // in without restructuring this component. Filter out "none" via
+  // the AffixData helper.
+  const affixes: EnemyAffix[] = isAffixed(enemy.affix as EnemyAffix) ? [enemy.affix as EnemyAffix] : [];
+  // First-encounter banner: register every affix this enemy carries
+  // when the icon group mounts. The store de-dupes (one banner per
+  // affix per session), so calling on every Enemy3D mount is safe.
+  useEffect(() => {
+    if (affixes.length === 0) return;
+    const mark = useGameStore.getState().markAffixEncountered;
+    for (const a of affixes) mark(a);
+  }, [affixes]);
+  // Sit above the existing health-bar Y (hpBarHeight = scale * 2.5 + 0.5
+  // in the main render below) plus 0.55u of clearance. Rendered as a
+  // sibling of the scaled enemy mesh so the icon size is fixed on
+  // screen regardless of enemy.scale.
+  const yOffset = (enemy.scale ?? 1) * 2.5 + 1.05;
+  useFrame((state, delta) => {
+    if (!groupRef.current) return;
+    // Camera-billboard so the icon reads flat from the top-down view.
+    // Parent group has no rotation, so a direct quaternion.copy is
+    // sufficient (matches the HealthBar pattern at line ~1154).
+    groupRef.current.quaternion.copy(state.camera.quaternion);
+    groupRef.current.visible = enemy.dead !== true;
+    // Decay the affix-icon pulse timer here so the visual stops
+    // wherever the activation site set it. Only this renderer cares
+    // about the pulse — keeping the decay local avoids a per-frame
+    // pass in the combat loop.
+    if (enemy.affixPulseTimer > 0) {
+      enemy.affixPulseTimer = Math.max(0, enemy.affixPulseTimer - delta);
+    }
+  });
+  if (affixes.length === 0) return null;
+  return (
+    <group ref={groupRef} position={[0, yOffset, 0]}>
+      {affixes.map((kind, i) => (
+        <AffixIcon
+          key={kind}
+          affix={kind}
+          enemy={enemy}
+          // Stack horizontally — centred when N items, 0.55u apart.
+          offsetX={(i - (affixes.length - 1) / 2) * 0.55}
+        />
+      ))}
+    </group>
+  );
+}
+
+function AffixIcon({ affix, enemy, offsetX }: { affix: EnemyAffix; enemy: EnemyRuntime; offsetX: number }) {
+  const def = AFFIX_DEFS[affix];
+  const color = def.color;
+  // Wrapper group whose scale we drive each frame from the pulse
+  // timer. Pulse curve: linear ease-out from 1.55 -> 1.0 over the
+  // 0.5s lifetime. Brief, doesn't loop — matches item-2 spec.
+  const pulseRef = useRef<THREE.Group>(null);
+  // Shielded gets a separate flash plate that strobes white on
+  // activation; ref into it for opacity control.
+  const flashRef = useRef<THREE.Mesh>(null);
+  useFrame(() => {
+    if (!pulseRef.current) return;
+    const t = enemy.affixPulseTimer;
+    // Pulse fraction 0..1 across the 0.5s window. 1 = just triggered.
+    const pulse = t > 0 ? Math.max(0, Math.min(1, t / 0.5)) : 0;
+    const scale = 1 + pulse * 0.55;
+    pulseRef.current.scale.setScalar(scale);
+    if (flashRef.current) {
+      const mat = flashRef.current.material as THREE.MeshBasicMaterial;
+      mat.opacity = pulse;  // strobe white on shield-absorb
+    }
+  });
+  return (
+    <group ref={pulseRef} position={[offsetX, 0, 0]}>
+      {affix === "shielded" && (
+        <>
+          {/* Octagonal plate — shield-shaped silhouette. */}
+          <mesh rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.2, 0.2, 0.05, 8]} />
+            <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
+          </mesh>
+          {/* White centre crossbar reads as a shield boss. */}
+          <mesh position={[0, 0, 0.04]}>
+            <boxGeometry args={[0.06, 0.22, 0.01]} />
+            <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthWrite={false} />
+          </mesh>
+          {/* White flash plate on top — opacity driven by pulse
+              timer. Strobes during the 0.5s after a shield absorbs
+              a hit. */}
+          <mesh ref={flashRef} position={[0, 0, 0.05]}>
+            <cylinderGeometry args={[0.24, 0.24, 0.02, 8]} />
+            <meshBasicMaterial color="#ffffff" transparent opacity={0} depthWrite={false} />
+          </mesh>
+        </>
+      )}
+      {affix === "vampiric" && (
+        <group rotation={[0, 0, Math.PI / 4]}>
+          {/* Diamond — rotated cube, reads as a blood drop. */}
+          <mesh>
+            <boxGeometry args={[0.26, 0.26, 0.05]} />
+            <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
+          </mesh>
+          {/* Inner darker centre for depth. */}
+          <mesh position={[0, 0, 0.03]}>
+            <boxGeometry args={[0.1, 0.1, 0.01]} />
+            <meshBasicMaterial color="#660010" transparent opacity={0.7} depthWrite={false} />
+          </mesh>
+        </group>
+      )}
+      {affix === "berserker" && (
+        <>
+          {/* Triangle — cone pointing up, reads as a flame. */}
+          <mesh>
+            <coneGeometry args={[0.2, 0.36, 3]} />
+            <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
+          </mesh>
+          {/* Hot-yellow inner core. */}
+          <mesh scale={0.55}>
+            <coneGeometry args={[0.2, 0.36, 3]} />
+            <meshBasicMaterial color="#ffe080" transparent opacity={0.85} depthWrite={false} />
+          </mesh>
+        </>
+      )}
+    </group>
   );
 }
 
@@ -1160,7 +1569,22 @@ export function Enemy3D({ enemy }: EnemyProps) {
   const hpBarHeight = enemy.scale * 2.5 + 0.5;
 
   return (
-    <group ref={groupRef}>
+    <group
+      ref={groupRef}
+      // Tap-to-inspect (item 3 spec). Only fires for AFFIXED enemies
+      // — clicking a non-affixed enemy is a no-op so non-affixed
+      // pickups don't accidentally open the tooltip. stopPropagation
+      // prevents the click from passing through to other enemies in
+      // the same raycast hit list.
+      onClick={(e) => {
+        if (!isAffixed(enemy.affix as EnemyAffix)) return;
+        e.stopPropagation();
+        useGameStore.getState().setInspectedAffix({
+          enemyType: enemy.type,
+          affixes: [enemy.affix],
+        });
+      }}
+    >
       <group scale={enemy.scale}>
         {enemy.type === "scuttler" && <ScuttlerMesh {...meshProps} {...attackProps} />}
         {enemy.type === "brute" && <BruteMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}
@@ -1168,15 +1592,17 @@ export function Enemy3D({ enemy }: EnemyProps) {
         {enemy.type === "elite" && <EliteMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}
         {enemy.type === "boss" && <BossMesh {...meshProps} {...attackProps} />}
         {enemy.type === "xp_goblin" && <XPGoblinMesh {...meshProps} />}
+        {/* Warrior champion GLB reverted to procedural alongside the
+            player-warrior revert. Keeps the warrior silhouette
+            consistent across player + champion enemy. */}
         {enemy.type === "warrior_champion" && (
-          <GLBErrorBoundary fallback={<WarriorChampionMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}>
-            <Suspense fallback={<WarriorChampionMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />}>
-              <WarriorChampionGLBMesh flash={flash} />
-            </Suspense>
-          </GLBErrorBoundary>
+          <WarriorChampionMesh {...meshProps} {...attackProps} walkSpeed={walkSpeed} />
         )}
         {enemy.type === "mage_champion" && <MageChampionMesh {...meshProps} />}
         {enemy.type === "rogue_champion" && <RogueChampionMesh {...meshProps} walkSpeed={walkSpeed} />}
+        {enemy.type === "necromancer_champion" && <NecromancerChampionMesh {...meshProps} walkSpeed={walkSpeed} {...attackProps} />}
+        {enemy.type === "bard_champion" && <BardChampionMesh {...meshProps} />}
+        {enemy.type === "death_knight_champion" && <DeathKnightChampionMesh {...meshProps} walkSpeed={walkSpeed} {...attackProps} />}
       </group>
 
       {/* Status effect visuals */}
@@ -1184,6 +1610,12 @@ export function Enemy3D({ enemy }: EnemyProps) {
 
       {/* Elite affix aura ring */}
       {enemy.affix !== "none" && <AffixAura affix={enemy.affix} shieldHp={enemy.shieldHp} scale={enemy.scale} />}
+
+      {/* Floating affix icon(s) above the health bar — primary
+          communication layer for affix presence. Always visible,
+          camera-billboarded, mobile-readable. Empty render when the
+          enemy has no affix. */}
+      <AffixIcons enemy={enemy} />
 
       {/* Health bar */}
       <group ref={healthBarGroupRef} position={[0, hpBarHeight, 0]}>

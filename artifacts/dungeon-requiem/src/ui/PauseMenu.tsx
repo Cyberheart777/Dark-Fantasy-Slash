@@ -11,6 +11,7 @@
 import type { MutableRefObject } from "react";
 import { useState } from "react";
 import { useGameStore } from "../store/gameStore";
+import { useMetaStore } from "../store/metaStore";
 import { audioManager } from "../audio/AudioManager";
 import { GEAR_RARITY_COLOR, type GearDef } from "../data/GearData";
 import { SettingsPanel } from "./SettingsPanel";
@@ -38,6 +39,10 @@ export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory
   const liveStats: PlayerStats | null = gsRef?.current?.progression.stats ?? null;
 
   const [view, setView] = useState<PauseView>("main");
+  // Confirmation dialog for the "Main Menu" action. Prevents accidental
+  // run-abandonment on mobile — a mistaken tap on the main-menu button
+  // used to kill the run with no warning.
+  const [confirmingExit, setConfirmingExit] = useState(false);
 
   const showExtract = !trialMode && highestBossWaveCleared > 0 && onExtract != null;
   const extractLabel =
@@ -50,6 +55,19 @@ export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory
     const s = useGameStore.getState();
     const prevBest = s.bestScore;
     const prevWave = s.bestWave;
+    const meta = useMetaStore.getState();
+    for (const slot of ["weapon", "armor", "trinket"] as const) {
+      const gear = s[slot === "weapon" ? "equippedWeapon" : slot === "armor" ? "equippedArmor" : "equippedTrinket"];
+      if (gear) {
+        meta.addGearToStash({
+          id: gear.id, name: gear.name, icon: gear.icon, rarity: gear.rarity,
+          slot: gear.slot, enhanceLevel: gear.enhanceLevel ?? 0,
+          bonuses: { ...gear.bonuses } as Record<string, number>,
+          ...(gear.proc ? { proc: gear.proc } : {}),
+          ...(gear.class ? { class: gear.class } : {}),
+        });
+      }
+    }
     s.resetGame();
     s.setBestScore(prevBest, prevWave);
     s.setPhase("menu");
@@ -88,7 +106,7 @@ export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory
                 ⚙ SETTINGS
               </button>
 
-              <button style={styles.btnSecondary} onClick={click(handleMainMenu)}>
+              <button style={styles.btnSecondary} onClick={click(() => setConfirmingExit(true))}>
                 ⌂ MAIN MENU
               </button>
             </div>
@@ -122,6 +140,37 @@ export function PauseMenu({ onExtract, onEquipFromInventory, onSellFromInventory
           <SettingsPanel onClose={() => setView("main")} />
         )}
       </div>
+
+      {/* Abandon-run confirmation. Stacks above the pause panel with
+          a darker backdrop so it reads as a modal decision point.
+          "Stay in Run" is the visually dominant default — gradient
+          primary button — so a mistaken tap on the pause overlay
+          can't kill an active run. */}
+      {confirmingExit && (
+        <div style={styles.confirmOverlay}>
+          <div style={styles.confirmPanel}>
+            <div style={styles.confirmTitle}>ABANDON YOUR RUN?</div>
+            <div style={styles.confirmSub}>All progress will be lost.</div>
+            <div style={styles.confirmBtnCol}>
+              <button
+                style={styles.confirmPrimary}
+                onClick={click(() => setConfirmingExit(false))}
+              >
+                ◂ STAY IN RUN
+              </button>
+              <button
+                style={styles.confirmDestructive}
+                onClick={click(() => {
+                  setConfirmingExit(false);
+                  handleMainMenu();
+                })}
+              >
+                ABANDON RUN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -316,6 +365,84 @@ function EquippedSlot({ label, gear }: { label: string; gear: GearDef | null }) 
 // SettingsPanel.tsx now (shared by MainMenu + PauseMenu).
 
 const styles: Record<string, React.CSSProperties> = {
+  // Abandon-run confirmation modal. Backdrop alpha is deeper than the
+  // pause overlay (0.75 vs ~0.55) so it visually sits above the pause
+  // panel. Panel shares the pause-menu border/background language.
+  confirmOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.75)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 60,
+    pointerEvents: "auto",
+    backdropFilter: "blur(6px)",
+  },
+  confirmPanel: {
+    textAlign: "center",
+    padding: "36px 48px",
+    background: "rgba(10,4,18,0.98)",
+    border: "1px solid rgba(120,60,160,0.6)",
+    borderRadius: 14,
+    boxShadow: "0 0 40px rgba(120,40,180,0.35), inset 0 0 30px rgba(80,30,120,0.25)",
+    maxWidth: 420,
+  },
+  confirmTitle: {
+    fontSize: 22,
+    fontWeight: 900,
+    letterSpacing: 4,
+    color: "#f0c8ff",
+    textShadow: "0 0 14px rgba(200,120,255,0.6)",
+    marginBottom: 10,
+    fontFamily: "monospace",
+  },
+  confirmSub: {
+    fontSize: 13,
+    color: "#b090cc",
+    letterSpacing: 1.5,
+    marginBottom: 24,
+    fontFamily: "monospace",
+  },
+  confirmBtnCol: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    alignItems: "center",
+  },
+  // Primary "Stay in Run" button — dominant purple gradient matching
+  // the existing btnPrimary so it reads as the default action. User
+  // tap-targets should land here on muscle memory.
+  confirmPrimary: {
+    width: 260,
+    padding: "14px",
+    fontSize: 16,
+    fontWeight: "bold",
+    letterSpacing: 3,
+    color: "#fff",
+    background: "linear-gradient(135deg, #5500aa, #3a0077)",
+    border: "1px solid #7700cc",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    boxShadow: "0 0 20px rgba(80,0,180,0.4)",
+  },
+  // Destructive "Abandon Run" — smaller, dim red. Clearly a less
+  // visually prominent option than "Stay in Run". Still tappable on
+  // mobile but visually de-emphasised.
+  confirmDestructive: {
+    width: 200,
+    padding: "10px",
+    fontSize: 12,
+    fontWeight: 600,
+    letterSpacing: 2,
+    color: "#cc8080",
+    background: "rgba(30,10,10,0.6)",
+    border: "1px solid rgba(140,40,40,0.5)",
+    borderRadius: 6,
+    cursor: "pointer",
+    fontFamily: "inherit",
+  },
   overlay: {
     position: "absolute",
     inset: 0,
