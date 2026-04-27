@@ -3292,6 +3292,9 @@ function LabyrinthHUD({
     layerBanner: null as LabSharedState["layerBanner"],
     pendingPortalDecision: null as LabSharedState["pendingPortalDecision"],
     pendingSummonDecision: false,
+    companionAlive: false,
+    companionHp: 0,
+    companionMaxHp: COMPANION_BASE_HP,
     crystalsEarned: 0,
   });
 
@@ -3356,6 +3359,9 @@ function LabyrinthHUD({
         layerBanner: s.layerBanner,
         pendingPortalDecision: s.pendingPortalDecision,
         pendingSummonDecision: s.pendingSummonDecision,
+        companionAlive: s.companion.alive,
+        companionHp: s.companion.hp,
+        companionMaxHp: s.companion.maxHp,
         crystalsEarned: s.crystalsEarned,
       });
     }, 100);
@@ -3842,6 +3848,30 @@ function LabyrinthHUD({
       {/* Screen-edge arrow pointing toward safe zone (when outside) */}
       {display.outsideZone && !display.defeated && !display.extracted && (
         <SafeZoneArrow dx={display.safeDirX} dz={display.safeDirZ} />
+      )}
+
+      {/* Companion HP bar */}
+      {display.companionAlive && (
+        <div style={{
+          position: "absolute", bottom: isMob ? 155 : 175, left: isMob ? 6 : 20,
+          width: isMob ? 70 : 140, padding: "3px 6px",
+          background: "rgba(40,30,10,0.8)", border: "1px solid rgba(255,200,40,0.4)",
+          borderRadius: 3, fontFamily: "monospace", zIndex: 25, pointerEvents: "none",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: "#ffc830", fontWeight: 900, letterSpacing: 1, marginBottom: 2 }}>
+            <span>BARD</span>
+            <span>{Math.ceil(display.companionHp)}/{display.companionMaxHp}</span>
+          </div>
+          <div style={{ width: "100%", height: 4, background: "#1a0f00", borderRadius: 2 }}>
+            <div style={{
+              width: `${Math.max(0, (display.companionHp / display.companionMaxHp) * 100)}%`,
+              height: "100%", borderRadius: 2,
+              background: display.companionHp > display.companionMaxHp * 0.5 ? "#44cc55"
+                : display.companionHp > display.companionMaxHp * 0.25 ? "#ffaa00" : "#cc2222",
+              transition: "width 0.2s",
+            }} />
+          </div>
+        </div>
       )}
 
       {/* Fog-of-war minimap — bottom left, reveals as player explores */}
