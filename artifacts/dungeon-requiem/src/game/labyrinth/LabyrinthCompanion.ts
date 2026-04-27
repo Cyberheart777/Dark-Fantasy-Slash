@@ -188,9 +188,19 @@ export function tickCompanion(
   for (const ep of projectiles) {
     if (ep.dead || ep.owner !== "enemy") continue;
     const hx = ep.x - comp.x, hz = ep.z - comp.z;
-    if (Math.sqrt(hx * hx + hz * hz) <= 0.8) {
+    if (Math.sqrt(hx * hx + hz * hz) <= 1.2) {
       comp.hp -= ep.damage;
       ep.dead = true;
+    }
+  }
+
+  // Take damage from nearby melee enemies
+  for (const e of enemies) {
+    if (e.state === "dead") continue;
+    const ex = e.x - comp.x, ez = e.z - comp.z;
+    const d2 = ex * ex + ez * ez;
+    if (d2 <= 2.5 * 2.5) {
+      comp.hp -= 2 * delta;
     }
   }
 
