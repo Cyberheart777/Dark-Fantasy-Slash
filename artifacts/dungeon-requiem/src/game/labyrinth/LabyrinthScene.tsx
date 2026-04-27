@@ -309,6 +309,7 @@ interface LabSharedState {
   lastPortalPopupCount: number;
   enemyCount: number;
   killCount: number;
+  pendingShards: number;
   level: number;
   xp: number;
   xpToNext: number;
@@ -455,6 +456,7 @@ export function LabyrinthScene() {
     lastPortalPopupCount: 0,
     enemyCount: 0,
     killCount: 0,
+    pendingShards: 0,
     level: 1,
     xp: 0,
     xpToNext: 0,
@@ -1952,12 +1954,17 @@ function CombatEnemyLoop({
     // double-fires across frames.
     if ((shared.defeated || shared.extracted || shared.victory) && !ranSalvageRef.current) {
       ranSalvageRef.current = true;
+      const survived = shared.extracted || shared.victory;
       const total = salvageLabGear(gearStateRef.current, gearDropsRef.current);
       const dCfg = getDifficultyConfig(labDifficulty);
       const crystalTotal = Math.round(total * shared.soulCrystalMult * (dCfg?.crystalMult ?? 1) * (labStats.shardFindMult ?? 1));
-      shared.crystalsEarned = crystalTotal + (shared.layer === 3 && shared.victory ? 500 : 0);
-      if (crystalTotal > 0) {
-        useMetaStore.getState().addShards(crystalTotal);
+      const victoryBonus = shared.layer === 3 && shared.victory ? 500 : 0;
+      if (survived) {
+        const earnedTotal = crystalTotal + shared.pendingShards + victoryBonus;
+        shared.crystalsEarned = earnedTotal;
+        if (earnedTotal > 0) useMetaStore.getState().addShards(earnedTotal);
+      } else {
+        shared.crystalsEarned = 0;
       }
     }
     // Evaluate single-run achievements exactly once per run — same
@@ -2160,7 +2167,7 @@ function CombatEnemyLoop({
                   if (groundFxRef.current.length > 60) groundFxRef.current.splice(0, groundFxRef.current.length - 60);
                 }
                 shared.killCount++;
-                useMetaStore.getState().addShards(labKillCrystals(e.kind, labStats.shardFindMult ?? 1));
+                shared.pendingShards += labKillCrystals(e.kind, labStats.shardFindMult ?? 1);
                 audioManager.play("enemy_death");
                 spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
                 spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
@@ -2298,7 +2305,7 @@ function CombatEnemyLoop({
             x: e.x, z: e.z, radius: 2.0, lifetime: 5.0, color: "#88ff66", appliesPoison: true,
           });
         }
-        useMetaStore.getState().addShards(labKillCrystals(e.kind, labStats.shardFindMult ?? 1));
+        shared.pendingShards += labKillCrystals(e.kind, labStats.shardFindMult ?? 1);
         spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
         spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
         const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
@@ -2410,7 +2417,7 @@ function CombatEnemyLoop({
           if (groundFxRef.current.length > 60) groundFxRef.current.splice(0, groundFxRef.current.length - 60);
         }
         shared.killCount++;
-        useMetaStore.getState().addShards(labKillCrystals(e.kind, labStats.shardFindMult ?? 1));
+        shared.pendingShards += labKillCrystals(e.kind, labStats.shardFindMult ?? 1);
         audioManager.play("enemy_death");
         spawnLabDeathFx(deathFxRef.current, e.x, e.z, e.kind === "warden" || e.kind === "death_knight" ? "#ff40ff" : "#ff3030");
         spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
@@ -3453,6 +3460,7 @@ function LabyrinthHUD({
     livePortalCount: 0,
     enemyCount: 0,
     killCount: 0,
+    pendingShards: 0,
     level: 1,
     xp: 0,
     xpToNext: 1,
@@ -3542,6 +3550,7 @@ function LabyrinthHUD({
         companionHp: s.companion.hp,
         companionMaxHp: s.companion.maxHp,
         crystalsEarned: s.crystalsEarned,
+        pendingShards: s.pendingShards,
       });
     }, 100);
     return () => clearInterval(iv);
@@ -3626,12 +3635,23 @@ function LabyrinthHUD({
   const handleLabUpgrade = useCallback((id: string) => {
     const upgrade = UPGRADES[id as keyof typeof UPGRADES];
     if (!upgrade) return;
+    const prevMax = labStats.maxHealth;
     upgrade.apply(labStats);
+    const p = playerRef.current;
+    const maxDelta = labStats.maxHealth - prevMax;
+    if (maxDelta !== 0) {
+      p.maxHp = Math.max(1, p.maxHp + maxDelta);
+      if (maxDelta > 0) {
+        p.hp = Math.min(p.maxHp, p.hp + maxDelta);
+      } else {
+        p.hp = Math.min(p.hp, p.maxHp);
+      }
+    }
     const prog = progressionRef.current;
     prog.acquiredUpgrades.set(id as any, (prog.acquiredUpgrades.get(id as any) ?? 0) + 1);
     onUpgradeApplied();
     useGameStore.getState().setPhase("labyrinth");
-  }, [labStats, progressionRef, onUpgradeApplied]);
+  }, [labStats, playerRef, progressionRef, onUpgradeApplied]);
 
   const handleSummonAccept = useCallback(() => {
     const s = sharedRef.current;
