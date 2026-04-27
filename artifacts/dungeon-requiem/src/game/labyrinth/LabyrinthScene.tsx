@@ -338,6 +338,7 @@ interface LabSharedState {
   companionDiedDuringRun: boolean;
   lastChancePortalsSpawned: boolean;
   timerExpiredSwarmSpawned: boolean;
+  pendingSummonDecision: boolean;
 }
 
 // ─── Root React component ─────────────────────────────────────────────────────
@@ -465,6 +466,7 @@ export function LabyrinthScene() {
     companionDiedDuringRun: false,
     lastChancePortalsSpawned: false,
     timerExpiredSwarmSpawned: false,
+    pendingSummonDecision: false,
   });
   const labPoisonRef = useRef<LabPoisonState>(makeLabPoisonState());
   const attackStateRef = useRef<PlayerAttackState>(makePlayerAttackState());
@@ -2480,24 +2482,10 @@ function CombatEnemyLoop({
       wasInAuraRef.current = inAura;
     }
 
-    // Summon sign — proximity check + activation
-    if (shared.summonSign && !shared.summonSign.consumed && isNearSign(p.x, p.z, shared.summonSign)) {
-      if (!shared.companion.summoned) {
-        const crystals = useMetaStore.getState().shards;
-        if (crystals >= COMPANION_SUMMON_COST) {
-          useMetaStore.getState().spendShards(COMPANION_SUMMON_COST);
-          shared.companion.summoned = true;
-          shared.companion.alive = true;
-          shared.companion.hp = COMPANION_BASE_HP;
-          shared.companion.maxHp = COMPANION_BASE_HP;
-          shared.companion.x = shared.summonSign.x;
-          shared.companion.z = shared.summonSign.z;
-          shared.summonSign.consumed = true;
-          shared.companionEverSummoned = true;
-          shared.layerBanner = { text: "WANDERING BARD SUMMONED", sub: "A COMPANION JOINS YOUR QUEST", color: "#ffc830", at: shared.zone.elapsedSec };
-          audioManager.play("wave_clear");
-        }
-      }
+    // Summon sign — proximity triggers confirmation dialog
+    if (shared.summonSign && !shared.summonSign.consumed && !shared.companion.summoned
+        && !shared.pendingSummonDecision && isNearSign(p.x, p.z, shared.summonSign)) {
+      shared.pendingSummonDecision = true;
     }
 
     // 7) XP orbs — pickup detection + collect-animation tick, then
@@ -3253,6 +3241,7 @@ function LabyrinthHUD({
     layerComplete: false,
     layerBanner: null as LabSharedState["layerBanner"],
     pendingPortalDecision: null as LabSharedState["pendingPortalDecision"],
+    pendingSummonDecision: false,
     crystalsEarned: 0,
   });
 
@@ -3316,6 +3305,7 @@ function LabyrinthHUD({
         layerComplete: s.layerComplete,
         layerBanner: s.layerBanner,
         pendingPortalDecision: s.pendingPortalDecision,
+        pendingSummonDecision: s.pendingSummonDecision,
         crystalsEarned: s.crystalsEarned,
       });
     }, 100);
@@ -3407,6 +3397,39 @@ function LabyrinthHUD({
     onUpgradeApplied();
     useGameStore.getState().setPhase("labyrinth");
   }, [labStats, progressionRef, onUpgradeApplied]);
+
+  const handleSummonAccept = useCallback(() => {
+    const s = sharedRef.current;
+    s.pendingSummonDecision = false;
+    const crystals = useMetaStore.getState().shards;
+    if (crystals < COMPANION_SUMMON_COST) return;
+    useMetaStore.getState().spendShards(COMPANION_SUMMON_COST);
+    s.companion.summoned = true;
+    s.companion.alive = true;
+    s.companion.hp = COMPANION_BASE_HP;
+    s.companion.maxHp = COMPANION_BASE_HP;
+    if (s.summonSign) {
+      s.companion.x = s.summonSign.x;
+      s.companion.z = s.summonSign.z;
+      s.summonSign.consumed = true;
+    }
+    s.companionEverSummoned = true;
+    s.layerBanner = { text: "WANDERING BARD SUMMONED", sub: "A COMPANION JOINS YOUR QUEST", color: "#ffc830", at: s.zone.elapsedSec };
+    audioManager.play("wave_clear");
+  }, [sharedRef]);
+
+  const handleSummonCancel = useCallback(() => {
+    const s = sharedRef.current;
+    s.pendingSummonDecision = false;
+    const p = playerRef.current;
+    if (s.summonSign) {
+      const dx = p.x - s.summonSign.x;
+      const dz = p.z - s.summonSign.z;
+      const d = Math.sqrt(dx * dx + dz * dz) || 1;
+      p.x = s.summonSign.x + (dx / d) * 4;
+      p.z = s.summonSign.z + (dz / d) * 4;
+    }
+  }, [sharedRef, playerRef]);
 
   const hpPct = Math.max(0, (display.hp / display.maxHp) * 100);
   const hpColor = hpPct > 60 ? "#22cc55" : hpPct > 30 ? "#ff8800" : "#cc2222";
@@ -3696,22 +3719,23 @@ function LabyrinthHUD({
         </div>
       )}
 
-      {/* Shard count — persistent crystal balance */}
-      {!isMob && (
-        <div style={{
-          position: "absolute", top: display.championsToKill > 0 ? 260 : 205, right: 20,
-          minWidth: 180, padding: "6px 14px",
-          background: "rgba(40,30,10,0.75)", border: "1px solid rgba(255,200,40,0.3)",
-          borderRadius: 4, fontFamily: "monospace", zIndex: 20, pointerEvents: "none",
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 9, letterSpacing: 2, color: "#cc9944", fontWeight: 900 }}>CRYSTALS</span>
-            <span style={{ fontSize: 14, fontWeight: 900, color: "#ffcc44", textShadow: "0 0 6px #cc9900" }}>
-              ◈ {useMetaStore.getState().shards.toLocaleString()}
-            </span>
-          </div>
+      {/* Shard count — persistent crystal balance (both mobile + desktop) */}
+      <div style={{
+        position: "absolute",
+        top: isMob ? 6 : (display.championsToKill > 0 ? 260 : 205),
+        right: isMob ? 60 : 20,
+        minWidth: isMob ? 80 : 180,
+        padding: isMob ? "3px 8px" : "6px 14px",
+        background: "rgba(40,30,10,0.75)", border: "1px solid rgba(255,200,40,0.3)",
+        borderRadius: 4, fontFamily: "monospace", zIndex: 20, pointerEvents: "none",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+          {!isMob && <span style={{ fontSize: 9, letterSpacing: 2, color: "#cc9944", fontWeight: 900 }}>CRYSTALS</span>}
+          <span style={{ fontSize: isMob ? 11 : 14, fontWeight: 900, color: "#ffcc44", textShadow: "0 0 6px #cc9900" }}>
+            ◈ {useMetaStore.getState().shards.toLocaleString()}
+          </span>
         </div>
-      )}
+      </div>
 
       {!isMob && <GearSlotStrip equipped={display.equipped} />}
 
@@ -3790,24 +3814,6 @@ function LabyrinthHUD({
           elapsedSec={display.elapsedSec}
         />
       )}
-
-      {/* Summon sign prompt */}
-      {(() => {
-        const sign = sharedRef.current.summonSign;
-        if (!sign || sign.consumed || display.defeated || display.extracted) return null;
-        const p = playerRef.current;
-        const dx = p.x - sign.x, dz = p.z - sign.z;
-        if (dx * dx + dz * dz > 16) return null;
-        const canAfford = useMetaStore.getState().shards >= COMPANION_SUMMON_COST;
-        return (
-          <div style={{ position: "absolute", bottom: 130, left: "50%", transform: "translateX(-50%)", textAlign: "center", pointerEvents: "none", zIndex: 30 }}>
-            <div style={{ color: canAfford ? "#ffc830" : "#886630", fontSize: 14, fontWeight: 900, fontFamily: "monospace", textShadow: canAfford ? "0 0 10px #cc9900" : "none" }}>
-              {canAfford ? `SUMMON WANDERING BARD — ${COMPANION_SUMMON_COST} CRYSTALS` : `REQUIRES ${COMPANION_SUMMON_COST} SOUL FORGE CRYSTALS`}
-            </div>
-            <div style={{ color: "#999", fontSize: 10, marginTop: 2 }}>WALK ONTO RUNE TO ACTIVATE</div>
-          </div>
-        );
-      })()}
 
       {/* Portal-opened popup (fades in for ~3s after a milestone spawn) */}
       <PortalPopup
@@ -4039,6 +4045,33 @@ function LabyrinthHUD({
                 {display.pendingPortalDecision.type === "extract"
                   ? "RISK IT ALL — STAY IN THE LABYRINTH"
                   : "NOT YET"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bard summon confirmation */}
+      {display.pendingSummonDecision
+        && !display.extracted && !display.defeated && !display.victory && (
+        <div style={styles.confirmOverlay}>
+          <div style={styles.confirmPanel}>
+            <div style={styles.confirmTitle}>
+              SUMMON WANDERING BARD?
+            </div>
+            <div style={styles.confirmSub}>
+              {useMetaStore.getState().shards >= COMPANION_SUMMON_COST
+                ? `A bard companion will join you for the rest of this run. Cost: ${COMPANION_SUMMON_COST} crystals.`
+                : `You need ${COMPANION_SUMMON_COST} crystals to summon the bard. You have ${useMetaStore.getState().shards}.`}
+            </div>
+            <div style={styles.confirmBtnCol}>
+              {useMetaStore.getState().shards >= COMPANION_SUMMON_COST && (
+                <button style={styles.confirmPrimary} onClick={handleSummonAccept}>
+                  SUMMON BARD — {COMPANION_SUMMON_COST} CRYSTALS
+                </button>
+              )}
+              <button style={styles.confirmDestructive} onClick={handleSummonCancel}>
+                NOT NOW
               </button>
             </div>
           </div>
