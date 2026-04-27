@@ -35,7 +35,7 @@ const DK_SPEED_NIGHTMARE_ENRAGE = 5.0;
 const DK_ATTACK_RANGE = 3.0;
 const DK_ATTACK_DAMAGE = 45;
 const DK_ATTACK_COOLDOWN = 1.4;
-const DK_COLLISION_RADIUS = 2.0;
+const DK_COLLISION_RADIUS = 1.0;
 
 // Ground Slam
 const SLAM_WARN_SEC = 0.8;

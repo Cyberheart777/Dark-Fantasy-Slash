@@ -102,7 +102,7 @@ export function Projectile3D({ proj }: ProjectileProps) {
         <group ref={groupRef}>
           {/* Core orb */}
           <mesh ref={innerRef} castShadow>
-            <sphereGeometry args={[0.42, 10, 8]} />
+            <sphereGeometry args={[0.21, 10, 8]} />
             <meshStandardMaterial
               color={proj.color}
               emissive={proj.glowColor}
@@ -115,7 +115,7 @@ export function Projectile3D({ proj }: ProjectileProps) {
           </mesh>
           {/* Outer shell */}
           <mesh>
-            <sphereGeometry args={[0.56, 8, 6]} />
+            <sphereGeometry args={[0.28, 8, 6]} />
             <meshStandardMaterial
               color={proj.glowColor}
               emissive={proj.glowColor}
@@ -127,7 +127,7 @@ export function Projectile3D({ proj }: ProjectileProps) {
           </mesh>
           {/* Orbiting ring */}
           <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.6, 0.05, 6, 16]} />
+            <torusGeometry args={[0.3, 0.03, 6, 16]} />
             <meshStandardMaterial
               color={proj.glowColor}
               emissive={proj.glowColor}

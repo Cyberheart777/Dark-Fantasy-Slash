@@ -1167,6 +1167,10 @@ function LabyrinthWorld({
 
 function CompanionBard3D({ sharedRef }: { sharedRef: React.MutableRefObject<LabSharedState> }) {
   const groupRef = useRef<THREE.Group>(null);
+  const leftArmRef = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const legsRef = useRef<THREE.Group>(null);
+  const auraRef = useRef<THREE.Mesh>(null);
   const t = useRef(0);
   useFrame((_, delta) => {
     t.current += delta;
@@ -1178,31 +1182,75 @@ function CompanionBard3D({ sharedRef }: { sharedRef: React.MutableRefObject<LabS
     groupRef.current.visible = true;
     groupRef.current.position.set(comp.x, 0, comp.z);
     groupRef.current.rotation.y = comp.angle;
-    groupRef.current.position.y = Math.sin(t.current * 2) * 0.05;
+    // Arm swing animation
+    if (leftArmRef.current && rightArmRef.current) {
+      leftArmRef.current.rotation.x = Math.sin(t.current * 4) * 0.3;
+      rightArmRef.current.rotation.x = -Math.sin(t.current * 4) * 0.3 + 0.2;
+    }
+    if (legsRef.current) {
+      const lg = legsRef.current.children;
+      if (lg[0]) (lg[0] as THREE.Group).rotation.x = Math.sin(t.current * 4) * 0.25;
+      if (lg[1]) (lg[1] as THREE.Group).rotation.x = -Math.sin(t.current * 4) * 0.25;
+    }
+    if (auraRef.current) {
+      auraRef.current.rotation.z = t.current * 0.3;
+      (auraRef.current.material as THREE.MeshBasicMaterial).opacity = 0.15 + Math.sin(t.current * 2) * 0.08;
+    }
   });
+  const GOLD = "#d4a830";
+  const GOLD_DARK = "#8a6a20";
+  const SKIN = "#d8b080";
+  const CAPE = "#6a2010";
   return (
     <group ref={groupRef}>
-      <mesh position={[0, 1.0, 0]}>
-        <boxGeometry args={[0.55, 0.60, 0.35]} />
-        <meshBasicMaterial color="#c8a040" />
+      {/* Aura ring on ground */}
+      <mesh ref={auraRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+        <ringGeometry args={[COMPANION_AURA_RADIUS * 0.95, COMPANION_AURA_RADIUS, 32]} />
+        <meshBasicMaterial color="#ffc830" transparent opacity={0.15} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[0, 0.5, 0]}>
-        <boxGeometry args={[0.2, 0.5, 0.2]} />
-        <meshBasicMaterial color="#8a6a20" />
-      </mesh>
-      <mesh position={[0, 1.55, 0]}>
-        <boxGeometry args={[0.35, 0.35, 0.32]} />
-        <meshBasicMaterial color="#d0a070" />
-      </mesh>
-      <mesh position={[0, 1.75, 0]}>
-        <boxGeometry args={[0.38, 0.22, 0.36]} />
-        <meshBasicMaterial color="#ffc830" />
-      </mesh>
-      <mesh position={[0.35, 1.0, 0.1]}>
-        <boxGeometry args={[0.08, 0.9, 0.06]} />
-        <meshBasicMaterial color="#aa8830" />
-      </mesh>
-      <pointLight color="#ffc830" intensity={1.5} distance={COMPANION_AURA_RADIUS} decay={2} position={[0, 1.5, 0]} />
+      {/* Legs */}
+      <group ref={legsRef}>
+        <group position={[-0.12, 0.45, 0]}>
+          <mesh><boxGeometry args={[0.18, 0.50, 0.18]} /><meshBasicMaterial color={GOLD_DARK} /></mesh>
+          <mesh position={[0, -0.30, 0.04]}><boxGeometry args={[0.20, 0.14, 0.26]} /><meshBasicMaterial color="#2a1a08" /></mesh>
+        </group>
+        <group position={[0.12, 0.45, 0]}>
+          <mesh><boxGeometry args={[0.18, 0.50, 0.18]} /><meshBasicMaterial color={GOLD_DARK} /></mesh>
+          <mesh position={[0, -0.30, 0.04]}><boxGeometry args={[0.20, 0.14, 0.26]} /><meshBasicMaterial color="#2a1a08" /></mesh>
+        </group>
+      </group>
+      {/* Torso */}
+      <mesh position={[0, 1.0, 0]}><boxGeometry args={[0.55, 0.60, 0.32]} /><meshBasicMaterial color={GOLD} /></mesh>
+      {/* Belt */}
+      <mesh position={[0, 0.72, 0]}><boxGeometry args={[0.58, 0.10, 0.34]} /><meshBasicMaterial color="#5a3a10" /></mesh>
+      {/* Cape */}
+      <mesh position={[0, 1.0, -0.20]}><boxGeometry args={[0.50, 0.70, 0.05]} /><meshBasicMaterial color={CAPE} /></mesh>
+      {/* Left arm */}
+      <group ref={leftArmRef} position={[-0.38, 1.10, 0]}>
+        <mesh position={[0, -0.18, 0]}><boxGeometry args={[0.16, 0.40, 0.16]} /><meshBasicMaterial color={GOLD} /></mesh>
+        <mesh position={[0, -0.40, 0]}><boxGeometry args={[0.12, 0.10, 0.12]} /><meshBasicMaterial color={SKIN} /></mesh>
+      </group>
+      {/* Right arm + lute */}
+      <group ref={rightArmRef} position={[0.38, 1.10, 0]}>
+        <mesh position={[0, -0.18, 0]}><boxGeometry args={[0.16, 0.40, 0.16]} /><meshBasicMaterial color={GOLD} /></mesh>
+        <mesh position={[0, -0.40, 0]}><boxGeometry args={[0.12, 0.10, 0.12]} /><meshBasicMaterial color={SKIN} /></mesh>
+        {/* Lute body */}
+        <mesh position={[0.05, -0.25, 0.15]}><boxGeometry args={[0.10, 0.30, 0.08]} /><meshBasicMaterial color="#6a4a18" /></mesh>
+        {/* Lute neck */}
+        <mesh position={[0.05, -0.02, 0.15]}><boxGeometry args={[0.04, 0.20, 0.04]} /><meshBasicMaterial color="#5a3a10" /></mesh>
+      </group>
+      {/* Head */}
+      <group position={[0, 1.55, 0]}>
+        <mesh><boxGeometry args={[0.36, 0.36, 0.32]} /><meshBasicMaterial color={SKIN} /></mesh>
+        {/* Eyes */}
+        <mesh position={[0, 0.04, 0.17]}><boxGeometry args={[0.22, 0.04, 0.01]} /><meshBasicMaterial color="#ffc830" /></mesh>
+        {/* Bard hat */}
+        <mesh position={[0, 0.22, 0]}><boxGeometry args={[0.42, 0.08, 0.38]} /><meshBasicMaterial color={GOLD} /></mesh>
+        <mesh position={[0, 0.30, 0]}><boxGeometry args={[0.30, 0.14, 0.28]} /><meshBasicMaterial color={GOLD} /></mesh>
+        {/* Feather */}
+        <mesh position={[0.18, 0.38, -0.05]} rotation={[0, 0, 0.3]}><boxGeometry args={[0.04, 0.18, 0.02]} /><meshBasicMaterial color="#ff4444" /></mesh>
+      </group>
+      <pointLight color="#ffc830" intensity={2.5} distance={12} decay={2} position={[0, 2, 0]} />
     </group>
   );
 }

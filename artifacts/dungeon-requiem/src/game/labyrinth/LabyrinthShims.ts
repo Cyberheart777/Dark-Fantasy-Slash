@@ -243,7 +243,7 @@ function visualsForKind(kind: LabEnemy["kind"]): {
     case "warden":
       return { scale: 1.8, color: "#2a0a2a", emissive: "#a020ff" };
     case "death_knight":
-      return { scale: 1.8, color: "#1a1a2a", emissive: "#0a0a18" };
+      return { scale: 0.9, color: "#1a1a2a", emissive: "#0a0a18" };
     case "mini_boss":
       return { scale: 1.5, color: "#3a0a20", emissive: "#ff4488" };
     // Heavy — keeps the original orange/red champion palette but

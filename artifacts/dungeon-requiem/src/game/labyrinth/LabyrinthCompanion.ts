@@ -18,9 +18,9 @@ import { extractWallSegments } from "./LabyrinthMaze";
 // ─── Tuning constants ────────────────────────────────────────────────────────
 
 export const COMPANION_SUMMON_COST = 50;
-export const COMPANION_BASE_HP = 80;
-const COMPANION_DAMAGE_PER_NOTE = 8;
-const COMPANION_ATTACK_SPEED = 1.0;
+export const COMPANION_BASE_HP = 120;
+const COMPANION_DAMAGE_PER_NOTE = 14;
+const COMPANION_ATTACK_SPEED = 1.4;
 export const COMPANION_AURA_RADIUS = 15;
 export const COMPANION_AURA_HP_BONUS = 0.10;
 export const COMPANION_AURA_DAMAGE_BONUS = 0.10;
