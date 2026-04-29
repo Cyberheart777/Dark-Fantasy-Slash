@@ -14,8 +14,16 @@ import { audioManager } from "../audio/AudioManager";
 import { useGameStore } from "../store/gameStore";
 import { useMetaStore } from "../store/metaStore";
 import { GAME_CONFIG } from "../data/GameConfig";
-import { ENEMY_DATA, pickEnemyType } from "../data/EnemyData";
-import { CHARACTER_DATA, type CharacterClass } from "../data/CharacterData";
+import { ENEMY_DATA } from "../data/EnemyData";
+import { type CharacterClass } from "../data/CharacterData";
+import {
+  getCharacter,
+  getEnemy,
+  pickEnemyTypeBalanced,
+  getInvTime,
+  getDashIframeBonus,
+  getBossProjSpeed,
+} from "../store/balanceStore";
 import { DIFFICULTY_DATA } from "../data/DifficultyData";
 import { RACE_DATA, type RaceType } from "../data/RaceData";
 import { ProgressionManager } from "../systems/ProgressionManager";
@@ -38,6 +46,7 @@ import { LevelUp } from "../ui/LevelUp";
 import { PauseMenu } from "../ui/PauseMenu";
 import { MobileControls } from "../ui/MobileControls";
 import { DevHUD } from "../ui/DevHUD";
+import { DevBalancePanel } from "../ui/DevBalancePanel";
 import { useAchievementStore } from "../store/achievementStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -257,7 +266,7 @@ const TORCH_POSITIONS: [number, number, number][] = [
 // then wraps it in a ProgressionManager. Per-run upgrades stack on top via ProgressionManager.
 
 function makeProgWithMeta(cls: CharacterClass, race: RaceType): { progression: ProgressionManager; startHp: number } {
-  const def = CHARACTER_DATA[cls];
+  const def = getCharacter(cls);
   const raceDef = RACE_DATA[race];
   // 1. Class base stats modified by race multipliers
   const classBase: PlayerStats = {
@@ -530,7 +539,7 @@ function makePlayer(startHp: number = GAME_CONFIG.PLAYER.START_HEALTH): PlayerRu
 }
 
 function spawnGoblin(): EnemyRuntime {
-  const def = ENEMY_DATA.xp_goblin;
+  const def = getEnemy("xp_goblin");
   const half = GAME_CONFIG.ARENA_HALF - 4;
   const edge = Math.floor(Math.random() * 4);
   let x = 0, z = 0;
@@ -682,8 +691,8 @@ function applyEnemyDamage(e: EnemyRuntime, rawDmg: number): number {
 }
 
 function spawnEnemy(wave: number, hpMult = 1, dmgMult = 1, speedMult = 1): EnemyRuntime {
-  const type = pickEnemyType(wave) as keyof typeof ENEMY_DATA;
-  const def = ENEMY_DATA[type];
+  const type = pickEnemyTypeBalanced(wave);
+  const def = getEnemy(type);
   const half = GAME_CONFIG.ARENA_HALF - 3;
   const edge = Math.floor(Math.random() * 4);
   let x = 0, z = 0;
@@ -742,7 +751,7 @@ function spawnEnemy(wave: number, hpMult = 1, dmgMult = 1, speedMult = 1): Enemy
 }
 
 function spawnBoss(wave: number): EnemyRuntime {
-  const def = ENEMY_DATA.boss;
+  const def = getEnemy("boss");
   const half = GAME_CONFIG.ARENA_HALF - 5;
   const bossCount = Math.floor(wave / GAME_CONFIG.DIFFICULTY.BOSS_WAVE_INTERVAL);
   const hpScale = 1 + (bossCount - 1) * GAME_CONFIG.DIFFICULTY.BOSS_HP_SCALE_PER_WAVE;
@@ -776,7 +785,7 @@ function spawnBoss(wave: number): EnemyRuntime {
 
 function spawnChampion(cls: CharacterClass, hpMult = 1, dmgMult = 1, speedMult = 1): EnemyRuntime {
   const type = `${cls}_champion` as "warrior_champion" | "mage_champion" | "rogue_champion";
-  const def = ENEMY_DATA[type];
+  const def = getEnemy(type);
   const hp = Math.round(def.health * hpMult);
   const finalDmg = Math.round(def.damage * dmgMult);
   const finalSpd = def.moveSpeed * speedMult;
@@ -820,7 +829,7 @@ function spawnNemesis(cls: CharacterClass, hpMult: number, dmgMult: number, spee
     case 3: nemesis.x =  half; nemesis.z = Math.random() * half * 2 - half; break;
   }
   // Give it meaningful rewards (the champion defaults have 0 XP/score)
-  const champDef = ENEMY_DATA[`${cls}_champion` as keyof typeof ENEMY_DATA];
+  const champDef = getEnemy(`${cls}_champion` as "warrior_champion" | "mage_champion" | "rogue_champion");
   nemesis.xpReward = champDef.xpReward || Math.round(50 * hpMult);
   nemesis.scoreValue = champDef.scoreValue || 200;
   return nemesis;
@@ -985,7 +994,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             const originX = p.x, originZ = p.z;
             p.x = Math.max(-ARENA, Math.min(ARENA, p.x + dashDir.x * blinkDist));
             p.z = Math.max(-ARENA, Math.min(ARENA, p.z + dashDir.z * blinkDist));
-            p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.15;
+            p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + getDashIframeBonus("mage");
             // Afterimage: slow enemies at origin (baseline), damage if volatile blink upgrade
             const blinkDmg = stats.volatileBlinkEnabled ? Math.round(stats.damage * 1.0) : Math.round(stats.damage * 0.4);
             const blinkRadius = stats.volatileBlinkEnabled ? 5.0 : 3.5;
@@ -1021,7 +1030,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             p.dashTimer = GAME_CONFIG.PLAYER.DASH_DURATION;
             p.dashVX = dashDir.x * GAME_CONFIG.PLAYER.DASH_SPEED;
             p.dashVZ = dashDir.z * GAME_CONFIG.PLAYER.DASH_SPEED;
-            p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.05; // short i-frames
+            p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + getDashIframeBonus("rogue"); // short i-frames
             const dashDmg = Math.round(stats.damage * 0.4);
             const poisonPerStack = stats.venomStackDps > 0 ? stats.venomStackDps : 3; // baseline 3 dps even without upgrade
             for (const e of g.enemies) {
@@ -1047,7 +1056,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             p.dashTimer = GAME_CONFIG.PLAYER.DASH_DURATION;
             p.dashVX = dashDir.x * GAME_CONFIG.PLAYER.DASH_SPEED;
             p.dashVZ = dashDir.z * GAME_CONFIG.PLAYER.DASH_SPEED;
-            p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + 0.15; // longer i-frames for melee
+            p.invTimer = GAME_CONFIG.PLAYER.DASH_DURATION + getDashIframeBonus("warrior"); // longer i-frames for melee
             p.warCryTimer = stats.warCryDmgBonus > 0 ? 4.0 : 0;
             // Knockback enemies in path
             const kbForce = stats.dashKnockbackForce;
@@ -1234,7 +1243,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
         } else {
           audioManager.play(g.charClass === "mage" ? "attack_orb" : "attack_dagger");
           // ── Projectile attack (Mage / Rogue) ───────────────────────────
-          const def = CHARACTER_DATA[g.charClass];
+          const def = getCharacter(g.charClass);
           // Extra projectiles from upgrades
           const extraCount = g.charClass === "mage" ? stats.mageExtraOrbs
                            : g.charClass === "rogue" ? stats.rogueExtraDaggers : 0;
@@ -1627,7 +1636,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const afterShield = rawDmg - shielded;
               const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
-              p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.8;
+              p.invTimer = getInvTime("slam");
               // Iron Reprisal
               if (stats.ironReprisalEnabled) {
                 const repDmg = Math.round(p.maxHp * 0.15);
@@ -1677,7 +1686,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const afterShield = rawDmg - shielded;
               const effective = applyArmor(afterShield, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
-              p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+              p.invTimer = getInvTime("melee");
               // Vampiric affix: heal 20% of damage dealt
               if (e.affix === "vampiric") {
                 e.hp = Math.min(e.maxHp, e.hp + effective * 0.2);
@@ -2040,7 +2049,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           if (!isDodged) {
             const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
             p.hp -= effective; spawnPlayerDmgPopup(p, effective);
-            p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME * 0.6;
+            p.invTimer = getInvTime("proj");
             if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
             else { audioManager.play("player_hurt"); }
           }
@@ -2139,7 +2148,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             const rawDmg = e.damage * 3;
             const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult, 100);
             p.hp -= effective; spawnPlayerDmgPopup(p, effective);
-            p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+            p.invTimer = getInvTime("melee");
             if (p.hp <= 0) { handlePlayerFatalDmg(p, g); }
             else { audioManager.play("player_hurt"); }
           }
@@ -2172,7 +2181,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
       if (e.radialTimer <= 0) {
         e.radialTimer = burstInterval;
         const BURST_COUNT = e.enragePhase >= 3 ? 16 : e.enragePhase >= 2 ? 12 : 10;
-        const projSpeed = e.enragePhase >= 3 ? 11 : e.enragePhase >= 2 ? 10 : 9;
+        const projSpeed = getBossProjSpeed("radialBurst", e.enragePhase);
         for (let i = 0; i < BURST_COUNT; i++) {
           const angle = (i / BURST_COUNT) * Math.PI * 2;
           g.enemyProjectiles.push({
@@ -2250,7 +2259,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
             store.setBossSpecialWarn(false);
             const baseAngle = Math.atan2(cx, cz);
             const crescentCount = e.enragePhase >= 2 ? 3 : e.enragePhase >= 1 ? 2 : 1;
-            const projSpeed = 8 + e.enragePhase * 1.5;
+            const projSpeed = getBossProjSpeed("warriorChampCrescent") + e.enragePhase * 1.5;
             const projDmg = e.damage * 1.2;
             for (let k = 0; k < crescentCount; k++) {
               const spread = crescentCount > 1 ? (k - (crescentCount - 1) / 2) * 0.4 : 0;
@@ -2309,7 +2318,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
               const rawDmg = e.damage * 1.5;
               const effective = applyArmor(rawDmg, stats.armor, stats.incomingDamageMult);
               p.hp -= effective; spawnPlayerDmgPopup(p, effective);
-              p.invTimer = GAME_CONFIG.PLAYER.INVINCIBILITY_TIME;
+              p.invTimer = getInvTime("melee");
               if (p.hp <= 0) { handlePlayerFatalDmg(p, g); } else { audioManager.play("player_hurt"); }
             }
             audioManager.play("boss_special");
@@ -2341,7 +2350,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           for (let k = 0; k < burstCount; k++) {
             const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
             const shotAngle = baseAngle + (k - (burstCount - 1) / 2) * 0.22;
-            const speed = 11;
+            const speed = getBossProjSpeed("mageChampOrb");
             g.enemyProjectiles.push({
               id: eprojId(), x: e.x, z: e.z,
               vx: Math.sin(shotAngle) * speed,
@@ -2369,10 +2378,11 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           for (let k = 0; k < postBurst; k++) {
             const baseAngle = Math.atan2(p.x - e.x, p.z - e.z);
             const shotAngle = baseAngle + (k - (postBurst - 1) / 2) * 0.28;
+            const blinkSpeed = getBossProjSpeed("mageChampOrb");
             g.enemyProjectiles.push({
               id: eprojId(), x: e.x, z: e.z,
-              vx: Math.sin(shotAngle) * 11,
-              vz: Math.cos(shotAngle) * 11,
+              vx: Math.sin(shotAngle) * blinkSpeed,
+              vz: Math.cos(shotAngle) * blinkSpeed,
               damage: e.damage, lifetime: 3.5, dead: false, style: "orb" as const,
             });
           }
@@ -2402,7 +2412,7 @@ function GameLoop({ gs }: { gs: React.RefObject<GameState | null> }) {
           const spreadAmt = 0.18;
           for (let k = -1; k <= 1; k += 2) {
             const shotAngle = baseAngle + k * spreadAmt;
-            const speed = 20;
+            const speed = getBossProjSpeed("rogueChampDagger");
             g.enemyProjectiles.push({
               id: eprojId(), x: e.x, z: e.z,
               vx: Math.sin(shotAngle) * speed,
@@ -3473,6 +3483,7 @@ export function GameScene({ onRestart }: GameSceneProps) {
 
       {(phase === "playing" || phase === "paused" || phase === "levelup") && <HUD onExtract={handleExtract} />}
       {(phase === "playing" || phase === "paused" || phase === "levelup") && <DevHUD gsRef={gsRef} />}
+      <DevBalancePanel />
       {phase === "playing" && <MobileControls gsRef={gsRef} />}
       {phase === "paused" && (
         <PauseMenu
