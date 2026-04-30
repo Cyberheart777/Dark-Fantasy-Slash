@@ -3,6 +3,13 @@
  * Renders mage orbs and rogue daggers with improved animations:
  *   - Daggers: spin along travel axis + shimmer trail
  *   - Orbs: inner glow flicker + ring rotation on two axes + hover bob
+ *
+ * Performance: no pointLights, no castShadow, no outer-shell halo.
+ * Each on-screen point light multiplies fragment-shader cost across
+ * the whole scene; with mage orbs + boss radial bursts + champion
+ * projectiles, the per-projectile lights were the dominant FPS hit.
+ * The labyrinth projectile renderer learned this earlier (see its
+ * header comment); classic mode now matches.
  */
 
 import { useRef } from "react";
@@ -16,7 +23,6 @@ interface ProjectileProps {
 
 export function Projectile3D({ proj }: ProjectileProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const lightRef = useRef<THREE.PointLight>(null);
   const innerRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.Mesh>(null);
   const trailRef = useRef<THREE.Mesh>(null);
@@ -64,14 +70,6 @@ export function Projectile3D({ proj }: ProjectileProps) {
         mat.opacity = 0.4 + Math.sin(t.current * 10) * 0.2;
       }
     }
-
-    // Glow pulse
-    if (lightRef.current) {
-      lightRef.current.position.set(proj.x, 0.9, proj.z);
-      lightRef.current.intensity = proj.style === "orb"
-        ? 2.5 + Math.sin(t.current * 5) * 0.5
-        : 1.5 + Math.sin(t.current * 8) * 0.3;
-    }
   });
 
   if (proj.style === "note") {
@@ -98,116 +96,84 @@ export function Projectile3D({ proj }: ProjectileProps) {
 
   if (proj.style === "orb") {
     return (
-      <>
-        <group ref={groupRef}>
-          {/* Core orb */}
-          <mesh ref={innerRef} castShadow>
-            <sphereGeometry args={[0.21, 10, 8]} />
-            <meshStandardMaterial
-              color={proj.color}
-              emissive={proj.glowColor}
-              emissiveIntensity={2.5}
-              roughness={0.1}
-              metalness={0.3}
-              transparent
-              opacity={0.9}
-            />
-          </mesh>
-          {/* Outer shell */}
-          <mesh>
-            <sphereGeometry args={[0.28, 8, 6]} />
-            <meshStandardMaterial
-              color={proj.glowColor}
-              emissive={proj.glowColor}
-              emissiveIntensity={1.2}
-              transparent
-              opacity={0.25}
-              side={THREE.BackSide}
-            />
-          </mesh>
-          {/* Orbiting ring */}
-          <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.3, 0.03, 6, 16]} />
-            <meshStandardMaterial
-              color={proj.glowColor}
-              emissive={proj.glowColor}
-              emissiveIntensity={3}
-            />
-          </mesh>
-        </group>
-        <pointLight
-          ref={lightRef}
-          color={proj.glowColor}
-          intensity={2.5}
-          distance={7}
-          decay={2}
-        />
-      </>
+      <group ref={groupRef}>
+        {/* Core orb — bright emissive sphere, no shadow */}
+        <mesh ref={innerRef}>
+          <sphereGeometry args={[0.21, 10, 8]} />
+          <meshStandardMaterial
+            color={proj.color}
+            emissive={proj.glowColor}
+            emissiveIntensity={2.5}
+            roughness={0.1}
+            metalness={0.3}
+            transparent
+            opacity={0.9}
+          />
+        </mesh>
+        {/* Orbiting ring */}
+        <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.3, 0.03, 6, 16]} />
+          <meshStandardMaterial
+            color={proj.glowColor}
+            emissive={proj.glowColor}
+            emissiveIntensity={3}
+          />
+        </mesh>
+      </group>
     );
   }
 
-  // Dagger — with spin and trail
+  // Dagger — with spin and trail, no point light or shadow
   return (
-    <>
-      <group ref={groupRef}>
-        {/* Spinning inner group */}
-        <group>
-          {/* Blade */}
-          <mesh position={[0, 0, -0.22]} castShadow={!proj.fanOfKnives}>
-            <boxGeometry args={[0.07, 0.07, 0.55]} />
-            <meshStandardMaterial
-              color={proj.color}
-              emissive={proj.glowColor}
-              emissiveIntensity={1.8}
-              metalness={0.9}
-              roughness={0.1}
-            />
-          </mesh>
-          {/* Tip — bright leading edge */}
-          <mesh position={[0, 0, -0.52]} rotation={[Math.PI / 2, 0, 0]}>
-            <coneGeometry args={[0.04, 0.15, 4]} />
-            <meshStandardMaterial
-              color={proj.glowColor}
-              emissive={proj.glowColor}
-              emissiveIntensity={4}
-              transparent
-              opacity={0.9}
-            />
-          </mesh>
-          {/* Guard */}
-          <mesh position={[0, 0, 0.05]}>
-            <boxGeometry args={[0.22, 0.06, 0.06]} />
-            <meshStandardMaterial
-              color={proj.color}
-              metalness={0.8}
-              roughness={0.2}
-            />
-          </mesh>
-        </group>
-        {/* Motion trail — skip for fan-of-knives burst */}
-        {!proj.fanOfKnives && (
-          <mesh ref={trailRef} position={[0, 0, 0.35]}>
-            <boxGeometry args={[0.03, 0.03, 0.5]} />
-            <meshStandardMaterial
-              color={proj.glowColor}
-              emissive={proj.glowColor}
-              emissiveIntensity={2}
-              transparent
-              opacity={0.5}
-              depthWrite={false}
-            />
-          </mesh>
-        )}
+    <group ref={groupRef}>
+      {/* Spinning inner group */}
+      <group>
+        {/* Blade */}
+        <mesh position={[0, 0, -0.22]}>
+          <boxGeometry args={[0.07, 0.07, 0.55]} />
+          <meshStandardMaterial
+            color={proj.color}
+            emissive={proj.glowColor}
+            emissiveIntensity={1.8}
+            metalness={0.9}
+            roughness={0.1}
+          />
+        </mesh>
+        {/* Tip — bright leading edge */}
+        <mesh position={[0, 0, -0.52]} rotation={[Math.PI / 2, 0, 0]}>
+          <coneGeometry args={[0.04, 0.15, 4]} />
+          <meshStandardMaterial
+            color={proj.glowColor}
+            emissive={proj.glowColor}
+            emissiveIntensity={4}
+            transparent
+            opacity={0.9}
+          />
+        </mesh>
+        {/* Guard */}
+        <mesh position={[0, 0, 0.05]}>
+          <boxGeometry args={[0.22, 0.06, 0.06]} />
+          <meshStandardMaterial
+            color={proj.color}
+            metalness={0.8}
+            roughness={0.2}
+          />
+        </mesh>
       </group>
+      {/* Motion trail — skip for fan-of-knives burst */}
       {!proj.fanOfKnives && (
-        <pointLight
-          ref={lightRef}
-          color={proj.glowColor}
-          intensity={1.5}
-          distance={4}
-          decay={2}
-        />
+        <mesh ref={trailRef} position={[0, 0, 0.35]}>
+          <boxGeometry args={[0.03, 0.03, 0.5]} />
+          <meshStandardMaterial
+            color={proj.glowColor}
+            emissive={proj.glowColor}
+            emissiveIntensity={2}
+            transparent
+            opacity={0.5}
+            depthWrite={false}
+          />
+        </mesh>
       )}
-    </>
+    </group>
   );
 }
