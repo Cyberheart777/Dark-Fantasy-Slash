@@ -154,7 +154,11 @@ export function tickCompanion(
   }
 
   if (nearE) {
-    comp.angle = Math.atan2(nearE.x - comp.x, nearE.z - comp.z);
+    // Labyrinth angle convention is atan2(dx, -dz) paired with firing
+    // (sin, -cos) — see LabyrinthScene.tsx aimAngle and tryFireBardNote.
+    // Using atan2(dx, +dz) here would invert the Z component of the
+    // shot direction so notes fire away from the target instead of at it.
+    comp.angle = Math.atan2(nearE.x - comp.x, -(nearE.z - comp.z));
   }
 
   // Fire 5-note fan
