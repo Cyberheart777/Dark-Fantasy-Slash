@@ -36,6 +36,14 @@ const DEV_ENABLED =
 
 type Tab = "player" | "enemies" | "spawn" | "iframes" | "boss";
 
+/**
+ * Stable empty-object reference used as the fallback in Zustand selectors
+ * below. Inlining `?? {}` would create a new object literal on every
+ * selector call, which Zustand sees as a changed value (Object.is fails)
+ * and triggers an infinite re-render loop. Reuse this constant instead.
+ */
+const EMPTY_OVERRIDES: Record<string, never> = {};
+
 const PLAYER_TUNABLE_KEYS = [
   "hp", "damage", "attackSpeed", "moveSpeed", "armor", "dashCooldown", "critChance",
   "attackRange", "projectileSpeed", "projectileCount", "projectileSpread",
@@ -163,7 +171,7 @@ function PlayerTab({
   cls: CharacterClass;
   setCls: (c: CharacterClass) => void;
 }) {
-  const overrides = useBalanceStore((s) => s.characters[cls] ?? {});
+  const overrides = useBalanceStore((s) => s.characters[cls] ?? EMPTY_OVERRIDES);
   const setCharacter = useBalanceStore((s) => s.setCharacter);
   const def = CHARACTER_DATA[cls];
 
@@ -210,7 +218,7 @@ function EnemyTab({
   type: EnemyType;
   setType: (t: EnemyType) => void;
 }) {
-  const overrides = useBalanceStore((s) => s.enemies[type] ?? {});
+  const overrides = useBalanceStore((s) => s.enemies[type] ?? EMPTY_OVERRIDES);
   const setEnemy = useBalanceStore((s) => s.setEnemy);
   const def = ENEMY_DATA[type];
 
@@ -261,7 +269,7 @@ function SpawnTab({
   tier: number;
   setTier: (t: number) => void;
 }) {
-  const overrides = useBalanceStore((s) => s.spawnWeights[tier] ?? {});
+  const overrides = useBalanceStore((s) => s.spawnWeights[tier] ?? EMPTY_OVERRIDES);
   const setWeight = useBalanceStore((s) => s.setSpawnWeight);
   const baseTable = SPAWN_TABLE[tier];
 
