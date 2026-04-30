@@ -161,7 +161,8 @@ import { LabyrinthProjectiles3D } from "./LabyrinthProjectile3D";
 import {
   type CompanionState, type SummonSign,
   createCompanionState, placeSummonSign, isNearSign, isInAura,
-  tickCompanion, COMPANION_SUMMON_COST, COMPANION_BASE_HP,
+  tickCompanion, healCompanion,
+  COMPANION_SUMMON_COST, COMPANION_BASE_HP,
   COMPANION_AURA_RADIUS, COMPANION_AURA_HP_BONUS,
   COMPANION_AURA_DAMAGE_BONUS, COMPANION_AURA_MOVE_SPEED_BONUS,
   COMPANION_LAYER_TRANSITION_HP,
@@ -845,7 +846,7 @@ export function LabyrinthScene() {
 // ─── Layer-aware lighting ────────────────────────────────────────────────────
 
 let _healPopId = 0;
-function labHealPlayer(p: LabPlayer, amount: number, healCap = 1.0): void {
+function labHealPlayer(p: LabPlayer, amount: number, healCap = 1.0, comp?: CompanionState): void {
   if (amount <= 0) return;
   const before = p.hp;
   const ceiling = p.maxHp * healCap;
@@ -859,6 +860,9 @@ function labHealPlayer(p: LabPlayer, amount: number, healCap = 1.0): void {
       text: `+${healed}`, color: "#44ff88", durationSec: 0.8,
     });
   }
+  // Bard companion shares a fraction of the player's heal. Companion follows
+  // on a 4-unit leash (well inside its own 15-unit aura) so no range gate.
+  if (comp) healCompanion(comp, amount);
 }
 
 const LAYER_LIGHT_MULT: Record<number, number> = { 1: 0.55, 2: 0.35, 3: 0.18 };
@@ -2154,11 +2158,11 @@ function CombatEnemyLoop({
                 x: e.x, z: e.z, value: dmg, isCrit, isPlayer: false, spawnTime: performance.now(),
               });
               if (labStats.lifesteal > 0) {
-                labHealPlayer(p, Math.round(dmg * labStats.lifesteal), labStats.healCap);
+                labHealPlayer(p, Math.round(dmg * labStats.lifesteal), labStats.healCap, sharedRef.current.companion);
               }
               registerHit(warriorStateRef.current);
               if (killed) {
-                if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap);
+                if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap, sharedRef.current.companion);
                 if (labStats.plagueDaggerEnabled || (gearStateRef.current.bonuses.plagueDaggerEnabled ?? 0) > 0) {
                   groundFxRef.current.push({
                     id: `plague_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
@@ -2174,7 +2178,7 @@ function CombatEnemyLoop({
                 const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
                 if (loot.rolled) {
                   audioManager.play("gear_drop");
-                  if (loot.healOnPickup > 0) labHealPlayer(p, loot.healOnPickup, labStats.healCap);
+                  if (loot.healOnPickup > 0) labHealPlayer(p, loot.healOnPickup, labStats.healCap, sharedRef.current.companion);
                 }
                 // Gear drop roll — uses main-game tryRollGear() via the
                 // labyrinth wrapper. Separate from the XP-orb loot above.
@@ -2185,7 +2189,7 @@ function CombatEnemyLoop({
                 const gained = registerKill(warriorStateRef.current, labStats.bloodforgeMaxHpPerKill || 1, 20);
                 if (gained > 0) {
                   p.maxHp += gained;
-                  labHealPlayer(p, gained, labStats.healCap);
+                  labHealPlayer(p, gained, labStats.healCap, sharedRef.current.companion);
                 }
                 if (e.kind === "warden") {
                   clearWardenState(e.id);
@@ -2404,11 +2408,11 @@ function CombatEnemyLoop({
           p.momentumShiftTimer = 2;
         }
         if (labStats.lifesteal > 0) {
-          labHealPlayer(p, Math.round(dmg * labStats.lifesteal), labStats.healCap);
+          labHealPlayer(p, Math.round(dmg * labStats.lifesteal), labStats.healCap, sharedRef.current.companion);
         }
       },
       onEnemyKilled: (e) => {
-        if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap);
+        if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap, sharedRef.current.companion);
         if (labStats.plagueDaggerEnabled || (gearStateRef.current.bonuses.plagueDaggerEnabled ?? 0) > 0) {
           groundFxRef.current.push({
             id: `plague_${performance.now()}_${Math.random().toString(36).slice(2,5)}`,
@@ -2424,7 +2428,7 @@ function CombatEnemyLoop({
         const loot = rollEnemyLoot(xpOrbsRef.current, e.kind, e.x, e.z);
         if (loot.rolled) {
           audioManager.play("gear_drop");
-          if (loot.healOnPickup > 0) labHealPlayer(p, loot.healOnPickup, labStats.healCap);
+          if (loot.healOnPickup > 0) labHealPlayer(p, loot.healOnPickup, labStats.healCap, sharedRef.current.companion);
         }
         // Gear drop roll — also fires on ranged kills.
         const gearRoll = rollLabGearDrop(e.kind, getDifficultyConfig(labDifficulty)?.gearDropMult ?? 1);
@@ -2435,7 +2439,7 @@ function CombatEnemyLoop({
           const gained = registerKill(warriorStateRef.current, labStats.bloodforgeMaxHpPerKill || 1, 20);
           if (gained > 0) {
             p.maxHp += gained;
-            labHealPlayer(p, gained, labStats.healCap);
+            labHealPlayer(p, gained, labStats.healCap, sharedRef.current.companion);
           }
         }
         if (e.kind === "warden") {
@@ -2572,7 +2576,7 @@ function CombatEnemyLoop({
             if (killed) {
               shared.killCount++;
               spawnLabXpOrb(xpOrbsRef.current, e.x, e.z);
-              if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap);
+              if (labStats.onKillHeal > 0) labHealPlayer(p, labStats.onKillHeal, labStats.healCap, sharedRef.current.companion);
             }
           }
         }
@@ -2744,7 +2748,7 @@ function CombatEnemyLoop({
       if (progressionRef.current.pendingLevelUps > 0) {
         progressionRef.current.pendingLevelUps -= 1;
         p.maxHp += 3;
-        labHealPlayer(p, 20, labStats.healCap);
+        labHealPlayer(p, 20, labStats.healCap, sharedRef.current.companion);
         audioManager.play("level_up");
         const prog = progressionRef.current;
         const choices = pickUpgradeChoices(prog.acquiredUpgrades, 3, prog.level, prog.charClass, LAB_EXCLUDED_UPGRADES);
@@ -2847,7 +2851,7 @@ function CombatEnemyLoop({
         groundFx: groundFxRef.current,
         enemies: enemiesRef.current,
         playerHeal: (amount) => {
-          labHealPlayer(p, amount, labStats.healCap);
+          labHealPlayer(p, amount, labStats.healCap, sharedRef.current.companion);
         },
         playerPoison: (stacks) => {
           addLabPoisonStacks(labPoisonRef.current, stacks, undefined);

@@ -28,6 +28,15 @@ export const COMPANION_AURA_MOVE_SPEED_BONUS = 0.10;
 const COMPANION_FOLLOW_DISTANCE = 4;
 export const COMPANION_LAYER_TRANSITION_HP = 20;
 
+/**
+ * Fraction of any player heal that is also applied to the bard companion.
+ * Conservative tuning: companion recovers slowly so big bursts (e.g. on-kill
+ * heal, level-up) carry through meaningfully without making the bard
+ * effectively immortal. Reusable for future companion-style allies in other
+ * modes — the helper sits here, callers in any mode can import it.
+ */
+export const COMPANION_HEAL_SHARE_PCT = 0.12;
+
 const COMPANION_SPEED = 9;
 const COMPANION_ATTACK_RANGE = 20;
 const NOTE_COUNT = 5;
@@ -113,6 +122,21 @@ export function isInAura(px: number, pz: number, comp: CompanionState): boolean 
   if (!comp.alive) return false;
   const dx = px - comp.x, dz = pz - comp.z;
   return dx * dx + dz * dz <= COMPANION_AURA_RADIUS * COMPANION_AURA_RADIUS;
+}
+
+// ─── Heal sharing ────────────────────────────────────────────────────────────
+
+/**
+ * Apply a fraction of a player heal to the companion. Called from the
+ * canonical heal funnel so every existing heal source (lifesteal, on-kill,
+ * passive regen, level-up, loot orbs) automatically tops up the bard too.
+ */
+export function healCompanion(comp: CompanionState, playerHealAmount: number): void {
+  if (!comp.alive) return;
+  if (comp.hp >= comp.maxHp) return;
+  if (playerHealAmount <= 0) return;
+  const share = playerHealAmount * COMPANION_HEAL_SHARE_PCT;
+  comp.hp = Math.min(comp.maxHp, comp.hp + share);
 }
 
 // ─── AI tick ─────────────────────────────────────────────────────────────────
