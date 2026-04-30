@@ -18,7 +18,7 @@ export type UpgradeId =
   | "max_health_boost"
   | "crit_chance_boost"
   | "move_speed_boost"
-  | "lifesteal_start"
+  | "restoration_rite"
   | "lifesteal_boost"
   | "double_strike"
   | "armor_boost"
@@ -478,20 +478,21 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
       s.dashCooldown = parseFloat((s.dashCooldown * 0.92).toFixed(2));
     },
   },
-  lifesteal_start: {
-    id: "lifesteal_start", name: "Blood Price",
-    description: "+25% all healing received, +1% lifesteal",
-    icon: "🩸", maxStacks: 1, rarity: "rare", classes: "all",
-    apply: (s) => { s.healingReceivedMult += 0.25; s.lifesteal += 0.01; },
+  restoration_rite: {
+    id: "restoration_rite", name: "Restoration Rite",
+    description: "+25% all healing received per rank",
+    icon: "✨", maxStacks: 2, rarity: "rare", classes: "all",
+    apply: (s) => { s.healingReceivedMult += 0.25; },
   },
   lifesteal_boost: {
     id: "lifesteal_boost", name: "Bloodlord",
-    description: "+1.5% lifesteal (diminishing)",
+    description: "+1% lifesteal (diminishing — max 2.5%)",
     icon: "🩸", maxStacks: 3, rarity: "common", classes: "all",
     apply: (s) => {
-      const stacks = Math.round(s.lifesteal / 0.015);
-      const next = stacks === 0 ? 0.02 : stacks === 1 ? 0.015 : 0.01;
-      s.lifesteal += next;
+      // Per-rank: +1%, +1%, +0.5%. Pick the next bump from current lifesteal value
+      // (approximate — the meta blood_pact upgrade can shift the bracket; acceptable
+      // since the cap is small and pre-existing behaviour worked the same way).
+      s.lifesteal += s.lifesteal < 0.02 ? 0.01 : 0.005;
     },
   },
   double_strike: {
