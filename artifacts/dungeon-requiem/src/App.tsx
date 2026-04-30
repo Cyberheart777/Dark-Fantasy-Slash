@@ -15,6 +15,7 @@ import { GameOver } from "./ui/GameOver";
 import { TrialVictory } from "./ui/TrialVictory";
 import { LabyrinthScene } from "./game/labyrinth/LabyrinthScene";
 import { LabyrinthCharSelect } from "./game/labyrinth/LabyrinthCharSelect";
+import { DevBalancePanel } from "./ui/DevBalancePanel";
 
 /** Pick the music track that should be playing for a given phase. */
 function musicForPhase(phase: string): SoundKey | null {
@@ -132,6 +133,8 @@ export default function App() {
       {phase === "trialvictory" && (
         <TrialVictory onRetry={handleTrialRetry} />
       )}
+
+      <DevBalancePanel />
     </div>
   );
 }

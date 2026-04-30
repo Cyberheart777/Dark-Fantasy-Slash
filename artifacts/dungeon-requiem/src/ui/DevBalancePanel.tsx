@@ -53,7 +53,9 @@ export function DevBalancePanel() {
 }
 
 function Inner() {
-  const [visible, setVisible] = useState(true);
+  // Start hidden so the small hint shows in the top-left rather than the
+  // panel covering the page on load. Click hint or press ` to open.
+  const [visible, setVisible] = useState(false);
   const [tab, setTab] = useState<Tab>("player");
   const [playerCls, setPlayerCls] = useState<CharacterClass>("warrior");
   const [enemyType, setEnemyType] = useState<EnemyType>("scuttler");

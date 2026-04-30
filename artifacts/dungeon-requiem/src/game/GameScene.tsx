@@ -49,7 +49,6 @@ import { LevelUp } from "../ui/LevelUp";
 import { PauseMenu } from "../ui/PauseMenu";
 import { MobileControls } from "../ui/MobileControls";
 import { DevHUD } from "../ui/DevHUD";
-import { DevBalancePanel } from "../ui/DevBalancePanel";
 import { useAchievementStore } from "../store/achievementStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -5028,7 +5027,6 @@ export function GameScene({ onRestart }: GameSceneProps) {
 
       {(phase === "playing" || phase === "paused" || phase === "levelup") && <HUD onExtract={handleExtract} />}
       {(phase === "playing" || phase === "paused" || phase === "levelup") && <DevHUD gsRef={gsRef} />}
-      <DevBalancePanel />
       {phase === "playing" && <MobileControls gsRef={gsRef} />}
       {/* Affix tap-to-inspect tooltip — populated by Enemy3D.onClick.
           Mounted at scene root so it overlays the canvas + HUD. */}

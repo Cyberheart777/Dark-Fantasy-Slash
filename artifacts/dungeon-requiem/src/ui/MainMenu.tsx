@@ -67,11 +67,13 @@ export function MainMenu() {
     }
     if (devMode) {
       localStorage.removeItem("devMode");
-      setDevMode(false);
     } else {
       localStorage.setItem("devMode", "1");
-      setDevMode(true);
     }
+    // Reload so DevBalancePanel and DevHUD re-evaluate their gate constants
+    // (computed at module load) and mount/unmount correctly. Without this
+    // the badge changes color but no panel ever appears.
+    window.location.reload();
   };
 
   const handleTrial = () => {
