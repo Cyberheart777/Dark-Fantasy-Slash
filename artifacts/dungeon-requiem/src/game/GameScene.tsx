@@ -4455,7 +4455,6 @@ function GearDrop3D({ drop }: { drop: GearDropRuntime }) {
           <meshStandardMaterial color="#ffffff" emissive="#cc88ff" emissiveIntensity={6} transparent opacity={0.6} />
         </mesh>
       )}
-      <pointLight color={style.lightColor} intensity={style.intensity * 0.6} distance={5} decay={2} />
     </group>
   );
 }
@@ -4525,7 +4524,6 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
           <torusGeometry args={[1.3, 0.06, 6, 32, Math.PI * 0.75]} />
           <meshStandardMaterial color="#ffaa44" emissive="#ffcc66" emissiveIntensity={12} />
         </mesh>
-        <pointLight color="#ff4400" intensity={6} distance={10} decay={2} />
       </group>
     );
   }
@@ -4538,7 +4536,6 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
           <boxGeometry args={[0.08, 0.14, 0.6]} />
           <meshStandardMaterial color="#ff4400" emissive="#ff2200" emissiveIntensity={4} metalness={0.8} roughness={0.1} />
         </mesh>
-        <pointLight color="#ff4400" intensity={2} distance={4} decay={2} />
       </group>
     );
   }
@@ -4562,7 +4559,6 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
           <coneGeometry args={[0.14, 0.45, 6]} />
           <meshStandardMaterial color="#ffaaff" emissive="#ff00ff" emissiveIntensity={8} />
         </mesh>
-        <pointLight color="#cc00ff" intensity={3} distance={6} decay={2} />
       </group>
     );
   }
@@ -4583,7 +4579,6 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
           <boxGeometry args={[0.14, 0.03, 0.01]} />
           <meshStandardMaterial color="#ffaa22" emissive="#ff8800" emissiveIntensity={3} />
         </mesh>
-        <pointLight color="#ffaa00" intensity={2} distance={4} decay={2} />
       </group>
     );
   }
@@ -4609,7 +4604,6 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
           <coneGeometry args={[0.05, 0.18, 4]} />
           <meshStandardMaterial color="#88ff44" emissive="#44ff22" emissiveIntensity={6} />
         </mesh>
-        <pointLight color="#44ff22" intensity={2} distance={5} decay={2} />
       </group>
     );
   }
@@ -4642,7 +4636,6 @@ function EnemyProjectile3D({ ep }: { ep: EnemyProjectile }) {
           <boxGeometry args={[0.16, 0.05, 0.05]} />
           <meshStandardMaterial color="#1a8830" metalness={0.7} roughness={0.2} />
         </mesh>
-        <pointLight color="#22aa44" intensity={1.5} distance={3} decay={2} />
       </group>
     );
   }
