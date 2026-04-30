@@ -24,9 +24,15 @@ import {
 } from "../store/balanceStore";
 import { DevSlider } from "./DevSlider";
 
+/**
+ * Two ways in: `?dev=1` query param OR `localStorage.devMode === "1"` (set
+ * via the password unlock on the main menu). The localStorage flag is
+ * sticky across reloads on this device.
+ */
 const DEV_ENABLED =
   typeof window !== "undefined" &&
-  new URLSearchParams(window.location.search).get("dev") === "1";
+  (new URLSearchParams(window.location.search).get("dev") === "1" ||
+    localStorage.getItem("devMode") === "1");
 
 type Tab = "player" | "enemies" | "spawn" | "iframes" | "boss";
 
@@ -92,12 +98,23 @@ function Inner() {
     }
   };
 
+  const handleDisableDev = () => {
+    if (confirm("Disable dev mode? Panel + DevHUD will hide until you re-enable from the main menu.")) {
+      localStorage.removeItem("devMode");
+      // Clear ?dev=1 too so a hard refresh actually hides the panel
+      const url = new URL(window.location.href);
+      url.searchParams.delete("dev");
+      window.location.href = url.toString();
+    }
+  };
+
   return (
     <div style={styles.panel}>
       <div style={styles.header}>
         <span style={styles.title}>BALANCE</span>
         <button style={styles.btn} onClick={handleExport}>EXPORT</button>
-        <button style={styles.btn} onClick={handleReset}>RESET ALL</button>
+        <button style={styles.btn} onClick={handleReset}>RESET</button>
+        <button style={styles.btn} onClick={handleDisableDev}>DISABLE DEV</button>
         <button style={styles.btn} onClick={() => setVisible(false)}>×</button>
       </div>
 

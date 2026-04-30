@@ -13,7 +13,8 @@ import { GAME_CONFIG } from "../data/GameConfig";
 
 const DEV_ENABLED =
   typeof window !== "undefined" &&
-  new URLSearchParams(window.location.search).get("dev") === "1";
+  (new URLSearchParams(window.location.search).get("dev") === "1" ||
+    localStorage.getItem("devMode") === "1");
 
 /** How many frames between DOM updates (~10 Hz at 60fps) */
 const UPDATE_EVERY = 6;

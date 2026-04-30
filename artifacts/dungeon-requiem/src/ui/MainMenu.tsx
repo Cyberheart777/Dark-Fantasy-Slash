@@ -21,6 +21,14 @@ const click = (fn: () => void) => () => { audioManager.play("menu_click"); fn();
 const GAME_VERSION = "v0.1.0";
 
 /**
+ * Click on the version badge to flip dev mode on/off. Asks for a password
+ * (client-side, not real security — anyone reading the bundle can find it).
+ * Once enabled, persists in localStorage so the balance panel + DevHUD show
+ * up automatically on this device until disabled.
+ */
+const DEV_PASSWORD = "destroyallmonsters";
+
+/**
  * Main menu background artwork. Lives at public/images/main-menu-bg.png.
  * Vite's BASE_URL suffix resolves correctly under the GitHub Pages subpath.
  * If the file is ever missing, the CSS `background:` shorthand in
@@ -49,6 +57,22 @@ export function MainMenu() {
   const bossKilled = milestones["boss_kill"] ?? false;
   const anyTrialWin = Object.values(trialWins).some(Boolean);
   const [view, setView] = useState<MenuView>("main");
+  const [devMode, setDevMode] = useState(() => localStorage.getItem("devMode") === "1");
+
+  const toggleDevMode = () => {
+    const entered = window.prompt(devMode ? "Disable dev mode — enter password:" : "Enter dev password:");
+    if (entered !== DEV_PASSWORD) {
+      if (entered != null) window.alert("Incorrect.");
+      return;
+    }
+    if (devMode) {
+      localStorage.removeItem("devMode");
+      setDevMode(false);
+    } else {
+      localStorage.setItem("devMode", "1");
+      setDevMode(true);
+    }
+  };
 
   const handleTrial = () => {
     setTrialMode(true);
@@ -60,9 +84,13 @@ export function MainMenu() {
       <div style={styles.vignette} />
 
       <div style={styles.panel}>
-        <div style={styles.eaBadge}>
-          <span style={styles.eaDot} />
-          EARLY ACCESS · {GAME_VERSION}
+        <div
+          style={{ ...styles.eaBadge, cursor: "pointer", ...(devMode ? styles.eaBadgeDev : {}) }}
+          onClick={toggleDevMode}
+          title={devMode ? "Click to disable dev mode" : ""}
+        >
+          <span style={{ ...styles.eaDot, ...(devMode ? styles.eaDotDev : {}) }} />
+          {devMode ? "DEV MODE" : "EARLY ACCESS"} · {GAME_VERSION}
         </div>
 
         <div style={styles.titleWrapper}>
@@ -258,6 +286,16 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "50%",
     background: "#ffcc00",
     boxShadow: "0 0 6px #ffaa00",
+  },
+  eaBadgeDev: {
+    color: "#44ddff",
+    background: "rgba(0,40,60,0.55)",
+    border: "1px solid rgba(0,180,220,0.5)",
+    textShadow: "0 0 6px rgba(0,180,255,0.5)",
+  },
+  eaDotDev: {
+    background: "#44ddff",
+    boxShadow: "0 0 6px #00aaff",
   },
   pitch: {
     color: "rgba(220,200,240,0.85)",
